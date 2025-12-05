@@ -70,7 +70,7 @@ const formSchema = z.object({
   position: z.string().trim().min(1, 'Обязательное поле'),
   
   // Рабочий график - все обязательные
-  shiftType: z.enum(['DAY', 'NIGHT'], { required_error: 'Выберите тип смены' }),
+  shiftType: z.enum(['DAY', 'NIGHT'], { message: 'Выберите тип смены' }),
   workStartTime: z.string().min(1, 'Обязательное поле').regex(timeRegex, 'Формат: ЧЧ:ММ'),
   workEndTime: z.string().min(1, 'Обязательное поле').regex(timeRegex, 'Формат: ЧЧ:ММ'),
   workingDays: z.array(z.number()).min(1, 'Выберите хотя бы один день'),
