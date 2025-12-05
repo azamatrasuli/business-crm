@@ -27,16 +27,11 @@ WORKDIR /app
 COPY --from=build /app/publish .
 
 # Set environment variables
-ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_ENVIRONMENT=Production
 
-# Expose port
-EXPOSE 8080
+# Expose port (Render uses dynamic PORT)
+EXPOSE 10000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
-
-# Run the application
-ENTRYPOINT ["dotnet", "YallaBusinessAdmin.Api.dll"]
+# Run the application with dynamic port from Render
+CMD ASPNETCORE_URLS=http://+:${PORT:-10000} dotnet YallaBusinessAdmin.Api.dll
 
