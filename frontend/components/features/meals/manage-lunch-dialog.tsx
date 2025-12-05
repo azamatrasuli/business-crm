@@ -317,18 +317,18 @@ export function ManageLunchDialog({
   const scheduleTypeCounts = useMemo(() => {
     // Считаем сколько сотрудников подходят под каждый тип графика
     const everyDayCount = availableEmployees.filter(e => {
-      const empWorkDays = e.workingDays || [1, 2, 3, 4, 5];
+      const empWorkDays = (e.workingDays || [1, 2, 3, 4, 5]) as number[];
       return [1, 2, 3, 4, 5].every(d => empWorkDays.includes(d));
     }).length;
     
     const everyOtherDayCount = availableEmployees.filter(e => {
-      const empWorkDays = e.workingDays || [1, 2, 3, 4, 5];
+      const empWorkDays = (e.workingDays || [1, 2, 3, 4, 5]) as number[];
       return [1, 3, 5].every(d => empWorkDays.includes(d));
     }).length;
     
     const customCount = customDates.length > 0 
       ? availableEmployees.filter(e => {
-          const empWorkDays = e.workingDays || [1, 2, 3, 4, 5];
+          const empWorkDays = (e.workingDays || [1, 2, 3, 4, 5]) as number[];
           const selectedDays = customDates.map(d => d.getDay());
           return selectedDays.some(d => empWorkDays.includes(d));
         }).length

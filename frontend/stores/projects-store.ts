@@ -144,7 +144,7 @@ export const useProjectsStore = create<ProjectsState>()(
         try {
           const project = await createProject(data);
           const { projects, selectedProjectId } = get();
-          const newProjects = [...projects, {
+          const newProjects: ProjectListItem[] = [...projects, {
             id: project.id,
             name: project.name,
             // Address (immutable)
@@ -155,7 +155,16 @@ export const useProjectsStore = create<ProjectsState>()(
             status: project.status,
             serviceType: project.serviceType,
             isHeadquarters: project.isHeadquarters,
+            // Employee counts
             employeesCount: project.employeesCount,
+            employeesWithLunch: 0,
+            employeesWithCompensation: 0,
+            // Spending breakdown
+            spentLunch: 0,
+            spentCompensation: 0,
+            spentTotal: 0,
+            // Budget remaining
+            budgetRemaining: project.budget,
           }];
           set({ 
             projects: newProjects,
