@@ -276,7 +276,7 @@ export function ManageLunchDialog({
   // Проверяем совместимость рабочих дней сотрудника с выбранным графиком
   const scheduleTypeFilteredEmployees = useMemo(() => {
     return availableEmployees.filter(e => {
-      const empWorkDays = e.workingDays || [1, 2, 3, 4, 5];
+      const empWorkDays = (e.workingDays || [1, 2, 3, 4, 5]) as number[];
       
       if (scheduleType === "EVERY_DAY") {
         // Рабочие дни должны включать все будни (Пн-Пт)
