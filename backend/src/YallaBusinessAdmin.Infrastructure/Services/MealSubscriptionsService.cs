@@ -403,8 +403,10 @@ public class MealSubscriptionsService : IMealSubscriptionsService
         assignment.FrozenReason = reason;
         assignment.UpdatedAt = DateTime.UtcNow;
 
-        // Record freeze history
-        var (weekYear, weekNumber) = GetIsoWeek(assignment.AssignmentDate);
+        // Record freeze history - use CURRENT week (when freeze action happens), not assignment date
+        // This ensures the 2/week limit is based on when the user freezes, not when the meal was scheduled
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var (weekYear, weekNumber) = GetIsoWeek(today);
         var freezeRecord = new EmployeeFreezeHistory
         {
             Id = Guid.NewGuid(),
