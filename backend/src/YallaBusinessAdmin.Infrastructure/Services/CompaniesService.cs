@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using YallaBusinessAdmin.Application.Companies;
 using YallaBusinessAdmin.Application.Companies.Dtos;
+using YallaBusinessAdmin.Domain.Enums;
 using YallaBusinessAdmin.Infrastructure.Persistence;
 
 namespace YallaBusinessAdmin.Infrastructure.Services;
@@ -22,9 +23,9 @@ public class CompaniesService : ICompaniesService
                 c.Id,
                 c.Name,
                 c.Budget,
-                c.Status.ToString(),
-                _context.Projects.Count(p => p.CompanyId == c.Id && p.DeletedAt == null),
-                _context.Employees.Count(e => e.CompanyId == c.Id && e.DeletedAt == null)
+                c.Status.ToDatabase(), // Use extension method for consistent string
+                c.Projects.Count(p => p.DeletedAt == null),
+                c.Employees.Count(e => e.DeletedAt == null)
             ))
             .OrderBy(c => c.Name)
             .ToListAsync();
@@ -44,7 +45,7 @@ public class CompaniesService : ICompaniesService
                 c.CurrencyCode,
                 c.Timezone,
                 c.CutoffTime,
-                c.Status.ToString(),
+                c.Status.ToDatabase(), // Use extension method
                 c.CreatedAt
             ))
             .FirstOrDefaultAsync();
