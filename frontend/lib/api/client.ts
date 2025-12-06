@@ -35,20 +35,6 @@ apiClient.interceptors.request.use(
         if (token) {
           config.headers.Authorization = `Bearer ${token}`
         }
-        
-        // Add X-Company-Id header for SUPER_ADMIN company switching
-        const companySelectorStr = localStorage.getItem('company-selector')
-        if (companySelectorStr) {
-          try {
-            const companySelectorData = JSON.parse(companySelectorStr)
-            const selectedCompanyId = companySelectorData?.state?.selectedCompanyId
-            if (selectedCompanyId) {
-              config.headers['X-Company-Id'] = selectedCompanyId
-            }
-          } catch {
-            // Ignore parse errors
-          }
-        }
       }
     }
     return config
