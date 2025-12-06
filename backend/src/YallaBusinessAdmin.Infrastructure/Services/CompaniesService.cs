@@ -19,15 +19,15 @@ public class CompaniesService : ICompaniesService
     {
         var companies = await _context.Companies
             .Where(c => c.DeletedAt == null)
+            .OrderBy(c => c.Name) // OrderBy BEFORE Select!
             .Select(c => new CompanyListItem(
                 c.Id,
                 c.Name,
                 c.Budget,
-                c.Status.ToDatabase(), // Use extension method for consistent string
+                c.Status.ToDatabase(),
                 c.Projects.Count(p => p.DeletedAt == null),
                 c.Employees.Count(e => e.DeletedAt == null)
             ))
-            .OrderBy(c => c.Name)
             .ToListAsync();
 
         return companies;
