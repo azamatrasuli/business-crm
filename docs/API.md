@@ -1,125 +1,234 @@
-# API
+# API Документация
 
-**Base URL:** `http://localhost:5000/api`
+**Base URL:** `https://business-crm-iu04.onrender.com/api`  
+**Локально:** `http://localhost:5000/api`
 
-## Auth
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/auth/login` | Вход (phone + password) |
-| POST | `/auth/logout` | Выход (revokes refresh token) |
-| POST | `/auth/refresh` | Обновить токен |
-| POST | `/auth/forgot-password` | Забыли пароль |
-| POST | `/auth/reset-password` | Сброс пароля |
-| POST | `/auth/change-password` | Смена пароля |
-| PUT | `/auth/profile` | Обновить профиль |
-| GET | `/auth/me` | Текущий пользователь |
-
-## Users
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/users` | Список (page, pageSize, search, status, role) |
-| GET | `/users/:id` | Получить по ID |
-| POST | `/users` | Создать |
-| PUT | `/users/:id` | Обновить |
-| DELETE | `/users/:id` | Удалить (soft delete) |
-| GET | `/users/permissions/routes` | Доступные роуты |
-
-## Employees
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/employees` | Список (page, pageSize, search, status, inviteStatus, orderStatus, minBudget, maxBudget, hasSubscription) |
-| GET | `/employees/:id` | Получить по ID |
-| POST | `/employees` | Создать |
-| PUT | `/employees/:id` | Обновить |
-| DELETE | `/employees/:id` | Удалить (soft delete) |
-| PATCH | `/employees/:id/activate` | Активировать/деактивировать |
-| PUT | `/employees/:id/budget` | Обновить бюджет |
-| GET | `/employees/:id/orders` | История заказов (page, pageSize, dateFrom, dateTo, status) |
-| POST | `/employees/batch-budget` | Массовое обновление бюджета |
-| GET | `/employees/export` | Экспорт в CSV |
-
-## Dashboard (Home)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/home/dashboard` | Статистика (включая сравнение с вчера) |
-| GET | `/home/orders` | Заказы (page, pageSize, search, status, date, address, orderType) |
-| GET | `/home/orders/export` | Экспорт заказов в CSV |
-| GET | `/home/addresses` | Адреса |
-| POST | `/home/addresses` | Создать адрес |
-| PUT | `/home/addresses/:id` | Обновить адрес |
-| DELETE | `/home/addresses/:id` | Удалить адрес |
-| PATCH | `/home/addresses/:id/default` | Установить по умолчанию |
-| POST | `/home/guest-orders` | Гостевой заказ |
-| POST | `/home/assign-meals` | Назначить обеды |
-| POST | `/home/bulk-action` | Массовые действия (pause, resume, changeAddress, cancel, changeCombo) |
-| PUT | `/home/subscriptions/:id` | Обновить подписку |
-| POST | `/home/subscriptions/bulk` | Массовое обновление подписок |
-| GET | `/home/cutoff-time` | Время отсечки |
-| PUT | `/home/cutoff-time` | Обновить время отсечки |
-
-## Subscriptions
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/subscriptions` | Список подписок |
-| GET | `/subscriptions/:id` | Получить по ID |
-| POST | `/subscriptions` | Создать |
-| PUT | `/subscriptions/:id` | Обновить |
-| DELETE | `/subscriptions/:id` | Удалить |
-| POST | `/subscriptions/:id/pause` | Приостановить |
-| POST | `/subscriptions/:id/resume` | Возобновить |
-| POST | `/subscriptions/bulk/pause` | Массовая приостановка |
-| POST | `/subscriptions/bulk/resume` | Массовое возобновление |
-| GET | `/subscriptions/:id/price-preview` | Предпросмотр цены |
-
-## Invoices
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/invoices` | Список счетов |
-| GET | `/invoices/:id` | Получить по ID |
-
-## Transactions
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/transactions` | История транзакций |
-
-## Documents
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/documents` | Список документов |
-
-## News
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/news` | Список новостей |
-| GET | `/news/:id` | Получить по ID |
-| POST | `/news/:id/read` | Отметить как прочитанную |
+---
 
 ## Авторизация
 
+Все запросы (кроме `/auth/login`) требуют заголовок:
 ```
-Authorization: Bearer <token>
+Authorization: Bearer <access_token>
 ```
 
-Токены:
-- **Access Token**: 24 часа
-- **Refresh Token**: 7 дней
+**Токены:**
+- Access Token: 24 часа
+- Refresh Token: 7 дней
 
-## Ошибки
+---
+
+## Auth — Аутентификация
+
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| POST | `/auth/login` | Вход по телефону и паролю |
+| POST | `/auth/refresh` | Обновить токены |
+| POST | `/auth/logout` | Выход (отзыв refresh token) |
+| GET | `/auth/me` | Текущий пользователь |
+| PUT | `/auth/profile` | Обновить профиль |
+| POST | `/auth/change-password` | Сменить пароль |
+| POST | `/auth/forgot-password` | Запрос сброса пароля |
+| POST | `/auth/reset-password` | Сброс пароля по токену |
+
+### Импершонация (SUPER_ADMIN)
+
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| POST | `/auth/impersonate/{userId}` | Войти как другой пользователь |
+| POST | `/auth/stop-impersonation` | Завершить импершонацию |
+
+---
+
+## Users — Пользователи
+
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| GET | `/users` | Список пользователей |
+| GET | `/users/{id}` | Получить по ID |
+| POST | `/users` | Создать пользователя |
+| PUT | `/users/{id}` | Обновить пользователя |
+| DELETE | `/users/{id}` | Удалить (soft delete) |
+| GET | `/users/all-admins` | Все админы (SUPER_ADMIN) |
+| GET | `/users/permissions/routes` | Доступные роуты |
+| GET | `/users/statuses` | Доступные статусы |
+| GET | `/users/roles` | Доступные роли |
+
+**Фильтры для GET /users:**
+- `page`, `pageSize` — пагинация
+- `search` — поиск по имени/телефону/email
+- `status` — Активный / Не активный / Заблокирован
+- `role` — admin / manager
+- `sortBy`, `sortDesc` — сортировка
+
+---
+
+## Employees — Сотрудники
+
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| GET | `/employees` | Список сотрудников |
+| GET | `/employees/{id}` | Получить по ID |
+| POST | `/employees` | Создать сотрудника |
+| PUT | `/employees/{id}` | Обновить сотрудника |
+| DELETE | `/employees/{id}` | Удалить (soft delete) |
+| PATCH | `/employees/{id}/activate` | Активировать/деактивировать |
+| PUT | `/employees/{id}/budget` | Обновить бюджет |
+| PUT | `/employees/budget/batch` | Массовое обновление бюджета |
+| GET | `/employees/{id}/orders` | История заказов |
+| GET | `/employees/invite-statuses` | Статусы приглашений |
+| GET | `/employees/export` | Экспорт в CSV |
+
+**Фильтры для GET /employees:**
+- `page`, `pageSize` — пагинация
+- `search` — поиск
+- `status` — активность
+- `inviteStatus` — Принято / Ожидает / Отклонено
+- `orderStatus` — статус заказа
+- `minBudget`, `maxBudget` — фильтр по бюджету
+- `hasSubscription` — есть подписка
+- `projectId` — фильтр по проекту
+
+---
+
+## Projects — Проекты (филиалы)
+
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| GET | `/projects` | Список проектов |
+| GET | `/projects/{id}` | Получить по ID |
+| POST | `/projects` | Создать проект |
+| PUT | `/projects/{id}` | Обновить проект |
+| DELETE | `/projects/{id}` | Удалить проект |
+
+---
+
+## Dashboard (Home) — Главная
+
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| GET | `/home/dashboard` | Статистика (включая сравнение с вчера) |
+| GET | `/home/orders` | Заказы |
+| GET | `/home/orders/export` | Экспорт заказов в CSV |
+| POST | `/home/guest-orders` | Создать гостевой заказ |
+| POST | `/home/assign-meals` | Назначить обеды сотрудникам |
+| POST | `/home/bulk-action` | Массовые действия (pause, resume, cancel) |
+| PUT | `/home/subscriptions/{employeeId}` | Обновить подписку |
+| POST | `/home/subscriptions/bulk` | Массовое обновление подписок |
+| GET | `/home/cutoff-time` | Время отсечки заказов |
+| PUT | `/home/cutoff-time` | Обновить время отсечки |
+| GET | `/home/combos` | Типы комбо (25 / 35 сомони) |
+
+---
+
+## Meal Subscriptions — Подписки на обеды
+
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| GET | `/meal-subscriptions?projectId=` | Список подписок проекта |
+| GET | `/meal-subscriptions/{id}` | Подписка по ID |
+| POST | `/meal-subscriptions` | Создать подписку |
+| POST | `/meal-subscriptions/{id}/cancel` | Отменить подписку |
+| POST | `/meal-subscriptions/{id}/pause` | Приостановить |
+| POST | `/meal-subscriptions/{id}/resume` | Возобновить |
+| POST | `/meal-subscriptions/price-preview` | Предпросмотр цены |
+
+### Назначения обедов
+
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| GET | `/meal-subscriptions/{id}/assignments` | Назначения подписки |
+| GET | `/meal-subscriptions/employees/{id}/assignments` | Назначения сотрудника |
+| GET | `/meal-subscriptions/projects/{id}/assignments` | Назначения проекта |
+| PUT | `/meal-subscriptions/assignments/{id}` | Обновить назначение |
+| POST | `/meal-subscriptions/assignments/{id}/cancel` | Отменить |
+| POST | `/meal-subscriptions/assignments/{id}/freeze` | Заморозить |
+| POST | `/meal-subscriptions/assignments/{id}/unfreeze` | Разморозить |
+
+### Заморозки
+
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| GET | `/meal-subscriptions/employees/{id}/freeze-info` | Инфо о заморозках (лимит 2/неделю) |
+
+### Календарь
+
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| GET | `/meal-subscriptions/calendar?projectId=&startDate=&endDate=` | Календарь обедов |
+
+---
+
+## Invoices — Счета
+
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| GET | `/invoices` | Список счетов |
+| GET | `/invoices/{id}` | Счёт по ID |
+
+---
+
+## Transactions — Транзакции
+
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| GET | `/transactions` | История транзакций |
+
+---
+
+## Documents — Документы
+
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| GET | `/documents` | Список документов |
+
+---
+
+## News — Новости
+
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| GET | `/news` | Список новостей |
+| GET | `/news/{id}` | Новость по ID |
+| POST | `/news/{id}/read` | Отметить прочитанной |
+
+---
+
+## Коды ошибок
 
 | Код | Описание |
 |-----|----------|
-| 400 | Bad Request - неверные параметры |
-| 401 | Unauthorized - требуется авторизация |
-| 403 | Forbidden - нет доступа |
-| 404 | Not Found - не найдено |
-| 409 | Conflict - конфликт (напр. телефон занят) |
-| 500 | Server Error - ошибка сервера |
+| 400 | Неверные параметры запроса |
+| 401 | Требуется авторизация |
+| 403 | Доступ запрещён |
+| 404 | Ресурс не найден |
+| 409 | Конфликт (например, телефон уже занят) |
+| 500 | Внутренняя ошибка сервера |
+
+---
+
+## Примеры запросов
+
+### Вход
+```bash
+curl -X POST https://business-crm-iu04.onrender.com/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"phone": "+992901234567", "password": "admin123"}'
+```
+
+### Получить сотрудников
+```bash
+curl https://business-crm-iu04.onrender.com/api/employees \
+  -H "Authorization: Bearer <token>"
+```
+
+### Импершонация
+```bash
+# Войти как другой пользователь
+curl -X POST https://business-crm-iu04.onrender.com/api/auth/impersonate/{userId} \
+  -H "Authorization: Bearer <super_admin_token>"
+
+# Вернуться в свой аккаунт
+curl -X POST https://business-crm-iu04.onrender.com/api/auth/stop-impersonation \
+  -H "Authorization: Bearer <impersonated_token>"
+```

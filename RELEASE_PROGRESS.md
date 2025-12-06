@@ -1,188 +1,129 @@
-# 🚀 Production Release Progress
+# 🚀 Прогресс релиза
 
-> Этот файл отслеживает прогресс подготовки к production релизу.
-> Если контекст чата сбросится — читай этот файл чтобы понять где мы.
+> Актуальный статус разработки и релиза Yalla Business Admin.
 
-## Статус: ✅ ГОТОВО К РЕЛИЗУ
+## Статус: ✅ В ПРОДАКШЕНЕ
 
-**Дата начала:** 2025-12-05  
-**Дата готовности:** 2025-12-05  
-**Цель:** MVP релиз с Lunch функционалом (без Compensation)
-
----
-
-## 📋 Чеклист
-
-### Phase 1: Feature Flags System ✅
-- [x] `frontend/lib/features.config.ts` — конфиг фич
-- [x] `frontend/components/features/feature-gate.tsx` — компонент-обёртка
-- [x] `frontend/components/features/coming-soon-page.tsx` — заглушка "Скоро"
-
-### Phase 2: UI Blocking (Production) ✅
-- [x] Sidebar — показывать заблокированные пункты с badge "Скоро"
-- [x] `/payments` — заблокировать страницу
-- [x] `/analytics` — заблокировать страницу
-- [x] `/news` — заблокировать страницу
-- [x] `/partners` — заблокировать страницу
-- [x] Dashboard — убрать кнопку "Управлять компенсациями"
-- [x] Dashboard — скрыть колонку serviceType (все LUNCH)
-- [x] Employees — скрыть кнопку компенсации
-
-### Phase 3: Environment Configs ✅
-- [x] Документация по .env переменным (см. секцию ниже)
-- [x] Vercel env vars настроены (NEXT_PUBLIC_APP_ENV=production)
-- [x] Render env vars настроены (Database URL, JWT Secret)
-
-### Phase 4: Infrastructure ✅
-- [x] Supabase — production проект создан (qwkpqbfldvuxcxugxcmj)
-- [x] Vercel — деплой работает (business-crm-git-main-azamatrasuli-protonmes-projects.vercel.app)
-- [x] Render — деплой работает (business-crm-iu04.onrender.com)
-- [x] GitHub — репозиторий создан (azamatrasuli/business-crm)
-
-### Phase 5: Git & Deployment ✅
-- [x] Push main на GitHub
-- [x] Создать ветку `develop` для тестовой среды
-- [x] Настроить Vercel preview deployments (develop → staging)
-- [x] Настроить Render staging service (business-crm-staging.onrender.com)
-
-### Phase 6: Data Migration ✅
-- [x] Получены credentials от CRM (yalla-lunch)
-- [x] Проанализирована структура: companies, payment_operations, contacts
-- [x] Мигрированы компании (6 активных) с проектами и транзакциями
-- [x] Создан супер-админ (admin@yalla.tj / admin123)
+**Дата запуска:** 2025-12-05  
+**Последнее обновление:** 2025-12-06  
+**Версия:** MVP 1.0 (Lunch)
 
 ---
 
-## 🔑 Credentials & URLs
+## 📊 Текущий статус
 
-### 🔴 Production Environment
+### Что работает (MVP)
+| Модуль | Статус | Описание |
+|--------|--------|----------|
+| Авторизация | ✅ | JWT + Refresh tokens + Импершонация |
+| Проекты | ✅ | Создание, редактирование, удаление филиалов |
+| Пользователи | ✅ | RBAC с ролями admin/manager |
+| Сотрудники | ✅ | HR модуль с бюджетами и подписками |
+| Подписки на обеды | ✅ | Комплексные обеды (Комбо 25/35) |
+| Dashboard | ✅ | Статистика + управление заказами |
+| Гостевые заказы | ✅ | Разовые заказы без подписки |
+| Импершонация | ✅ | SUPER_ADMIN может войти в любой аккаунт |
+
+### Заблокировано (Phase 2)
+| Модуль | Статус | Причина |
+|--------|--------|---------|
+| Компенсации | 🚫 | Ждём Client Web + Merchant Lite |
+| Оплаты | 🚫 | В разработке |
+| Аналитика | 🚫 | В разработке |
+| Новости | 🚫 | В разработке |
+| Партнёры | 🚫 | В разработке |
+
+---
+
+## 🔗 Ссылки на среды
+
+### Production
 | Сервис | URL |
 |--------|-----|
-| Frontend | https://business-crm-git-main-azamatrasuli-protonmes-projects.vercel.app |
+| Frontend | https://yalla-business-crm.vercel.app |
 | Backend API | https://business-crm-iu04.onrender.com |
-| Database | Supabase `qwkpqbfldvuxcxugxcmj` |
+| База данных | Supabase `qwkpqbfldvuxcxugxcmj` |
 
-### 🟡 Staging Environment
+### Staging  
 | Сервис | URL |
 |--------|-----|
 | Frontend | https://business-crm-git-develop-azamatrasuli-protonmes-projects.vercel.app |
 | Backend API | https://business-crm-staging.onrender.com |
-| Database | Supabase `psuiiifwntvjhuzxronr` |
+| База данных | Supabase `psuiiifwntvjhuzxronr` |
 
-### 🔐 Учётные данные (Production)
+---
+
+## 🔐 Учётные данные
+
+### Супер-админ (SUPER_ADMIN)
 ```
-Email: admin@yalla.tj
-Password: admin123
+Телефон: +992901234567
+Пароль: admin123
 ```
 
-### GitHub Repository
+### GitHub
 ```
-https://github.com/azamatrasuli/business-crm
-Branches: main (production), develop (staging)
+Репозиторий: https://github.com/azamatrasuli/business-crm
+Ветки: main (production), develop (staging)
 ```
 
 ---
 
-## ⚙️ Environment Variables
+## 📝 Лог изменений
 
-### Frontend (.env)
-Создайте файлы `.env.local` / `.env.production` / `.env.staging`:
+### 2025-12-06
+- ✅ Реализована функция **Импершонация** — SUPER_ADMIN может войти в любой аккаунт админа
+- ✅ Исправлен баг `PUT /users/{id}` — ошибка конкурентности при обновлении
+- ✅ Исправлен баг `GET /meal-subscriptions` — добавлены колонки `paused_at`, `paused_days_count`
+- ✅ Добавлен маппинг колонок для EF Core (snake_case)
+- ✅ Проведён полный аудит API на production
 
+### 2025-12-05
+- ✅ Первый релиз MVP в production
+- ✅ Настроены Vercel + Render + Supabase
+- ✅ Миграция данных из старой CRM (6 компаний)
+- ✅ Создана система Feature Flags
+
+---
+
+## ⚙️ Переменные окружения
+
+### Frontend (.env.local)
 ```bash
-# API Configuration
-# Development: http://localhost:5000/api
-# Staging: https://yalla-business-api-staging.onrender.com/api
-# Production: https://yalla-business-api.onrender.com/api
 NEXT_PUBLIC_API_BASE_URL=http://localhost:5000/api
-
-# App Environment (determines feature flags)
-# development | staging | production
-NEXT_PUBLIC_APP_ENV=development
+NEXT_PUBLIC_APP_ENV=development  # development | staging | production
 ```
 
-### Backend (appsettings.Production.json)
+### Backend (appsettings.json)
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Host=<PROD_HOST>;Port=5432;Database=postgres;Username=<USER>;Password=<PASSWORD>;SSL Mode=Require"
+    "DefaultConnection": "Host=...;Database=...;Username=...;Password=...;SSL Mode=Require"
   },
   "Jwt": {
-    "Secret": "<SECURE_PRODUCTION_SECRET_MIN_32_CHARS>"
-  },
-  "FrontendUrl": "https://<PROD_FRONTEND_URL>",
-  "SeedOnStartup": false
+    "Secret": "минимум-32-символа-секретный-ключ"
+  }
 }
 ```
 
-### Vercel Environment Variables
-В настройках проекта Vercel добавить:
-- `NEXT_PUBLIC_API_BASE_URL` - URL бэкенда
-- `NEXT_PUBLIC_APP_ENV` - `production` или `staging`
+---
 
-### Render Environment Variables
-В настройках сервиса Render добавить:
-- `ASPNETCORE_ENVIRONMENT` - `Production`
-- `ConnectionStrings__DefaultConnection` - connection string к Supabase
-- `Jwt__Secret` - секретный ключ для JWT
+## 🚧 План развития
+
+### Phase 2 (декабрь 2025)
+- [ ] Модуль компенсаций (после Client Web)
+- [ ] Интеграция с Merchant Lite
+- [ ] Аналитика и отчёты
+
+### Phase 3 (январь 2026)
+- [ ] Модуль оплат
+- [ ] Новости и уведомления
+- [ ] Карта партнёров
 
 ---
 
-## 📝 Решения по проекту
+## 🆘 При сбросе контекста
 
-### Что включено в MVP (Production):
-- ✅ Авторизация и профиль
-- ✅ Проекты (филиалы)
-- ✅ Пользователи B2B кабинета (RBAC)
-- ✅ Сотрудники (HR модуль)
-- ✅ Подписки на обеды (Lunch)
-- ✅ Dashboard с заказами
-- ✅ Гостевые заказы
-
-### Что заблокировано (Phase 2):
-- 🚫 Компенсации (Compensation) — ждём Client Web + Merchant Lite
-- 🚫 Оплаты (Payments)
-- 🚫 Аналитика (Analytics)
-- 🚫 Новости (News)
-- 🚫 Партнёры (Partners)
-
-### Подход к Feature Flags:
-- Используем конфиг-файл `features.config.ts`
-- Environment variable `NEXT_PUBLIC_APP_ENV` определяет режим
-- В `production` — только MVP фичи
-- В `staging/development` — все фичи включены
-
----
-
-## 📅 Лог обновлений
-
-### 2025-12-05
-- ✅ Phase 1-2: Feature Flags + UI Blocking
-- ✅ Phase 3: Environment конфиги для Vercel/Render
-- ✅ Phase 4: Infrastructure (Supabase, Vercel, Render, GitHub)
-- ✅ Phase 5: Git branching (main + develop) + staging окружения
-- ✅ Phase 6: Миграция данных из Yalla CRM
-  - Мигрированы: 6 компаний, проекты, транзакции
-  - Создан супер-админ: admin@yalla.tj
-
----
-
-## 🚀 Следующие шаги (Post-Release)
-
-### Готово к релизу — можно начинать!
-1. [ ] **E2E тестирование** — протестировать все MVP сценарии
-2. [ ] **Кастомный домен** — настроить business.yalla.tj
-3. [ ] **SSL сертификаты** — проверить HTTPS
-4. [ ] **Мониторинг** — настроить алерты на ошибки
-
-### Phase 2 (следующая неделя)
-1. [ ] Compensation функционал — включить после готовности Client Web + Merchant Lite
-2. [ ] Payments / Analytics / News / Partners — по мере готовности
-
----
-
-## 🆘 Если контекст сбросился
-
-1. Прочитай этот файл целиком
-2. Все фазы завершены — проект готов к релизу!
-3. Для доступа: admin@yalla.tj / admin123
-
+1. Прочитай этот файл
+2. Посмотри `docs/API.md` для списка эндпоинтов
+3. Вход: `+992901234567` / `admin123`
