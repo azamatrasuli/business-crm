@@ -20,7 +20,8 @@ export interface User {
 
 interface AuthState {
   user: User | null
-  isLoading: boolean
+  isLoading: boolean      // For login/logout operations (button loading)
+  isInitializing: boolean // For initial auth check (full-screen loading)
   isAuthenticated: boolean
   companyId: string | null
   projectId: string | null
@@ -56,7 +57,8 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
-      isLoading: true,
+      isLoading: false,
+      isInitializing: true,
       isAuthenticated: false,
       companyId: null,
       projectId: null,
@@ -89,29 +91,29 @@ export const useAuthStore = create<AuthState>()(
                 
                 // Check if token is expired
                 if (expiresAt && parseInt(expiresAt) < Date.now()) {
-                  // Token expired, clear everything
-                  localStorage.removeItem('token')
-                  localStorage.removeItem('user')
-                  localStorage.removeItem('tokenExpiresAt')
-                  localStorage.removeItem('refreshToken')
-                  localStorage.removeItem('originalToken')
-                  localStorage.removeItem('originalUser')
-                  
-                  set({ 
-                    user: null, 
-                    isAuthenticated: false, 
-                    isLoading: false,
-                    companyId: null,
-                    projectId: null,
-                    projectName: null,
-                    isHeadquarters: false,
-                    isImpersonating: false,
-                    impersonatedBy: null,
-                    originalToken: null,
-                    originalUser: null,
-                  })
-                  return
-                }
+                // Token expired, clear everything
+                localStorage.removeItem('token')
+                localStorage.removeItem('user')
+                localStorage.removeItem('tokenExpiresAt')
+                localStorage.removeItem('refreshToken')
+                localStorage.removeItem('originalToken')
+                localStorage.removeItem('originalUser')
+                
+                set({ 
+                  user: null, 
+                  isAuthenticated: false, 
+                  isInitializing: false,
+                  companyId: null,
+                  projectId: null,
+                  projectName: null,
+                  isHeadquarters: false,
+                  isImpersonating: false,
+                  impersonatedBy: null,
+                  originalToken: null,
+                  originalUser: null,
+                })
+                return
+              }
                 
                 // Check if we're in impersonation mode
                 const isImpersonating = !!originalTokenStr
@@ -131,7 +133,7 @@ export const useAuthStore = create<AuthState>()(
                 set({
                   user,
                   isAuthenticated: true,
-                  isLoading: false,
+                  isInitializing: false,
                   companyId: user.companyId,
                   projectId: user.projectId || null,
                   projectName: user.projectName || null,
@@ -152,7 +154,7 @@ export const useAuthStore = create<AuthState>()(
                 set({ 
                   user: null, 
                   isAuthenticated: false, 
-                  isLoading: false,
+                  isInitializing: false,
                   companyId: null,
                   projectId: null,
                   projectName: null,
@@ -167,7 +169,7 @@ export const useAuthStore = create<AuthState>()(
               set({ 
                 user: null, 
                 isAuthenticated: false, 
-                isLoading: false,
+                isInitializing: false,
                 companyId: null,
                 projectId: null,
                 projectName: null,
@@ -184,7 +186,7 @@ export const useAuthStore = create<AuthState>()(
           set({ 
             user: null, 
             isAuthenticated: false, 
-            isLoading: false,
+            isInitializing: false,
             companyId: null,
             projectId: null,
             projectName: null,
@@ -556,6 +558,7 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({
         user: state.user,
         isAuthenticated: state.isAuthenticated,
+        // Don't persist loading states - always start fresh
         companyId: state.companyId,
         projectId: state.projectId,
         projectName: state.projectName,

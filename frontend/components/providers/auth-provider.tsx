@@ -9,8 +9,7 @@ interface AuthProviderProps {
 }
 
 function AuthProviderContent({ children }: AuthProviderProps) {
-  const [isReady, setIsReady] = useState(false)
-  const { initialize, isLoading, logout } = useAuthStore()
+  const { initialize, isInitializing, logout } = useAuthStore()
   const searchParams = useSearchParams()
   const router = useRouter()
 
@@ -25,14 +24,14 @@ function AuthProviderContent({ children }: AuthProviderProps) {
       
       // Initialize auth state on mount
       await initialize()
-      setIsReady(true)
     }
     
     handleInit()
   }, [initialize, logout, searchParams, router])
 
-  // Show loading state while initializing
-  if (!isReady || isLoading) {
+  // Show loading state ONLY while initializing auth (checking stored token)
+  // Don't show during login attempts - let the login page handle its own loading
+  if (isInitializing) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <div className="flex flex-col items-center gap-4">
