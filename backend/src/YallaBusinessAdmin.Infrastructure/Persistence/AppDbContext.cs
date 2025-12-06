@@ -503,6 +503,8 @@ public class AppDbContext : DbContext
             entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id");
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+            entity.Property(e => e.PausedAt).HasColumnName("paused_at");
+            entity.Property(e => e.PausedDaysCount).HasColumnName("paused_days_count");
 
             entity.HasOne(e => e.Project)
                 .WithMany()
