@@ -7,6 +7,9 @@ using YallaBusinessAdmin.Application.Auth.Dtos;
 
 namespace YallaBusinessAdmin.Api.Controllers;
 
+/// <summary>
+/// Authentication controller - all exceptions are handled by global exception handler
+/// </summary>
 [ApiController]
 [Route("api/auth")]
 public class AuthController : ControllerBase
@@ -25,17 +28,10 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginRequest request, CancellationToken cancellationToken)
     {
-        try
-        {
-            var ipAddress = GetClientIpAddress();
-            var userAgent = GetUserAgent();
-            var result = await _authService.LoginAsync(request, ipAddress, userAgent, cancellationToken);
-            return Ok(result);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            return Unauthorized(new { message = ex.Message });
-        }
+        var ipAddress = GetClientIpAddress();
+        var userAgent = GetUserAgent();
+        var result = await _authService.LoginAsync(request, ipAddress, userAgent, cancellationToken);
+        return Ok(result);
     }
 
     /// <summary>
@@ -45,16 +41,9 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     public async Task<ActionResult<LoginResponse>> RefreshToken([FromBody] RefreshTokenRequest request, CancellationToken cancellationToken)
     {
-        try
-        {
-            var ipAddress = GetClientIpAddress();
-            var result = await _authService.RefreshTokenAsync(request, ipAddress, cancellationToken);
-            return Ok(result);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            return Unauthorized(new { message = ex.Message });
-        }
+        var ipAddress = GetClientIpAddress();
+        var result = await _authService.RefreshTokenAsync(request, ipAddress, cancellationToken);
+        return Ok(result);
     }
 
     /// <summary>
@@ -67,11 +56,11 @@ public class AuthController : ControllerBase
         var userId = GetUserId();
         if (userId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
         await _authService.LogoutAsync(userId.Value, request?.RefreshToken, cancellationToken);
-        return Ok(new { message = "Logged out" });
+        return Ok(new { success = true, message = "Выход выполнен успешно" });
     }
 
     /// <summary>
@@ -92,15 +81,8 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     public async Task<ActionResult> ResetPassword([FromBody] ResetPasswordRequest request, CancellationToken cancellationToken)
     {
-        try
-        {
-            var result = await _authService.ResetPasswordAsync(request, cancellationToken);
-            return Ok(result);
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        var result = await _authService.ResetPasswordAsync(request, cancellationToken);
+        return Ok(result);
     }
 
     /// <summary>
@@ -113,23 +95,12 @@ public class AuthController : ControllerBase
         var userId = GetUserId();
         if (userId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
-        try
-        {
-            var ipAddress = GetClientIpAddress();
-            var result = await _authService.ChangePasswordAsync(userId.Value, request, ipAddress, cancellationToken);
-            return Ok(result);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            return Unauthorized(new { message = ex.Message });
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
+        var ipAddress = GetClientIpAddress();
+        var result = await _authService.ChangePasswordAsync(userId.Value, request, ipAddress, cancellationToken);
+        return Ok(result);
     }
 
     /// <summary>
@@ -142,18 +113,11 @@ public class AuthController : ControllerBase
         var userId = GetUserId();
         if (userId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
-        try
-        {
-            var result = await _authService.GetCurrentUserAsync(userId.Value, cancellationToken);
-            return Ok(result);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
+        var result = await _authService.GetCurrentUserAsync(userId.Value, cancellationToken);
+        return Ok(result);
     }
 
     /// <summary>
@@ -176,22 +140,11 @@ public class AuthController : ControllerBase
         var userId = GetUserId();
         if (userId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
-        try
-        {
-            var result = await _authService.UpdateProfileAsync(userId.Value, request, cancellationToken);
-            return Ok(result);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        var result = await _authService.UpdateProfileAsync(userId.Value, request, cancellationToken);
+        return Ok(result);
     }
 
     /// <summary>
@@ -204,24 +157,13 @@ public class AuthController : ControllerBase
         var currentUserId = GetUserId();
         if (currentUserId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
-        try
-        {
-            var ipAddress = GetClientIpAddress();
-            var userAgent = GetUserAgent();
-            var result = await _authService.ImpersonateAsync(userId, currentUserId.Value, ipAddress, userAgent, cancellationToken);
-            return Ok(result);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        var ipAddress = GetClientIpAddress();
+        var userAgent = GetUserAgent();
+        var result = await _authService.ImpersonateAsync(userId, currentUserId.Value, ipAddress, userAgent, cancellationToken);
+        return Ok(result);
     }
 
     /// <summary>
@@ -234,20 +176,20 @@ public class AuthController : ControllerBase
         var impersonatorId = GetImpersonatorId();
         if (impersonatorId == null)
         {
-            return BadRequest(new { message = "Not in impersonation mode" });
+            return BadRequest(new { success = false, error = new { code = "AUTH_NOT_IMPERSONATING", message = "Вы не находитесь в режиме имперсонации", type = "Validation" } });
         }
 
         var impersonatedUserId = GetUserId();
         if (impersonatedUserId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
         var ipAddress = GetClientIpAddress();
         var userAgent = GetUserAgent();
         await _authService.StopImpersonatingAsync(impersonatorId.Value, impersonatedUserId.Value, ipAddress, userAgent, cancellationToken);
         
-        return Ok(new { message = "Impersonation ended" });
+        return Ok(new { success = true, message = "Режим имперсонации завершён" });
     }
 
     private Guid? GetUserId()
@@ -272,7 +214,6 @@ public class AuthController : ControllerBase
 
     private string? GetClientIpAddress()
     {
-        // Check for forwarded IP (behind proxy/load balancer)
         var forwardedFor = HttpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault();
         if (!string.IsNullOrEmpty(forwardedFor))
         {
