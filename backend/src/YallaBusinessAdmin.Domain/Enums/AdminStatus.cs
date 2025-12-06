@@ -24,12 +24,13 @@ public static class AdminStatusExtensions
         _ => throw new ArgumentOutOfRangeException(nameof(status))
     };
 
-    public static AdminStatus FromRussian(string value) => value switch
+    public static AdminStatus FromRussian(string? value) => value switch
     {
-        "Активный" => AdminStatus.Active,
-        "Не активный" => AdminStatus.Inactive,
-        "Заблокирован" => AdminStatus.Blocked,
-        _ => throw new ArgumentOutOfRangeException(nameof(value))
+        "Активный" or "Active" or "active" => AdminStatus.Active,
+        "Не активный" or "Inactive" or "inactive" => AdminStatus.Inactive,
+        "Заблокирован" or "Blocked" or "blocked" => AdminStatus.Blocked,
+        null or "" => AdminStatus.Inactive, // Default for empty values
+        _ => AdminStatus.Inactive // Default for unknown values
     };
 }
 
