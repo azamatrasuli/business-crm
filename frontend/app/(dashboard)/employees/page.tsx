@@ -210,7 +210,7 @@ export default function EmployeesPage() {
       const appError = parseError(error)
       logger.error('Failed to toggle employee status', error instanceof Error ? error : new Error(appError.message), {
         errorCode: appError.code,
-        employeeId: id,
+        employeeId: employee.id,
       })
       toast.error(appError.message, { description: appError.action })
     }
