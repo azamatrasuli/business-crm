@@ -319,10 +319,13 @@ public class UsersService : IUsersService
 
     public async Task<IEnumerable<AdminListItem>> GetAllAdminsAsync(string? search = null, CancellationToken cancellationToken = default)
     {
+        // Только администраторы проектов (не менеджеры, не SUPER_ADMIN)
+        var adminRoles = new[] { "admin", "Admin", "ADMIN", "Администратор" };
+        
         var query = _context.AdminUsers
             .Include(u => u.Company)
             .Include(u => u.Project)
-            .Where(u => u.Role == "admin" || u.Role == "ADMIN" || u.Role == "manager");
+            .Where(u => adminRoles.Contains(u.Role) && u.Role != "SUPER_ADMIN");
 
         // Apply search filter
         if (!string.IsNullOrWhiteSpace(search))
