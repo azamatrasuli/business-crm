@@ -434,36 +434,36 @@ export default function EmployeesPage() {
               </Tooltip>
             </TooltipProvider>
             {isFeatureEnabled('compensation') && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(event) => handleManageCompensation(event, employee)}
-                        aria-label="Управлять компенсацией"
-                        disabled={!employee.isActive || employee.inviteStatus !== 'Принято' || Boolean(employee.activeLunchSubscriptionId) || employee.serviceType === 'LUNCH'}
-                        className="text-emerald-600 hover:text-emerald-700"
-                      >
-                        <Wallet className="h-4 w-4" />
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {!employee.isActive 
-                      ? 'Сотрудник деактивирован' 
-                      : employee.inviteStatus !== 'Принято' 
-                        ? 'Сотрудник ещё не принял приглашение' 
-                        : employee.activeLunchSubscriptionId || employee.serviceType === 'LUNCH'
-                          ? 'Сотрудник на обедах'
-                          : employee.serviceType === 'COMPENSATION'
-                            ? 'Редактировать компенсацию'
-                            : 'Назначить компенсацию'
-                    }
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(event) => handleManageCompensation(event, employee)}
+                      aria-label="Управлять компенсацией"
+                      disabled={!employee.isActive || employee.inviteStatus !== 'Принято' || Boolean(employee.activeLunchSubscriptionId) || employee.serviceType === 'LUNCH'}
+                      className="text-emerald-600 hover:text-emerald-700"
+                    >
+                      <Wallet className="h-4 w-4" />
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {!employee.isActive 
+                    ? 'Сотрудник деактивирован' 
+                    : employee.inviteStatus !== 'Принято' 
+                      ? 'Сотрудник ещё не принял приглашение' 
+                      : employee.activeLunchSubscriptionId || employee.serviceType === 'LUNCH'
+                        ? 'Сотрудник на обедах'
+                        : employee.serviceType === 'COMPENSATION'
+                          ? 'Редактировать компенсацию'
+                          : 'Назначить компенсацию'
+                  }
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             )}
             <TooltipProvider>
               <Tooltip>

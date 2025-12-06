@@ -1,5 +1,3 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using YallaBusinessAdmin.Application.Projects;
@@ -10,7 +8,7 @@ namespace YallaBusinessAdmin.Api.Controllers;
 [ApiController]
 [Route("api/projects")]
 [Authorize]
-public class ProjectsController : ControllerBase
+public class ProjectsController : BaseApiController
 {
     private readonly IProjectsService _projectsService;
 
@@ -201,26 +199,8 @@ public class ProjectsController : ControllerBase
         return Ok(types);
     }
 
-    private Guid? GetCompanyId()
-    {
-        var companyIdClaim = User.FindFirst("company_id") ?? User.FindFirst("companyId");
-        if (companyIdClaim != null && Guid.TryParse(companyIdClaim.Value, out var companyId))
-        {
-            return companyId;
-        }
-        return null;
-    }
-
-    private Guid? GetUserId()
-    {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst(JwtRegisteredClaimNames.Sub);
-        if (userIdClaim != null && Guid.TryParse(userIdClaim.Value, out var userId))
-        {
-            return userId;
-        }
-        return null;
-    }
 }
+
 
 
 

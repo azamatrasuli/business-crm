@@ -1225,14 +1225,14 @@ function HomePageContent() {
             Управлять обедами
           </Button>
           <FeatureVisible feature="compensation">
-            <Button 
-              variant="outline" 
-              onClick={() => setBulkCompensationOpen(true)} 
-              className="flex-1 sm:flex-initial gap-2 text-emerald-600 hover:text-emerald-700"
-            >
-              <Wallet className="h-4 w-4" />
-              Управлять компенсациями
-            </Button>
+          <Button 
+            variant="outline" 
+            onClick={() => setBulkCompensationOpen(true)} 
+            className="flex-1 sm:flex-initial gap-2 text-emerald-600 hover:text-emerald-700"
+          >
+            <Wallet className="h-4 w-4" />
+            Управлять компенсациями
+          </Button>
           </FeatureVisible>
           <TooltipProvider>
             <Tooltip>
@@ -1738,16 +1738,16 @@ function HomePageContent() {
         }}
       />
       {isFeatureEnabled('compensation') && (
-        <ManageCompensationDialog
-          open={bulkCompensationOpen}
-          onOpenChange={setBulkCompensationOpen}
-          mode="bulk"
-          employees={employees}
-          onSuccess={() => {
-            fetchOrders(1)
-            fetchDashboard()
-          }}
-        />
+      <ManageCompensationDialog
+        open={bulkCompensationOpen}
+        onOpenChange={setBulkCompensationOpen}
+        mode="bulk"
+        employees={employees}
+        onSuccess={() => {
+          fetchOrders(1)
+          fetchDashboard()
+        }}
+      />
       )}
 
       <AlertDialog open={singleActionDialog !== null} onOpenChange={(open) => !open && setSingleActionDialog(null)}>
@@ -1830,15 +1830,15 @@ function HomePageContent() {
 
       {/* Dialog: Быстрое редактирование компенсации из таблицы */}
       {isFeatureEnabled('compensation') && (
-        <EditCompensationDialog
-          open={Boolean(compensationDialogOrder)}
-          onOpenChange={(open) => !open && setCompensationDialogOrder(null)}
-          order={compensationDialogOrder}
-          onSuccess={() => {
-            fetchOrders(1)
-            fetchDashboard()
-          }}
-        />
+      <EditCompensationDialog
+        open={Boolean(compensationDialogOrder)}
+        onOpenChange={(open) => !open && setCompensationDialogOrder(null)}
+        order={compensationDialogOrder}
+        onSuccess={() => {
+          fetchOrders(1)
+          fetchDashboard()
+        }}
+      />
       )}
     </div>
   )

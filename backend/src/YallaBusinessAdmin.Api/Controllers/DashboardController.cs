@@ -9,7 +9,7 @@ namespace YallaBusinessAdmin.Api.Controllers;
 [ApiController]
 [Route("api/home")]
 [Authorize]
-public class DashboardController : ControllerBase
+public class DashboardController : BaseApiController
 {
     private readonly IDashboardService _dashboardService;
     private readonly IExportService _exportService;
@@ -254,23 +254,4 @@ public class DashboardController : ControllerBase
         return File(csvBytes, "text/csv; charset=utf-8", fileName);
     }
 
-    private Guid? GetCompanyId()
-    {
-        var companyIdClaim = User.FindFirst("company_id") ?? User.FindFirst("companyId");
-        if (companyIdClaim != null && Guid.TryParse(companyIdClaim.Value, out var companyId))
-        {
-            return companyId;
-        }
-        return null;
-    }
-
-    private Guid? GetProjectId()
-    {
-        var projectIdClaim = User.FindFirst("project_id") ?? User.FindFirst("projectId");
-        if (projectIdClaim != null && Guid.TryParse(projectIdClaim.Value, out var projectId))
-        {
-            return projectId;
-        }
-        return null;
-    }
 }

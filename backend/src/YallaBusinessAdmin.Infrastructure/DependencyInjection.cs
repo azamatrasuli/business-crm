@@ -12,6 +12,7 @@ using YallaBusinessAdmin.Application.Export;
 using YallaBusinessAdmin.Application.Invoices;
 using YallaBusinessAdmin.Application.MealSubscriptions;
 using YallaBusinessAdmin.Application.News;
+using YallaBusinessAdmin.Application.Companies;
 using YallaBusinessAdmin.Application.Projects;
 using YallaBusinessAdmin.Application.Subscriptions;
 using YallaBusinessAdmin.Application.Transactions;
@@ -62,6 +63,7 @@ public static class DependencyInjection
         services.AddScoped<IDashboardService, DashboardService>();
 
         // New Services
+        services.AddScoped<ICompaniesService, CompaniesService>();
         services.AddScoped<IProjectsService, ProjectsService>();
         services.AddScoped<IMealSubscriptionsService, MealSubscriptionsService>();
         services.AddScoped<ISubscriptionsService, SubscriptionsService>();

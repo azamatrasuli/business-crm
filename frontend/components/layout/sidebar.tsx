@@ -54,14 +54,14 @@ function NavButton({
       )}
     >
       {featureEnabled ? (
-        <Link
-          href={item.href}
-          aria-label={item.label}
-          className={cn('flex w-full items-center gap-3', isCollapsed && 'justify-center gap-0')}
-        >
-          <item.icon className="h-5 w-5 shrink-0" />
-          {!isCollapsed && <span className="truncate">{item.label}</span>}
-        </Link>
+      <Link
+        href={item.href}
+        aria-label={item.label}
+        className={cn('flex w-full items-center gap-3', isCollapsed && 'justify-center gap-0')}
+      >
+        <item.icon className="h-5 w-5 shrink-0" />
+        {!isCollapsed && <span className="truncate">{item.label}</span>}
+      </Link>
       ) : (
         <div className={cn('flex w-full items-center gap-3', isCollapsed && 'justify-center gap-0')}>
           <item.icon className="h-5 w-5 shrink-0 opacity-50" />

@@ -276,22 +276,22 @@ export function ManageLunchDialog({
   // Проверяем совместимость рабочих дней сотрудника с выбранным графиком
   const scheduleTypeFilteredEmployees = useMemo(() => {
     return availableEmployees.filter(e => {
-      const empWorkDays = (e.workingDays || [1, 2, 3, 4, 5]) as number[];
+      const empWorkDays = e.workingDays || [1, 2, 3, 4, 5];
       
       if (scheduleType === "EVERY_DAY") {
         // Рабочие дни должны включать все будни (Пн-Пт)
-        return [1, 2, 3, 4, 5].every(d => empWorkDays.includes(d));
+        return ([1, 2, 3, 4, 5] as DayOfWeek[]).every(d => (empWorkDays as DayOfWeek[]).includes(d));
       }
       
       if (scheduleType === "EVERY_OTHER_DAY") {
         // Рабочие дни должны включать Пн, Ср, Пт
-        return [1, 3, 5].every(d => empWorkDays.includes(d));
+        return ([1, 3, 5] as DayOfWeek[]).every(d => (empWorkDays as DayOfWeek[]).includes(d));
       }
       
       if (scheduleType === "CUSTOM" && customDates.length > 0) {
         // Проверить что рабочие дни пересекаются с выбранными датами
-        const selectedDays = customDates.map(d => d.getDay());
-        return selectedDays.some(d => empWorkDays.includes(d));
+        const selectedDays = customDates.map(d => d.getDay() as DayOfWeek);
+        return selectedDays.some(d => (empWorkDays as DayOfWeek[]).includes(d));
       }
       
       return true;
@@ -317,19 +317,19 @@ export function ManageLunchDialog({
   const scheduleTypeCounts = useMemo(() => {
     // Считаем сколько сотрудников подходят под каждый тип графика
     const everyDayCount = availableEmployees.filter(e => {
-      const empWorkDays = (e.workingDays || [1, 2, 3, 4, 5]) as number[];
-      return [1, 2, 3, 4, 5].every(d => empWorkDays.includes(d));
+      const empWorkDays = (e.workingDays || [1, 2, 3, 4, 5]) as DayOfWeek[];
+      return ([1, 2, 3, 4, 5] as DayOfWeek[]).every(d => empWorkDays.includes(d));
     }).length;
     
     const everyOtherDayCount = availableEmployees.filter(e => {
-      const empWorkDays = (e.workingDays || [1, 2, 3, 4, 5]) as number[];
-      return [1, 3, 5].every(d => empWorkDays.includes(d));
+      const empWorkDays = (e.workingDays || [1, 2, 3, 4, 5]) as DayOfWeek[];
+      return ([1, 3, 5] as DayOfWeek[]).every(d => empWorkDays.includes(d));
     }).length;
     
     const customCount = customDates.length > 0 
       ? availableEmployees.filter(e => {
-          const empWorkDays = (e.workingDays || [1, 2, 3, 4, 5]) as number[];
-          const selectedDays = customDates.map(d => d.getDay());
+          const empWorkDays = (e.workingDays || [1, 2, 3, 4, 5]) as DayOfWeek[];
+          const selectedDays = customDates.map(d => d.getDay() as DayOfWeek);
           return selectedDays.some(d => empWorkDays.includes(d));
         }).length
       : availableEmployees.length;

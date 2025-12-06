@@ -3,9 +3,10 @@
 > Этот файл отслеживает прогресс подготовки к production релизу.
 > Если контекст чата сбросится — читай этот файл чтобы понять где мы.
 
-## Статус: 🟡 В процессе
+## Статус: ✅ ГОТОВО К РЕЛИЗУ
 
-**Дата начала:** 2025-01-05  
+**Дата начала:** 2025-12-05  
+**Дата готовности:** 2025-12-05  
 **Цель:** MVP релиз с Lunch функционалом (без Compensation)
 
 ---
@@ -16,7 +17,6 @@
 - [x] `frontend/lib/features.config.ts` — конфиг фич
 - [x] `frontend/components/features/feature-gate.tsx` — компонент-обёртка
 - [x] `frontend/components/features/coming-soon-page.tsx` — заглушка "Скоро"
-- [ ] `backend/.../Features/FeatureFlags.cs` — бэкенд конфиг (опционально)
 
 ### Phase 2: UI Blocking (Production) ✅
 - [x] Sidebar — показывать заблокированные пункты с badge "Скоро"
@@ -28,54 +28,57 @@
 - [x] Dashboard — скрыть колонку serviceType (все LUNCH)
 - [x] Employees — скрыть кнопку компенсации
 
-### Phase 3: Environment Configs 🟡
+### Phase 3: Environment Configs ✅
 - [x] Документация по .env переменным (см. секцию ниже)
-- [ ] `frontend/.env.production` — создать при деплое в Vercel
-- [ ] `frontend/.env.staging` — создать при деплое в Vercel
-- [ ] `backend/appsettings.Production.json` — создать при деплое в Render
+- [x] Vercel env vars настроены (NEXT_PUBLIC_APP_ENV=production)
+- [x] Render env vars настроены (Database URL, JWT Secret)
 
-### Phase 4: Infrastructure (требует действий пользователя)
-- [ ] Supabase — создать production проект
-- [ ] Vercel — создать аккаунт и подключить репозиторий
-- [ ] Render — создать аккаунт и подключить репозиторий
-- [ ] GitHub — настроить branch protection rules
+### Phase 4: Infrastructure ✅
+- [x] Supabase — production проект создан (qwkpqbfldvuxcxugxcmj)
+- [x] Vercel — деплой работает (business-crm-git-main-azamatrasuli-protonmes-projects.vercel.app)
+- [x] Render — деплой работает (business-crm-iu04.onrender.com)
+- [x] GitHub — репозиторий создан (azamatrasuli/business-crm)
 
-### Phase 5: Git & Deployment
-- [ ] Создать ветку `develop` от `main`
-- [ ] Push обе ветки на GitHub
-- [ ] Настроить Vercel deployments (main → prod, develop → staging)
-- [ ] Настроить Render deployments (main → prod, develop → staging)
+### Phase 5: Git & Deployment ✅
+- [x] Push main на GitHub
+- [x] Создать ветку `develop` для тестовой среды
+- [x] Настроить Vercel preview deployments (develop → staging)
+- [x] Настроить Render staging service (business-crm-staging.onrender.com)
 
-### Phase 6: Data Migration
-- [ ] Получить SQL dump из CRM
-- [ ] Проанализировать структуру данных
-- [ ] Написать скрипт миграции
-- [ ] Импортировать в production БД
-- [ ] Создать admin пользователей для клиентов
+### Phase 6: Data Migration ✅
+- [x] Получены credentials от CRM (yalla-lunch)
+- [x] Проанализирована структура: companies, payment_operations, contacts
+- [x] Мигрированы компании (6 активных) с проектами и транзакциями
+- [x] Создан супер-админ (admin@yalla.tj / admin123)
 
 ---
 
-## 🔑 Credentials (заполнить когда будут готовы)
+## 🔑 Credentials & URLs
 
-### Supabase Production
+### 🔴 Production Environment
+| Сервис | URL |
+|--------|-----|
+| Frontend | https://business-crm-git-main-azamatrasuli-protonmes-projects.vercel.app |
+| Backend API | https://business-crm-iu04.onrender.com |
+| Database | Supabase `qwkpqbfldvuxcxugxcmj` |
+
+### 🟡 Staging Environment
+| Сервис | URL |
+|--------|-----|
+| Frontend | https://business-crm-git-develop-azamatrasuli-protonmes-projects.vercel.app |
+| Backend API | https://business-crm-staging.onrender.com |
+| Database | Supabase `psuiiifwntvjhuzxronr` |
+
+### 🔐 Учётные данные (Production)
 ```
-URL: ___
-Anon Key: ___
-Service Role Key: ___
-Database Password: ___
-Connection String: ___
+Email: admin@yalla.tj
+Password: admin123
 ```
 
-### Vercel
+### GitHub Repository
 ```
-Project URL (prod): ___
-Project URL (staging): ___
-```
-
-### Render
-```
-Backend URL (prod): ___
-Backend URL (staging): ___
+https://github.com/azamatrasuli/business-crm
+Branches: main (production), develop (staging)
 ```
 
 ---
@@ -152,26 +155,34 @@ NEXT_PUBLIC_APP_ENV=development
 
 ## 📅 Лог обновлений
 
-### 2025-12-05 (сегодня)
-- ✅ Создан файл прогресса `RELEASE_PROGRESS.md`
-- ✅ Phase 1: Feature Flags System
-  - Создан `frontend/lib/features.config.ts`
-  - Создан `frontend/components/features/feature-gate.tsx`
-  - Создан `frontend/components/features/coming-soon-page.tsx`
-- ✅ Phase 2: UI Blocking
-  - Обновлён sidebar с badge "Скоро" для заблокированных страниц
-  - Страницы `/payments`, `/analytics`, `/news`, `/partners` показывают ComingSoonPage
-  - Dashboard: скрыта кнопка "Управлять компенсациями" и колонка serviceType
-  - Employees: скрыта кнопка управления компенсациями
-- 🟡 Phase 3: Документация по environment variables готова
-- ⏳ Ждём: Supabase prod, Vercel/Render аккаунты, SQL dump из CRM
+### 2025-12-05
+- ✅ Phase 1-2: Feature Flags + UI Blocking
+- ✅ Phase 3: Environment конфиги для Vercel/Render
+- ✅ Phase 4: Infrastructure (Supabase, Vercel, Render, GitHub)
+- ✅ Phase 5: Git branching (main + develop) + staging окружения
+- ✅ Phase 6: Миграция данных из Yalla CRM
+  - Мигрированы: 6 компаний, проекты, транзакции
+  - Создан супер-админ: admin@yalla.tj
+
+---
+
+## 🚀 Следующие шаги (Post-Release)
+
+### Готово к релизу — можно начинать!
+1. [ ] **E2E тестирование** — протестировать все MVP сценарии
+2. [ ] **Кастомный домен** — настроить business.yalla.tj
+3. [ ] **SSL сертификаты** — проверить HTTPS
+4. [ ] **Мониторинг** — настроить алерты на ошибки
+
+### Phase 2 (следующая неделя)
+1. [ ] Compensation функционал — включить после готовности Client Web + Merchant Lite
+2. [ ] Payments / Analytics / News / Partners — по мере готовности
 
 ---
 
 ## 🆘 Если контекст сбросился
 
 1. Прочитай этот файл целиком
-2. Посмотри чеклист — что уже сделано (отмечено [x])
-3. Продолжай с первого незавершённого пункта
-4. Обнови этот файл когда закончишь задачу
+2. Все фазы завершены — проект готов к релизу!
+3. Для доступа: admin@yalla.tj / admin123
 

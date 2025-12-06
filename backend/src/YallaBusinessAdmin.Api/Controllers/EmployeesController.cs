@@ -1,5 +1,3 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using YallaBusinessAdmin.Application.Employees;
@@ -11,7 +9,7 @@ namespace YallaBusinessAdmin.Api.Controllers;
 [ApiController]
 [Route("api/employees")]
 [Authorize]
-public class EmployeesController : ControllerBase
+public class EmployeesController : BaseApiController
 {
     private readonly IEmployeesService _employeesService;
     private readonly IExportService _exportService;
@@ -277,25 +275,5 @@ public class EmployeesController : ControllerBase
         var fileName = $"employees_{DateTime.UtcNow:yyyy-MM-dd}.csv";
         
         return File(csvBytes, "text/csv; charset=utf-8", fileName);
-    }
-
-    private Guid? GetCompanyId()
-    {
-        var companyIdClaim = User.FindFirst("company_id") ?? User.FindFirst("companyId");
-        if (companyIdClaim != null && Guid.TryParse(companyIdClaim.Value, out var companyId))
-        {
-            return companyId;
-        }
-        return null;
-    }
-
-    private Guid? GetUserId()
-    {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst(JwtRegisteredClaimNames.Sub);
-        if (userIdClaim != null && Guid.TryParse(userIdClaim.Value, out var userId))
-        {
-            return userId;
-        }
-        return null;
     }
 }
