@@ -9,24 +9,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Phone, Lock, Loader2 } from 'lucide-react'
+import { Phone, Lock, Loader2, AlertCircle, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
-
-type ApiError = {
-  response?: {
-    data?: {
-      message?: string
-    }
-  }
-}
-
-const getErrorMessage = (error: unknown, fallback: string) => {
-  if (typeof error === 'object' && error !== null) {
-    const apiError = error as ApiError
-    return apiError.response?.data?.message ?? fallback
-  }
-  return fallback
-}
+import { parseError, ErrorCodes, isRetryableError } from '@/lib/errors'
+import { logger } from '@/lib/logger'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -34,19 +20,28 @@ export default function LoginPage() {
   const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [errorAction, setErrorAction] = useState('')
+  const [canRetry, setCanRetry] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setErrorAction('')
+    setCanRetry(false)
 
     if (!phone || !password) {
       setError('Заполните все поля')
       return
     }
 
+    logger.action('LoginAttempt', { phone: phone.substring(0, 6) + '...' })
+
     try {
       const loggedInUser = await login(phone, password)
+      
+      logger.info('Login successful', { userId: loggedInUser.id })
       toast.success('Успешный вход!')
+      
       if (loggedInUser.status === 'Не активный') {
         toast.info('Пожалуйста, смените временный пароль')
         router.push('/profile')
@@ -55,10 +50,34 @@ export default function LoginPage() {
         router.refresh()
       }
     } catch (err: unknown) {
-      const message = getErrorMessage(err, 'Ошибка входа')
-      setError(message)
-      toast.error(message)
+      const appError = parseError(err)
+      
+      logger.error('Login failed', err instanceof Error ? err : new Error(appError.message), {
+        errorCode: appError.code,
+        phone: phone.substring(0, 6) + '...',
+      })
+
+      setError(appError.message)
+      setErrorAction(appError.action ?? '')
+      setCanRetry(isRetryableError(appError))
+
+      // Show toast with appropriate styling based on error type
+      if (appError.code === ErrorCodes.AUTH_USER_BLOCKED) {
+        toast.error(appError.message, {
+          description: appError.action,
+          duration: 10000,
+        })
+      } else if (appError.isNetworkError) {
+        toast.error('Ошибка сети', {
+          description: 'Проверьте подключение к интернету',
+        })
+      }
     }
+  }
+
+  const handleRetry = () => {
+    setCanRetry(false)
+    handleSubmit(new Event('submit') as unknown as React.FormEvent)
   }
 
   return (
@@ -76,8 +95,26 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
+              <Alert variant="destructive" className="animate-in fade-in-50">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="ml-2">
+                  <div className="font-medium">{error}</div>
+                  {errorAction && (
+                    <div className="text-sm opacity-90 mt-1">{errorAction}</div>
+                  )}
+                  {canRetry && (
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      size="sm" 
+                      className="mt-2"
+                      onClick={handleRetry}
+                    >
+                      <RefreshCw className="h-3 w-3 mr-1" />
+                      Повторить
+                    </Button>
+                  )}
+                </AlertDescription>
               </Alert>
             )}
 
@@ -94,6 +131,7 @@ export default function LoginPage() {
                   className="pl-10"
                   disabled={isLoading}
                   required
+                  aria-invalid={!!error}
                 />
               </div>
             </div>
@@ -111,6 +149,7 @@ export default function LoginPage() {
                   className="pl-10"
                   disabled={isLoading}
                   required
+                  aria-invalid={!!error}
                 />
               </div>
               <div className="text-right">
@@ -140,4 +179,3 @@ export default function LoginPage() {
     </div>
   )
 }
-

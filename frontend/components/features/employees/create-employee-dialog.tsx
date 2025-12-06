@@ -6,7 +6,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { useEmployeesStore } from '@/stores/employees-store'
 import { useAuthStore } from '@/stores/auth-store'
-import { isAxiosError } from 'axios'
+import { parseError, ErrorCodes } from '@/lib/errors'
+import { logger } from '@/lib/logger'
 import {
   Dialog,
   DialogBody,
@@ -156,12 +157,29 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
       form.reset()
       onOpenChange(false)
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Ошибка при создании сотрудника')
-      if (isAxiosError(error) && error.response?.status === 409 && message) {
-        form.setError('phone', { message })
+      const appError = parseError(error)
+      
+      logger.error('Failed to create employee', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      })
+      
+      // Map specific errors to form fields
+      switch (appError.code) {
+        case ErrorCodes.EMP_PHONE_EXISTS:
+        case ErrorCodes.EMP_PHONE_DELETED:
+        case ErrorCodes.EMP_INVALID_PHONE_FORMAT:
+          form.setError('phone', { message: appError.message })
+          break
+        case ErrorCodes.PROJ_NOT_FOUND:
+          toast.error('Проект не найден', {
+            description: 'Пожалуйста, перезайдите в систему',
+          })
+          break
+        default:
+          // Show toast for other errors
+          toast.error(appError.message, {
+            description: appError.action,
+          })
       }
     } finally {
       setLoading(false)
