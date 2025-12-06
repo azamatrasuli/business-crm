@@ -37,7 +37,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
-import { parseError, ErrorCodes } from '@/lib/errors'
+import { parseError } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import { isFeatureEnabled } from '@/lib/features.config'
 import { CreateEmployeeDialog } from '@/components/features/employees/create-employee-dialog'
@@ -49,30 +49,53 @@ import { DataTable } from '@/components/ui/data-table'
 import type { ColumnDef } from '@tanstack/react-table'
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer } from 'recharts'
 
-// Вспомогательные функции для отображения (информация о заказах доступна в профиле)
+// Вспомогательные функции для отображения
 
-const getInviteStatusColor = (status: string) => {
+// Дни недели для графика работы
+const DAYS_SHORT = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
+
+// Форматирование графика работы
+const formatWorkSchedule = (employee: Employee) => {
+  const shift = employee.shiftType === 'DAY' ? '☀️' : employee.shiftType === 'NIGHT' ? '🌙' : ''
+  const time = employee.workStartTime && employee.workEndTime 
+    ? `${employee.workStartTime}–${employee.workEndTime}` 
+    : ''
+  return { shift, time }
+}
+
+// Форматирование рабочих дней
+const formatWorkingDays = (workingDays?: number[]) => {
+  if (!workingDays || workingDays.length === 0) return '—'
+  if (workingDays.length === 7) return 'Ежедневно'
+  if (workingDays.length === 5 && !workingDays.includes(0) && !workingDays.includes(6)) {
+    return 'Пн-Пт'
+  }
+  return workingDays.map(d => DAYS_SHORT[d]).join(', ')
+}
+
+// Цвет статуса услуги
+const getServiceStatusColor = (status?: string) => {
   switch (status) {
-    case 'Принято':
+    case 'Активна':
+    case 'Активен':
       return 'default'
-    case 'Ожидает':
+    case 'Приостановлена':
+    case 'На паузе':
       return 'secondary'
-    case 'Отклонено':
-      return 'destructive'
+    case 'Завершена':
+    case 'Завершен':
+      return 'outline'
     default:
       return 'outline'
   }
 }
 
-const getStatusColor = (isActive: boolean) => (isActive ? 'default' : 'secondary')
-
 
 // Filter configuration for employees table
-// Только кадровые фильтры (информация о заказах — в Dashboard и профиле сотрудника)
 const employeeFilterFields: FilterField[] = [
   {
     id: 'status',
-    label: 'Статус',
+    label: 'Статус сотрудника',
     type: 'select',
     operators: ['equals'],
     options: [
@@ -81,14 +104,13 @@ const employeeFilterFields: FilterField[] = [
     ],
   },
   {
-    id: 'inviteStatus',
-    label: 'Статус приглашения',
+    id: 'serviceType',
+    label: 'Тип услуги',
     type: 'select',
     operators: ['equals'],
     options: [
-      { value: 'Принято', label: 'Принято' },
-      { value: 'Ожидает', label: 'Ожидает' },
-      { value: 'Отклонено', label: 'Отклонено' },
+      { value: 'LUNCH', label: 'Ланч' },
+      { value: 'COMPENSATION', label: 'Компенсация' },
     ],
   },
 ]
@@ -281,13 +303,14 @@ export default function EmployeesPage() {
         return (
           <div className="flex items-center gap-2">
             <span
-              className={`h-2.5 w-2.5 rounded-full ${
+              className={`h-2.5 w-2.5 rounded-full shrink-0 ${
                 employee.isActive ? 'bg-emerald-500' : 'bg-gray-400'
               }`}
+              title={employee.isActive ? 'Активный' : 'Деактивирован'}
             />
             <button
               type="button"
-              className="text-left text-primary hover:underline"
+              className="text-left text-primary hover:underline font-medium"
               onClick={(event) => handleNameClick(event, employee.id)}
             >
               {employee.fullName}
@@ -306,7 +329,9 @@ export default function EmployeesPage() {
           onSort={toggleSort}
         />
       ),
-      cell: ({ row }) => row.original.phone,
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">{row.original.phone}</span>
+      ),
     },
     {
       accessorKey: 'position',
@@ -318,20 +343,24 @@ export default function EmployeesPage() {
           onSort={toggleSort}
         />
       ),
-      cell: ({ row }) => row.original.position || '-',
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">{row.original.position || '—'}</span>
+      ),
     },
     {
-      accessorKey: 'projectId',
+      accessorKey: 'projectName',
       header: () => (
         <SortableHeader
           label="Проект"
-          field="projectId"
+          field="projectName"
           currentSort={sortConfig}
           onSort={toggleSort}
         />
       ),
       cell: ({ row }) => {
-        const projectName = getProjectName((row.original as Employee & { projectId?: string }).projectId)
+        const employee = row.original
+        // Используем projectName напрямую из ответа бэкенда или fallback на getProjectName
+        const projectName = employee.projectName || getProjectName(employee.projectId)
         return projectName ? (
           <Badge variant="outline" className="gap-1">
             <FolderKanban className="h-3 w-3" />
@@ -342,39 +371,78 @@ export default function EmployeesPage() {
         )
       },
     },
-    // Колонки serviceType, serviceView, totalBudget, dailyLimit, mealStatus удалены
-    // Эта информация доступна в профиле сотрудника и на странице Dashboard
     {
-      accessorKey: 'inviteStatus',
-      header: () => (
-        <SortableHeader
-          label="Статус приглашения"
-          field="inviteStatus"
-          currentSort={sortConfig}
-          onSort={toggleSort}
-        />
-      ),
-      cell: ({ row }) => (
-        <Badge variant={getInviteStatusColor(row.original.inviteStatus)}>
-          {row.original.inviteStatus}
-        </Badge>
-      ),
+      id: 'workSchedule',
+      header: 'График работы',
+      cell: ({ row }) => {
+        const employee = row.original
+        const { shift, time } = formatWorkSchedule(employee)
+        const days = formatWorkingDays(employee.workingDays)
+        
+        if (!shift && !time && days === '—') {
+          return <span className="text-muted-foreground">—</span>
+        }
+        
+        return (
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-1.5">
+              {shift && <span title={employee.shiftType === 'DAY' ? 'Дневная смена' : 'Ночная смена'}>{shift}</span>}
+              <span className="text-sm font-medium">{time || '—'}</span>
+            </div>
+            <span className="text-xs text-muted-foreground">{days}</span>
+          </div>
+        )
+      },
     },
     {
-      accessorKey: 'isActive',
+      accessorKey: 'serviceType',
       header: () => (
         <SortableHeader
-          label="Статус"
-          field="isActive"
+          label="Тип услуги"
+          field="serviceType"
           currentSort={sortConfig}
           onSort={toggleSort}
         />
       ),
-      cell: ({ row }) => (
-        <Badge variant={getStatusColor(row.original.isActive)} className="min-w-[100px] justify-center">
-          {row.original.isActive ? 'Активный' : 'Деактивирован'}
-        </Badge>
-      ),
+      cell: ({ row }) => {
+        const employee = row.original
+        if (!employee.serviceType) {
+          return <span className="text-muted-foreground">—</span>
+        }
+        return employee.serviceType === 'LUNCH' ? (
+          <Badge variant="outline" className="gap-1 bg-amber-500/10 text-amber-600 border-amber-200">
+            <UtensilsCrossed className="h-3 w-3" />
+            Ланч
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="gap-1 bg-emerald-500/10 text-emerald-600 border-emerald-200">
+            <Wallet className="h-3 w-3" />
+            Компенсация
+          </Badge>
+        )
+      },
+    },
+    {
+      id: 'serviceStatus',
+      header: 'Статус услуги',
+      cell: ({ row }) => {
+        const employee = row.original
+        
+        // Определяем статус на основе активной услуги
+        const lunchStatus = employee.lunchSubscription?.status
+        const compensationStatus = employee.compensation?.status
+        const status = lunchStatus || compensationStatus
+        
+        if (!status) {
+          return <span className="text-muted-foreground text-sm">Не активна</span>
+        }
+        
+        return (
+          <Badge variant={getServiceStatusColor(status)} className="min-w-[90px] justify-center">
+            {status}
+          </Badge>
+        )
+      },
     },
     {
       id: 'actions',

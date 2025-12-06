@@ -16,6 +16,9 @@ export interface Employee {
   inviteStatus: string
   isActive: boolean
   creationScenario?: 'new_user' | 'existing_client_user'
+  // Project info
+  projectId?: string | null
+  projectName?: string | null
   // Work schedule
   shiftType?: ShiftType | null
   workingDays?: DayOfWeek[] // e.g., [1, 2, 3, 4, 5] = Mon-Fri
@@ -52,9 +55,6 @@ export interface Employee {
     carryOver?: boolean
     autoRenew?: boolean
   } | null
-  // Project relation
-  projectId?: string | null
-  projectName?: string | null
 }
 
 export interface EmployeeDetail extends Employee {
