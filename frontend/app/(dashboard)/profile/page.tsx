@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -20,30 +20,9 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
-import { UserCircle, Mail, Phone, Shield, Lock, Building2, Crown, Clock, Wallet, UtensilsCrossed, CreditCard } from 'lucide-react'
+import { UserCircle, Mail, Phone, Shield, Lock, Building2, Crown, UtensilsCrossed, Calendar } from 'lucide-react'
 import { toast } from 'sonner'
-
-type ApiError = {
-  response?: {
-    data?: {
-      message?: string
-    }
-  }
-}
-
-const getErrorMessage = (error: unknown, fallback: string) => {
-  if (typeof error === 'object' && error !== null) {
-    const apiError = error as ApiError
-    return apiError.response?.data?.message ?? fallback
-  }
-  return fallback
-}
-
-const profileSchema = z.object({
-  fullName: z.string().min(1, 'Обязательное поле'),
-  email: z.string().email('Некорректный email'),
-  phone: z.string().min(1, 'Обязательное поле'),
-})
+import { parseError } from '@/lib/errors'
 
 const passwordSchema = z
   .object({
@@ -57,19 +36,9 @@ const passwordSchema = z
   })
 
 export default function ProfilePage() {
-  const { user, updateProfile, changePassword, projectName, isHeadquarters } = useAuthStore()
-  const [profileLoading, setProfileLoading] = useState(false)
+  const { user, changePassword, projectName, isHeadquarters } = useAuthStore()
   const [passwordLoading, setPasswordLoading] = useState(false)
   const isInitialLogin = user?.status === 'Не активный'
-
-  const profileForm = useForm<z.infer<typeof profileSchema>>({
-    resolver: zodResolver(profileSchema),
-    defaultValues: {
-      fullName: user?.fullName ?? '',
-      email: user?.email ?? '',
-      phone: user?.phone ?? '',
-    },
-  })
 
   const passwordForm = useForm<z.infer<typeof passwordSchema>>({
     resolver: zodResolver(passwordSchema),
@@ -80,35 +49,6 @@ export default function ProfilePage() {
     },
   })
 
-  useEffect(() => {
-    if (user) {
-      profileForm.reset({
-        fullName: user.fullName,
-        email: user.email,
-        phone: user.phone,
-      })
-    } else {
-      profileForm.reset({
-        fullName: '',
-        email: '',
-        phone: '',
-      })
-    }
-  }, [user, profileForm])
-
-  const handleProfileSubmit = async (data: z.infer<typeof profileSchema>) => {
-    setProfileLoading(true)
-    try {
-      await updateProfile(data)
-      toast.success('Профиль обновлен')
-    } catch (error: unknown) {
-      const message = getErrorMessage(error, 'Не удалось сохранить изменения')
-      toast.error(message)
-    } finally {
-      setProfileLoading(false)
-    }
-  }
-
   const handlePasswordSubmit = async (data: z.infer<typeof passwordSchema>) => {
     setPasswordLoading(true)
     try {
@@ -116,8 +56,8 @@ export default function ProfilePage() {
       toast.success('Пароль успешно изменен')
       passwordForm.reset()
     } catch (error: unknown) {
-      const message = getErrorMessage(error, 'Не удалось изменить пароль')
-      toast.error(message)
+      const appError = parseError(error)
+      toast.error(appError.message, { description: appError.action })
     } finally {
       setPasswordLoading(false)
     }
@@ -160,65 +100,34 @@ export default function ProfilePage() {
             <CardTitle>Личная информация</CardTitle>
             <CardDescription>Основные данные профиля</CardDescription>
           </CardHeader>
-          <CardContent>
-            <Form {...profileForm}>
-              <form onSubmit={profileForm.handleSubmit(handleProfileSubmit)} className="space-y-4">
-                <FormField
-                  control={profileForm.control}
-                  name="fullName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>ФИО</FormLabel>
-                      <FormControl>
-                        <div className="flex items-center gap-2">
-                          <UserCircle className="h-4 w-4 text-muted-foreground" />
-                          <Input {...field} disabled={profileLoading} />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-muted-foreground text-xs">ФИО</Label>
+              <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-md border">
+                <UserCircle className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium">{user.fullName}</span>
+              </div>
+            </div>
 
-                <FormField
-                  control={profileForm.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <div className="flex items-center gap-2">
-                          <Mail className="h-4 w-4 text-muted-foreground" />
-                          <Input {...field} disabled={profileLoading} />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+            <div className="space-y-2">
+              <Label className="text-muted-foreground text-xs">Email</Label>
+              <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-md border">
+                <Mail className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium">{user.email || '—'}</span>
+              </div>
+            </div>
 
-                <FormField
-                  control={profileForm.control}
-                  name="phone"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Номер телефона</FormLabel>
-                      <FormControl>
-                        <div className="flex items-center gap-2">
-                          <Phone className="h-4 w-4 text-muted-foreground" />
-                          <Input {...field} disabled={profileLoading} />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+            <div className="space-y-2">
+              <Label className="text-muted-foreground text-xs">Номер телефона</Label>
+              <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-md border">
+                <Phone className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium">{user.phone}</span>
+              </div>
+            </div>
 
-                <Button type="submit" className="w-full" disabled={profileLoading}>
-                  {profileLoading ? 'Сохранение...' : 'Сохранить изменения'}
-                </Button>
-              </form>
-            </Form>
+            <p className="text-xs text-muted-foreground pt-2 border-t">
+              Для изменения личных данных обратитесь в Yalla CRM
+            </p>
           </CardContent>
         </Card>
 
