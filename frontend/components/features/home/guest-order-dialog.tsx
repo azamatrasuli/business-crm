@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { useHomeStore } from '@/stores/home-store'
 import { useProjectsStore } from '@/stores/projects-store'
+import { useAuthStore } from '@/stores/auth-store'
 import {
   Dialog,
   DialogBody,
@@ -28,13 +29,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+// Select removed - project is now auto-detected from user's JWT
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
@@ -48,7 +43,6 @@ import { logger } from '@/lib/logger'
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -59,7 +53,6 @@ const formSchema = z.object({
   orderName: z.string().min(1, 'Обязательное поле'),
   quantity: z.number().int('Количество должно быть целым числом').min(1, 'Количество должно быть не меньше 1'),
   comboType: z.enum(['Комбо 25', 'Комбо 35'], { message: 'Выберите тип комбо' }),
-  projectId: z.string().min(1, 'Выберите проект'),
   date: z.string().min(1),
 })
 
@@ -108,7 +101,8 @@ export function GuestOrderDialog({ open, onOpenChange }: GuestOrderDialogProps) 
     dateFilter,
     cutoffTime,
   } = useHomeStore()
-  const { projects, fetchProjects, selectedProjectId } = useProjectsStore()
+  const { projects, fetchProjects } = useProjectsStore()
+  const { projectId: userProjectId, projectName: userProjectName } = useAuthStore()
   const [loading, setLoading] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingData, setPendingData] = useState<CreateGuestOrderRequest | null>(null)
@@ -124,15 +118,10 @@ export function GuestOrderDialog({ open, onOpenChange }: GuestOrderDialogProps) 
     [orderDate]
   )
 
-  // Use selected project or first project as default
-  const defaultProjectId = useMemo(
-    () => selectedProjectId || projects?.[0]?.id || '',
-    [projects, selectedProjectId]
-  )
-  
-  const selectedProject = useMemo(
-    () => projects?.find((p) => p.id === defaultProjectId) || null,
-    [projects, defaultProjectId]
+  // Get the user's project info - address will be taken automatically from the project
+  const userProject = useMemo(
+    () => projects?.find((p) => p.id === userProjectId) || null,
+    [projects, userProjectId]
   )
 
   const form = useForm<FormValues>({
@@ -141,7 +130,6 @@ export function GuestOrderDialog({ open, onOpenChange }: GuestOrderDialogProps) 
       orderName: '',
       quantity: 1,
       comboType: 'Комбо 25',
-      projectId: defaultProjectId,
       date: orderDateIso,
     },
   })
@@ -164,7 +152,7 @@ export function GuestOrderDialog({ open, onOpenChange }: GuestOrderDialogProps) 
   const submissionDisabledReason = budgetDisabledReason || cutoffDisabledReason
   const canSubmit =
     !loading &&
-    (projects?.length ?? 0) > 0 &&
+    !!userProjectId &&
     !submissionDisabledReason &&
     !budgetInsufficient &&
     quantity > 0
@@ -181,13 +169,12 @@ export function GuestOrderDialog({ open, onOpenChange }: GuestOrderDialogProps) 
         orderName: '',
         quantity: 1,
         comboType: 'Комбо 25',
-        projectId: defaultProjectId,
         date: orderDateIso,
       })
       setPendingData(null)
       setConfirmOpen(false)
     }
-  }, [open, projects, defaultProjectId, orderDateIso, form])
+  }, [open, orderDateIso, form])
 
   const handleSubmitForm = (data: FormValues) => {
     if (budgetInsufficient) {
@@ -200,11 +187,18 @@ export function GuestOrderDialog({ open, onOpenChange }: GuestOrderDialogProps) 
       toast.error(submissionDisabledReason)
       return
     }
+    if (!userProjectId) {
+      toast.error('Проект не найден', {
+        description: 'Вы не привязаны к проекту. Обратитесь к администратору.',
+      })
+      return
+    }
+    // projectId берётся автоматически из JWT claims на бэкенде
     const request: CreateGuestOrderRequest = {
       orderName: data.orderName,
       quantity: data.quantity,
       comboType: data.comboType,
-      projectId: data.projectId,
+      projectId: userProjectId, // Автоматически из проекта пользователя
       date: data.date,
     }
     setPendingData(request)
@@ -221,7 +215,6 @@ export function GuestOrderDialog({ open, onOpenChange }: GuestOrderDialogProps) 
         orderName: '',
         quantity: 1,
         comboType: 'Комбо 25',
-        projectId: defaultProjectId,
         date: orderDateIso,
       })
       setConfirmOpen(false)
@@ -349,41 +342,29 @@ export function GuestOrderDialog({ open, onOpenChange }: GuestOrderDialogProps) 
                   />
                 </div>
 
-                <FormField
-                  control={form.control}
-                  name="projectId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Проект (адрес доставки) *</FormLabel>
-                      <FormControl>
-                        {projects && projects.length > 0 ? (
-                          <Select value={field.value} onValueChange={field.onChange}>
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Выберите проект" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {projects.map((project) => (
-                                <SelectItem key={project.id} value={project.id}>
-                                  {project.name} — {project.addressName || project.addressFullAddress}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <div className="text-sm text-muted-foreground">
-                            Нет доступных проектов. Создайте проект в разделе «Проекты».
-                          </div>
-                        )}
-                      </FormControl>
-                      {selectedProject && (
-                        <FormDescription>
-                          Адрес доставки: {selectedProject.addressFullAddress}
-                        </FormDescription>
-                      )}
-                      <FormMessage />
-                    </FormItem>
+                {/* Адрес доставки автоматически берётся из проекта */}
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+                  <Label className="text-sm font-medium">Адрес доставки</Label>
+                  {userProject ? (
+                    <div className="mt-1.5 space-y-1">
+                      <p className="font-semibold">{userProject.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {userProject.addressFullAddress || userProject.addressName || 'Адрес не указан'}
+                      </p>
+                    </div>
+                  ) : userProjectName ? (
+                    <div className="mt-1.5">
+                      <p className="font-semibold">{userProjectName}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Адрес будет взят из настроек проекта
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-1.5 text-sm text-destructive">
+                      Вы не привязаны к проекту. Обратитесь к администратору.
+                    </p>
                   )}
-                />
+                </div>
 
                 <FormField
                   control={form.control}

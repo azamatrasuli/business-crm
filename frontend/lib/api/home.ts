@@ -40,7 +40,7 @@ export interface CreateGuestOrderRequest {
   orderName: string
   quantity: number
   comboType: ComboType
-  projectId: string // Address comes from project
+  projectId: string // Автоматически из проекта пользователя, адрес доставки берётся из проекта
   date: string
 }
 
