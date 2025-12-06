@@ -36,6 +36,7 @@ public class JwtService : IJwtService
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new Claim("phone", user.Phone),
             new Claim("role", user.Role),
+            new Claim(ClaimTypes.Role, user.Role), // Standard role claim for ASP.NET authorization
             new Claim("company_id", user.CompanyId.ToString()),
             new Claim("companyId", user.CompanyId.ToString()) // For compatibility with frontend
         };

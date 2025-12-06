@@ -21,15 +21,9 @@ public class CompaniesController : ControllerBase
     /// Get all companies (SUPER_ADMIN only)
     /// </summary>
     [HttpGet]
+    [Authorize(Roles = "SUPER_ADMIN")]
     public async Task<ActionResult<IEnumerable<CompanyListItem>>> GetAll()
     {
-        // Check if user is SUPER_ADMIN
-        var role = GetUserRole();
-        if (role != "SUPER_ADMIN")
-        {
-            return Forbid();
-        }
-
         var companies = await _companiesService.GetAllAsync();
         return Ok(companies);
     }
@@ -38,15 +32,9 @@ public class CompaniesController : ControllerBase
     /// Get company by ID (SUPER_ADMIN only)
     /// </summary>
     [HttpGet("{id:guid}")]
+    [Authorize(Roles = "SUPER_ADMIN")]
     public async Task<ActionResult<CompanyResponse>> GetById(Guid id)
     {
-        // Check if user is SUPER_ADMIN
-        var role = GetUserRole();
-        if (role != "SUPER_ADMIN")
-        {
-            return Forbid();
-        }
-
         var company = await _companiesService.GetByIdAsync(id);
         
         if (company == null)
@@ -55,12 +43,6 @@ public class CompaniesController : ControllerBase
         }
 
         return Ok(company);
-    }
-
-    private string? GetUserRole()
-    {
-        var roleClaim = User.FindFirst("role");
-        return roleClaim?.Value;
     }
 }
 
