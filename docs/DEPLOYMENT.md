@@ -29,6 +29,12 @@ NEXT_PUBLIC_APP_ENV=production
 - `main` → production
 - `develop` → staging (preview)
 
+### Deployment Protection
+
+По умолчанию Vercel защищает preview деплои авторизацией. Чтобы отключить:
+1. Project Settings → General → Deployment Protection
+2. Vercel Authentication → Only Production (или отключить)
+
 ---
 
 ## Backend (Render)
@@ -70,17 +76,41 @@ docker run -p 5000:8080 \
 | Среда | Project ID | Регион |
 |-------|------------|--------|
 | Production | `qwkpqbfldvuxcxugxcmj` | West EU |
-| Staging | `psuiiifwntvjhuzxronr` | West EU |
+| Development | `psuiiifwntvjhuzxronr` | West EU |
 
 ### Миграции
 
-Миграции применяются через Supabase MCP или SQL Editor.
+Миграции применяются через Supabase SQL Editor или MCP.
 
-Пример миграции:
+**Пример миграции:**
 ```sql
 -- Добавление новой колонки
 ALTER TABLE employees 
 ADD COLUMN IF NOT EXISTS department TEXT;
+```
+
+### Актуальная схема БД
+
+#### projects
+```sql
+service_types TEXT[] DEFAULT ARRAY['LUNCH']::TEXT[]
+```
+
+#### employees
+```sql
+service_type TEXT DEFAULT 'LUNCH'
+```
+
+#### lunch_subscriptions
+```sql
+start_date DATE,
+end_date DATE,
+total_days INTEGER DEFAULT 0,
+total_price NUMERIC(10,2) DEFAULT 0,
+status TEXT DEFAULT 'Активна',
+schedule_type TEXT DEFAULT 'EVERY_DAY',
+paused_at TIMESTAMP WITH TIME ZONE,
+paused_days_count INTEGER DEFAULT 0
 ```
 
 ---
@@ -168,6 +198,43 @@ jobs:
 
 ---
 
+## Процесс релиза (develop → main)
+
+### 1. Применить миграции БД (PROD)
+
+```sql
+-- Проверить что миграции не применены
+SELECT column_name FROM information_schema.columns 
+WHERE table_name = 'projects' AND column_name = 'service_types';
+
+-- Если пусто — применить миграции
+-- (см. актуальные миграции в разделе "Актуальная схема БД")
+```
+
+### 2. Merge в main
+
+```bash
+git checkout main
+git pull origin main
+git merge develop
+git push origin main
+```
+
+### 3. Дождаться деплоев
+
+- Vercel: ~2 мин
+- Render: ~5 мин
+
+### 4. Проверить работоспособность
+
+- [ ] Логин работает
+- [ ] Dashboard загружается
+- [ ] Сотрудники отображаются
+- [ ] Создание сотрудника работает
+- [ ] Профиль read-only
+
+---
+
 ## Troubleshooting
 
 ### Backend не стартует на Render
@@ -187,3 +254,9 @@ jobs:
 1. Проверьте подключение через Supabase Dashboard → SQL Editor
 2. Убедитесь, что миграции применены
 3. Проверьте права пользователя
+
+### Frontend показывает "Backend недоступен"
+
+1. Убедитесь что Render сервис запущен
+2. Проверьте логи на Render
+3. Попробуйте `curl` к API напрямую

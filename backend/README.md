@@ -8,9 +8,9 @@
 backend/
 ├── src/
 │   ├── YallaBusinessAdmin.Api/           # Контроллеры, Program.cs
-│   ├── YallaBusinessAdmin.Application/   # DTOs, интерфейсы сервисов
+│   ├── YallaBusinessAdmin.Application/   # DTOs, интерфейсы, ошибки
 │   ├── YallaBusinessAdmin.Domain/        # Entities, Enums
-│   └── YallaBusinessAdmin.Infrastructure/# EF Core, реализации сервисов
+│   └── YallaBusinessAdmin.Infrastructure/# EF Core, сервисы
 ├── Dockerfile                             # Docker образ
 ├── Directory.Build.props                  # Общие настройки сборки
 └── YallaBusinessAdmin.sln                 # Solution файл
@@ -71,7 +71,15 @@ dotnet run --project src/YallaBusinessAdmin.Api
     "ExpirationInMinutes": 1440,
     "RefreshTokenExpirationInDays": 7
   },
-  "FrontendUrl": "http://localhost:3000"
+  "FrontendUrl": "http://localhost:3000",
+  "Serilog": {
+    "MinimumLevel": {
+      "Default": "Information",
+      "Override": {
+        "Microsoft.EntityFrameworkCore.Database.Command": "Information"
+      }
+    }
+  }
 }
 ```
 
@@ -93,7 +101,7 @@ docker run -p 5000:8080 \
 ### Clean Architecture слои
 
 1. **Domain** — Entities, Enums (без зависимостей)
-2. **Application** — DTOs, интерфейсы сервисов (зависит от Domain)
+2. **Application** — DTOs, интерфейсы, ошибки (зависит от Domain)
 3. **Infrastructure** — EF Core, реализации (зависит от Application)
 4. **Api** — Controllers, конфигурация (зависит от всех)
 
@@ -109,6 +117,80 @@ docker run -p 5000:8080 \
 | `MealSubscriptionsService` | Подписки на обеды |
 | `AuditService` | Логирование действий |
 
+## Обработка ошибок
+
+### Структура ошибок
+
+Все ошибки обрабатываются централизованно через `GlobalExceptionHandler` в `Program.cs`.
+
+**Формат ответа:**
+```json
+{
+  "success": false,
+  "error": {
+    "code": "EMP_PHONE_EXISTS",
+    "message": "Сотрудник с таким телефоном уже существует",
+    "type": "Conflict",
+    "details": null
+  },
+  "path": "/api/employees",
+  "timestamp": "2024-12-06T10:30:00Z",
+  "correlationId": "abc-123"
+}
+```
+
+### Использование в коде
+
+```csharp
+// Способ 1: Бросить исключение (рекомендуется)
+throw new InvalidOperationException("Сотрудник с таким телефоном уже существует.");
+
+// Способ 2: Использовать AppException для структурированных ошибок
+throw new AppException(
+    ErrorCodes.EMP_PHONE_EXISTS,
+    "Сотрудник с таким телефоном уже существует",
+    ErrorType.Conflict
+);
+```
+
+### Коды ошибок
+
+Все коды определены в `Application/Common/Errors/ErrorCodes.cs`:
+
+- `AUTH_*` — ошибки аутентификации
+- `USER_*` — ошибки пользователей
+- `EMP_*` — ошибки сотрудников
+- `PROJ_*` — ошибки проектов
+- `SUB_*` — ошибки подписок
+- `FREEZE_*` — ошибки заморозок
+- `ORDER_*` — ошибки заказов
+- `BUDGET_*` — ошибки бюджета
+
+## Логирование
+
+Используется **Serilog** со структурированным логированием:
+
+```csharp
+Log.Information("User {UserId} logged in from {IP}", userId, ipAddress);
+```
+
+### Correlation ID
+
+Каждый запрос получает уникальный `X-Correlation-ID` для трассировки:
+
+```
+X-Correlation-ID: 550e8400-e29b-41d4-a716-446655440000
+```
+
+### Уровни логирования
+
+| Уровень | Использование |
+|---------|--------------|
+| `Debug` | Отладочная информация |
+| `Information` | Обычные операции |
+| `Warning` | Потенциальные проблемы |
+| `Error` | Ошибки (с exception) |
+
 ## База данных
 
 - **СУБД:** PostgreSQL 15 (Supabase)
@@ -120,14 +202,23 @@ docker run -p 5000:8080 \
 | Таблица | Описание |
 |---------|----------|
 | `companies` | Компании (холдинги) |
-| `projects` | Проекты (филиалы) |
+| `projects` | Проекты (филиалы) — `service_types TEXT[]` |
 | `admin_users` | Пользователи B2B кабинета |
-| `employees` | Сотрудники компаний |
+| `employees` | Сотрудники компаний — `service_type TEXT` |
 | `employee_budgets` | Бюджеты сотрудников |
 | `orders` | Заказы на обеды |
 | `company_subscriptions` | Подписки проектов |
+| `lunch_subscriptions` | Подписки на обеды |
 | `employee_meal_assignments` | Назначения обедов |
+| `employee_freeze_history` | История заморозок |
 | `audit_logs` | Аудит действий |
+
+### Бизнес-правило: Service Types
+
+- **Проект** (`projects.service_types`): массив `['LUNCH', 'COMPENSATION']`
+- **Сотрудник** (`employees.service_type`): строка `'LUNCH'` или `'COMPENSATION'`
+
+> Проект может поддерживать оба типа, но сотрудник — только один в момент времени.
 
 ## Роли и права
 
@@ -152,3 +243,22 @@ docker run -p 5000:8080 \
 2. Добавьте DbSet в `Infrastructure/Persistence/AppDbContext.cs`
 3. Настройте маппинг в `OnModelCreating`
 4. Примените миграцию в Supabase
+
+### Добавление кода ошибки
+
+1. Добавьте константу в `Application/Common/Errors/ErrorCodes.cs`
+2. Используйте в сервисе через `throw new InvalidOperationException("сообщение")`
+3. Фронтенд автоматически отобразит сообщение
+
+## Тестирование API
+
+```bash
+# Логин
+curl -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"phone": "+992901234567", "password": "admin123"}'
+
+# Получить сотрудников
+curl http://localhost:5000/api/employees \
+  -H "Authorization: Bearer <token>"
+```

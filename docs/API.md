@@ -101,6 +101,15 @@ Authorization: Bearer <access_token>
 | PUT | `/projects/{id}` | Обновить проект |
 | DELETE | `/projects/{id}` | Удалить проект |
 
+**Типы услуг проекта:**
+```json
+{
+  "serviceTypes": ["LUNCH", "COMPENSATION"]
+}
+```
+
+> ⚠️ Проект может поддерживать оба типа услуг, но сотрудник — только один.
+
 ---
 
 ## Dashboard (Home) — Главная
@@ -118,6 +127,16 @@ Authorization: Bearer <access_token>
 | GET | `/home/cutoff-time` | Время отсечки заказов |
 | PUT | `/home/cutoff-time` | Обновить время отсечки |
 | GET | `/home/combos` | Типы комбо (25 / 35 сомони) |
+
+**Гостевой заказ:**
+```json
+{
+  "guestName": "Гость",
+  "comboType": "Комбо 25",
+  "deliveryDate": "2024-12-07"
+}
+```
+> Адрес автоматически берётся из проекта пользователя.
 
 ---
 
@@ -194,16 +213,122 @@ Authorization: Bearer <access_token>
 
 ---
 
-## Коды ошибок
+## Формат ответа при ошибках
+
+Все ошибки возвращаются в едином формате:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Человекопонятное сообщение",
+    "type": "Validation|NotFound|Forbidden|Conflict|Internal",
+    "details": { "field": "причина" }
+  },
+  "path": "/api/endpoint",
+  "timestamp": "2024-12-06T10:30:00Z",
+  "correlationId": "abc-123"
+}
+```
+
+### Коды ошибок
+
+#### Аутентификация (AUTH_*)
+
+| Код | HTTP | Описание |
+|-----|------|----------|
+| `AUTH_INVALID_CREDENTIALS` | 401 | Неверный логин или пароль |
+| `AUTH_USER_BLOCKED` | 403 | Пользователь заблокирован |
+| `AUTH_USER_INACTIVE` | 403 | Пользователь неактивен |
+| `AUTH_TOKEN_EXPIRED` | 401 | Токен истёк |
+| `AUTH_TOKEN_INVALID` | 401 | Невалидный токен |
+| `AUTH_REFRESH_TOKEN_INVALID` | 401 | Невалидный refresh token |
+| `AUTH_FORBIDDEN` | 403 | Недостаточно прав |
+| `AUTH_IMPERSONATION_NOT_ALLOWED` | 403 | Импершонация запрещена |
+| `AUTH_PASSWORD_WEAK` | 400 | Слабый пароль |
+
+#### Пользователи (USER_*)
+
+| Код | HTTP | Описание |
+|-----|------|----------|
+| `USER_NOT_FOUND` | 404 | Пользователь не найден |
+| `USER_PHONE_EXISTS` | 409 | Телефон уже занят |
+| `USER_EMAIL_EXISTS` | 409 | Email уже занят |
+| `USER_CANNOT_DELETE_SELF` | 400 | Нельзя удалить себя |
+| `USER_CANNOT_DELETE_LAST_ADMIN` | 400 | Нельзя удалить последнего админа |
+| `USER_INVALID_PHONE_FORMAT` | 400 | Некорректный формат телефона |
+
+#### Сотрудники (EMP_*)
+
+| Код | HTTP | Описание |
+|-----|------|----------|
+| `EMP_NOT_FOUND` | 404 | Сотрудник не найден |
+| `EMP_PHONE_EXISTS` | 409 | Телефон уже занят |
+| `EMP_PHONE_DELETED` | 409 | Телефон принадлежит удалённому сотруднику |
+| `EMP_INVALID_PHONE_FORMAT` | 400 | Некорректный формат телефона |
+| `EMP_SERVICE_TYPE_SWITCH_BLOCKED` | 400 | Нельзя сменить тип услуги |
+| `EMP_HAS_ACTIVE_ORDERS` | 400 | Есть активные заказы |
+
+#### Проекты (PROJ_*)
+
+| Код | HTTP | Описание |
+|-----|------|----------|
+| `PROJ_NOT_FOUND` | 404 | Проект не найден |
+| `PROJ_ADDRESS_IMMUTABLE` | 400 | Адрес проекта нельзя изменить |
+| `PROJ_FOREIGN_COMPANY` | 403 | Проект чужой компании |
+
+#### Подписки (SUB_*)
+
+| Код | HTTP | Описание |
+|-----|------|----------|
+| `SUB_NOT_FOUND` | 404 | Подписка не найдена |
+| `SUB_MIN_DAYS_REQUIRED` | 400 | Минимум дней не соблюдён |
+| `SUB_PAST_DATE_NOT_ALLOWED` | 400 | Дата в прошлом |
+| `SUB_ALREADY_PAUSED` | 400 | Уже приостановлена |
+| `SUB_ALREADY_ACTIVE` | 400 | Уже активна |
+| `SUB_ALREADY_CANCELLED` | 400 | Уже отменена |
+
+#### Заморозки (FREEZE_*)
+
+| Код | HTTP | Описание |
+|-----|------|----------|
+| `FREEZE_LIMIT_EXCEEDED` | 400 | Превышен лимит (2 в неделю) |
+| `FREEZE_ALREADY_FROZEN` | 400 | Уже заморожено |
+| `FREEZE_NOT_FROZEN` | 400 | Не заморожено |
+| `FREEZE_PAST_DATE_NOT_ALLOWED` | 400 | Нельзя заморозить прошедшую дату |
+
+#### Заказы (ORDER_*)
+
+| Код | HTTP | Описание |
+|-----|------|----------|
+| `ORDER_NOT_FOUND` | 404 | Заказ не найден |
+| `ORDER_CUTOFF_PASSED` | 400 | Время отсечки прошло |
+| `ORDER_PAST_DATE_NOT_ALLOWED` | 400 | Дата в прошлом |
+| `ORDER_ALREADY_EXISTS` | 409 | Заказ уже существует |
+
+#### Бюджет (BUDGET_*)
+
+| Код | HTTP | Описание |
+|-----|------|----------|
+| `BUDGET_INSUFFICIENT` | 400 | Недостаточно средств |
+| `BUDGET_OVERDRAFT_EXCEEDED` | 400 | Превышен овердрафт |
+
+---
+
+## HTTP коды ответов
 
 | Код | Описание |
 |-----|----------|
-| 400 | Неверные параметры запроса |
-| 401 | Требуется авторизация |
-| 403 | Доступ запрещён |
-| 404 | Ресурс не найден |
-| 409 | Конфликт (например, телефон уже занят) |
-| 500 | Внутренняя ошибка сервера |
+| 200 | OK — успешный запрос |
+| 201 | Created — ресурс создан |
+| 204 | No Content — успешно без тела |
+| 400 | Bad Request — ошибка валидации |
+| 401 | Unauthorized — требуется авторизация |
+| 403 | Forbidden — доступ запрещён |
+| 404 | Not Found — ресурс не найден |
+| 409 | Conflict — конфликт (дубликат) |
+| 500 | Internal Server Error — ошибка сервера |
 
 ---
 
@@ -222,6 +347,21 @@ curl https://business-crm-iu04.onrender.com/api/employees \
   -H "Authorization: Bearer <token>"
 ```
 
+### Создать сотрудника
+```bash
+curl -X POST https://business-crm-iu04.onrender.com/api/employees \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "firstName": "Иван",
+    "lastName": "Иванов",
+    "phone": "+992901234568",
+    "position": "Менеджер",
+    "projectId": "uuid-проекта",
+    "serviceType": "LUNCH"
+  }'
+```
+
 ### Импершонация
 ```bash
 # Войти как другой пользователь
@@ -230,5 +370,13 @@ curl -X POST https://business-crm-iu04.onrender.com/api/auth/impersonate/{userId
 
 # Вернуться в свой аккаунт
 curl -X POST https://business-crm-iu04.onrender.com/api/auth/stop-impersonation \
-  -H "Authorization: Bearer <impersonated_token>"
+  -H "Authorization: Bearer <impersonated_token>" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+### Заморозить обед
+```bash
+curl -X POST https://business-crm-iu04.onrender.com/api/meal-subscriptions/assignments/{id}/freeze \
+  -H "Authorization: Bearer <token>"
 ```

@@ -7,7 +7,9 @@
 **Yalla Business Admin** — система для компаний, которые хотят организовать питание для своих сотрудников. Платформа поддерживает два режима:
 
 - **Комплексные обеды (Lunch)** — подписки на ежедневные обеды с доставкой
-- **Компенсации (Compensation)** — возмещение расходов на питание в ресторанах-партнёрах *(в разработке)*
+- **Компенсации (Compensation)** — возмещение расходов на питание в ресторанах-партнёрах
+
+> ⚠️ Проекты могут поддерживать оба типа услуг одновременно (`serviceTypes: ['LUNCH', 'COMPENSATION']`), но каждый сотрудник может иметь только один тип услуги в один момент времени.
 
 ## Архитектура
 
@@ -19,7 +21,7 @@ yalla-business-admin/
 └── assets/            # Бизнес-документация
 ```
 
-## Возможности MVP
+## Возможности
 
 | Модуль | Описание |
 |--------|----------|
@@ -29,7 +31,8 @@ yalla-business-admin/
 | **Сотрудники** | HR модуль — штат, бюджеты, подписки на обеды |
 | **Подписки** | Комплексные обеды (Комбо 25 / Комбо 35 сомони) |
 | **Dashboard** | Операционная панель с заказами и статистикой |
-| **Гостевые заказы** | Разовые заказы без подписки |
+| **Гостевые заказы** | Разовые заказы без подписки (адрес привязан к проекту) |
+| **Обработка ошибок** | Структурированные коды ошибок + логирование |
 
 ## Быстрый старт
 
@@ -86,6 +89,8 @@ frontend/
 │   └── features/          # Бизнес-компоненты
 ├── lib/
 │   ├── api/               # API клиенты (axios)
+│   ├── errors/            # Обработка ошибок
+│   ├── logger/            # Логирование
 │   └── features.config.ts # Feature flags
 └── stores/                # Zustand stores
 ```
@@ -94,10 +99,44 @@ frontend/
 ```
 backend/src/
 ├── YallaBusinessAdmin.Api/           # Controllers, Program.cs
-├── YallaBusinessAdmin.Application/   # DTOs, интерфейсы
+├── YallaBusinessAdmin.Application/   # DTOs, интерфейсы, ошибки
 ├── YallaBusinessAdmin.Domain/        # Entities, Enums
 └── YallaBusinessAdmin.Infrastructure/# EF Core, сервисы
 ```
+
+## Обработка ошибок
+
+### Backend — структурированные ошибки
+```json
+{
+  "success": false,
+  "error": {
+    "code": "EMP_PHONE_EXISTS",
+    "message": "Сотрудник с таким телефоном уже существует",
+    "type": "Conflict"
+  },
+  "path": "/api/employees",
+  "timestamp": "2024-12-06T10:30:00Z"
+}
+```
+
+### Frontend — автоматические уведомления
+- Все API ошибки автоматически отображаются через toast
+- Inline валидация в формах
+- Кнопка "Повторить" при сетевых ошибках
+
+### Основные коды ошибок
+
+| Код | Описание |
+|-----|----------|
+| `AUTH_INVALID_CREDENTIALS` | Неверный логин или пароль |
+| `AUTH_USER_BLOCKED` | Пользователь заблокирован |
+| `EMP_PHONE_EXISTS` | Телефон сотрудника уже занят |
+| `PROJ_ADDRESS_IMMUTABLE` | Адрес проекта нельзя изменить |
+| `FREEZE_LIMIT_EXCEEDED` | Превышен лимит заморозок (2/неделю) |
+| `ORDER_CUTOFF_PASSED` | Время отсечки прошло |
+
+Полный список: `backend/src/YallaBusinessAdmin.Application/Common/Errors/ErrorCodes.cs`
 
 ## Окружения
 
@@ -111,7 +150,6 @@ backend/src/
 
 - [API.md](docs/API.md) — Документация REST API
 - [DEPLOYMENT.md](docs/DEPLOYMENT.md) — Руководство по деплою
-- [RELEASE_PROGRESS.md](RELEASE_PROGRESS.md) — Статус релиза
 
 ## Тестовый вход
 
