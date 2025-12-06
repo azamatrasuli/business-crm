@@ -293,6 +293,17 @@ public class AppDbContext : DbContext
             entity.Property(e => e.ProjectId).HasColumnName("project_id").IsRequired();
             entity.Property(e => e.ComboType).HasColumnName("combo_type").IsRequired().HasMaxLength(50);
             entity.Property(e => e.IsActive).HasColumnName("is_active");
+            
+            // Subscription period & pricing (new fields)
+            entity.Property(e => e.StartDate).HasColumnName("start_date");
+            entity.Property(e => e.EndDate).HasColumnName("end_date");
+            entity.Property(e => e.TotalDays).HasColumnName("total_days").HasDefaultValue(0);
+            entity.Property(e => e.TotalPrice).HasColumnName("total_price").HasPrecision(10, 2).HasDefaultValue(0);
+            entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(50).HasDefaultValue("Активна");
+            entity.Property(e => e.ScheduleType).HasColumnName("schedule_type").HasMaxLength(50).HasDefaultValue("EVERY_DAY");
+            entity.Property(e => e.PausedAt).HasColumnName("paused_at");
+            entity.Property(e => e.PausedDaysCount).HasColumnName("paused_days_count").HasDefaultValue(0);
+            
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
 

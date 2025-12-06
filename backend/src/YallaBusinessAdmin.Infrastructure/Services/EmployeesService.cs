@@ -691,27 +691,51 @@ public class EmployeesService : IEmployeesService
         var hasActiveCompensation = false; // placeholder
         
         // Calculate subscription dates and remaining days
+        // Priority: 1) LunchSubscription own dates, 2) CompanySubscription dates
         DateOnly? subscriptionStartDate = null;
         DateOnly? subscriptionEndDate = null;
         int? remainingDays = null;
         string? switchBlockedReason = null;
+        string subscriptionStatus = "Активна";
+        decimal? totalPrice = null;
         
-        if (hasActiveLunchSubscription && activeProjectSubscription != null)
+        if (hasActiveLunchSubscription && employee.LunchSubscription != null)
         {
-            subscriptionStartDate = activeProjectSubscription.StartDate;
-            subscriptionEndDate = activeProjectSubscription.EndDate;
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
-            remainingDays = Math.Max(0, activeProjectSubscription.EndDate.DayNumber - today.DayNumber);
+            var sub = employee.LunchSubscription;
             
-            // Create blocked reason with expiry date
-            switchBlockedReason = $"У сотрудника активная подписка на обеды до {subscriptionEndDate:dd.MM.yyyy}. " +
-                                  $"Осталось {remainingDays} {GetDaysWord(remainingDays.Value)}. " +
-                                  $"Переключение на компенсацию будет возможно после {subscriptionEndDate:dd.MM.yyyy}.";
-        }
-        else if (hasActiveLunchSubscription)
-        {
-            // LunchSubscription exists but no CompanySubscription found (edge case)
-            switchBlockedReason = "У сотрудника активная подписка на обеды. Переключение на компенсацию невозможно.";
+            // First try to get dates from LunchSubscription itself
+            if (sub.StartDate.HasValue && sub.EndDate.HasValue)
+            {
+                subscriptionStartDate = sub.StartDate;
+                subscriptionEndDate = sub.EndDate;
+                totalPrice = sub.TotalPrice;
+                subscriptionStatus = sub.Status ?? "Активна";
+            }
+            // Fall back to CompanySubscription if LunchSubscription doesn't have dates
+            else if (activeProjectSubscription != null)
+            {
+                subscriptionStartDate = activeProjectSubscription.StartDate;
+                subscriptionEndDate = activeProjectSubscription.EndDate;
+                totalPrice = activeProjectSubscription.TotalAmount;
+                subscriptionStatus = activeProjectSubscription.Status.ToRussian();
+            }
+            
+            // Calculate remaining days
+            if (subscriptionEndDate.HasValue)
+            {
+                var today = DateOnly.FromDateTime(DateTime.UtcNow);
+                remainingDays = Math.Max(0, subscriptionEndDate.Value.DayNumber - today.DayNumber);
+                
+                // Create blocked reason with expiry date
+                switchBlockedReason = $"У сотрудника активная подписка на обеды до {subscriptionEndDate:dd.MM.yyyy}. " +
+                                      $"Осталось {remainingDays} {GetDaysWord(remainingDays.Value)}. " +
+                                      $"Переключение на компенсацию будет возможно после {subscriptionEndDate:dd.MM.yyyy}.";
+            }
+            else
+            {
+                // LunchSubscription exists but no dates (legacy data)
+                switchBlockedReason = "У сотрудника активная подписка на обеды. Переключение на компенсацию невозможно.";
+            }
         }
 
         return new EmployeeResponse
@@ -759,10 +783,10 @@ public class EmployeesService : IEmployeesService
             {
                 Id = employee.LunchSubscription!.Id,
                 ComboType = employee.LunchSubscription.ComboType,
-                Status = "Активна",
+                Status = subscriptionStatus,
                 StartDate = subscriptionStartDate?.ToString("yyyy-MM-dd"),
                 EndDate = subscriptionEndDate?.ToString("yyyy-MM-dd"),
-                TotalPrice = activeProjectSubscription?.TotalAmount,
+                TotalPrice = totalPrice,
                 RemainingDays = remainingDays
             } : null,
             Compensation = null, // TODO: Add when compensation entity is available
