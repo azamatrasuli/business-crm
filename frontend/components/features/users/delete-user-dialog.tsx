@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { useUsersStore } from '@/stores/users-store'
-import { isAxiosError } from 'axios'
+import { parseError, ErrorCodes } from '@/lib/errors'
+import { logger } from '@/lib/logger'
 import {
   Dialog,
   DialogBody,
@@ -30,16 +31,37 @@ const DeleteUserDialogComponent = ({ open, onOpenChange, user }: DeleteUserDialo
 
   const handleDelete = async () => {
     setLoading(true)
+    logger.action('DeleteUserAttempt', { userId: user.id })
+    
     try {
       await deleteUser(user.id)
+      
+      logger.info('User deleted successfully', { userId: user.id })
       toast.success('Пользователь успешно удален')
       toast.message(`Отправили уведомление на ${user.email}`)
       onOpenChange(false)
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Ошибка при удалении пользователя')
+      const appError = parseError(error)
+      
+      logger.error('Delete user failed', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+        userId: user.id,
+      })
+      
+      // Special handling for specific errors
+      if (appError.code === ErrorCodes.USER_CANNOT_DELETE_SELF) {
+        toast.error('Нельзя удалить самого себя', {
+          description: 'Попросите другого администратора удалить ваш аккаунт',
+        })
+      } else if (appError.code === ErrorCodes.USER_CANNOT_DELETE_LAST_ADMIN) {
+        toast.error('Невозможно удалить последнего администратора', {
+          description: 'В компании должен остаться хотя бы один администратор',
+        })
+      } else {
+        toast.error(appError.message, {
+          description: appError.action,
+        })
+      }
     } finally {
       setLoading(false)
     }

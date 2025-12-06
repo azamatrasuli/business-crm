@@ -37,7 +37,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
-import { isAxiosError } from 'axios'
+import { parseError, ErrorCodes } from '@/lib/errors'
+import { logger } from '@/lib/logger'
 import { isFeatureEnabled } from '@/lib/features.config'
 import { CreateEmployeeDialog } from '@/components/features/employees/create-employee-dialog'
 import { ManageLunchDialog } from '@/components/features/meals/manage-lunch-dialog'
@@ -206,10 +207,12 @@ export default function EmployeesPage() {
         `${employee.fullName} ${employee.isActive ? 'деактивирован' : 'активирован'}`
       )
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error).message
-      toast.error(message || 'Ошибка изменения статуса')
+      const appError = parseError(error)
+      logger.error('Failed to toggle employee status', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+        employeeId: id,
+      })
+      toast.error(appError.message, { description: appError.action })
     }
   }
 

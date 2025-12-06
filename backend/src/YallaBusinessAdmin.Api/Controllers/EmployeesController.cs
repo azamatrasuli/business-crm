@@ -6,6 +6,9 @@ using YallaBusinessAdmin.Application.Export;
 
 namespace YallaBusinessAdmin.Api.Controllers;
 
+/// <summary>
+/// Employees management - all exceptions handled by global exception handler
+/// </summary>
 [ApiController]
 [Route("api/employees")]
 [Authorize]
@@ -42,7 +45,7 @@ public class EmployeesController : BaseApiController
         var companyId = GetCompanyId();
         if (companyId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
         var result = await _employeesService.GetAllAsync(
@@ -60,18 +63,11 @@ public class EmployeesController : BaseApiController
         var companyId = GetCompanyId();
         if (companyId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
-        try
-        {
-            var result = await _employeesService.GetByIdAsync(id, companyId.Value, cancellationToken);
-            return Ok(result);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
+        var result = await _employeesService.GetByIdAsync(id, companyId.Value, cancellationToken);
+        return Ok(result);
     }
 
     /// <summary>
@@ -84,18 +80,11 @@ public class EmployeesController : BaseApiController
         var currentUserId = GetUserId();
         if (companyId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
-        try
-        {
-            var result = await _employeesService.CreateAsync(request, companyId.Value, currentUserId, cancellationToken);
-            return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        var result = await _employeesService.CreateAsync(request, companyId.Value, currentUserId, cancellationToken);
+        return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
     }
 
     /// <summary>
@@ -108,18 +97,11 @@ public class EmployeesController : BaseApiController
         var currentUserId = GetUserId();
         if (companyId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
-        try
-        {
-            var result = await _employeesService.UpdateAsync(id, request, companyId.Value, currentUserId, cancellationToken);
-            return Ok(result);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
+        var result = await _employeesService.UpdateAsync(id, request, companyId.Value, currentUserId, cancellationToken);
+        return Ok(result);
     }
 
     /// <summary>
@@ -132,18 +114,11 @@ public class EmployeesController : BaseApiController
         var currentUserId = GetUserId();
         if (companyId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
-        try
-        {
-            var result = await _employeesService.ToggleActivationAsync(id, companyId.Value, currentUserId, cancellationToken);
-            return Ok(result);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
+        var result = await _employeesService.ToggleActivationAsync(id, companyId.Value, currentUserId, cancellationToken);
+        return Ok(result);
     }
 
     /// <summary>
@@ -156,18 +131,11 @@ public class EmployeesController : BaseApiController
         var currentUserId = GetUserId();
         if (companyId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
-        try
-        {
-            await _employeesService.DeleteAsync(id, companyId.Value, currentUserId, cancellationToken);
-            return NoContent();
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
+        await _employeesService.DeleteAsync(id, companyId.Value, currentUserId, cancellationToken);
+        return NoContent();
     }
 
     /// <summary>
@@ -180,18 +148,11 @@ public class EmployeesController : BaseApiController
         var currentUserId = GetUserId();
         if (companyId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
-        try
-        {
-            await _employeesService.UpdateBudgetAsync(id, request, companyId.Value, currentUserId, cancellationToken);
-            return Ok(new { message = "Бюджет обновлен" });
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
+        await _employeesService.UpdateBudgetAsync(id, request, companyId.Value, currentUserId, cancellationToken);
+        return Ok(new { success = true, message = "Бюджет обновлен" });
     }
 
     /// <summary>
@@ -204,18 +165,11 @@ public class EmployeesController : BaseApiController
         var currentUserId = GetUserId();
         if (companyId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
-        try
-        {
-            await _employeesService.BatchUpdateBudgetAsync(request, companyId.Value, currentUserId, cancellationToken);
-            return Ok(new { message = "Бюджеты обновлены", count = request.EmployeeIds.Count() });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        await _employeesService.BatchUpdateBudgetAsync(request, companyId.Value, currentUserId, cancellationToken);
+        return Ok(new { success = true, message = "Бюджеты обновлены", count = request.EmployeeIds.Count() });
     }
 
     /// <summary>
@@ -234,19 +188,12 @@ public class EmployeesController : BaseApiController
         var companyId = GetCompanyId();
         if (companyId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
-        try
-        {
-            var result = await _employeesService.GetEmployeeOrdersAsync(
-                id, page, pageSize, companyId.Value, dateFrom, dateTo, status, cancellationToken);
-            return Ok(result);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
+        var result = await _employeesService.GetEmployeeOrdersAsync(
+            id, page, pageSize, companyId.Value, dateFrom, dateTo, status, cancellationToken);
+        return Ok(result);
     }
 
     /// <summary>
@@ -268,7 +215,7 @@ public class EmployeesController : BaseApiController
         var companyId = GetCompanyId();
         if (companyId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
         var csvBytes = await _exportService.ExportEmployeesToCsvAsync(companyId.Value, cancellationToken);

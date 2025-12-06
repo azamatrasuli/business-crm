@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { isAxiosError } from 'axios'
+import { parseError, ErrorCodes } from '@/lib/errors'
+import { logger } from '@/lib/logger'
 import { Loader2, Wallet, Calculator, Flame, ArrowRightLeft, RefreshCw, TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -113,10 +114,11 @@ export function EditCompensationDialog({
       onSuccess?.()
       onOpenChange(false)
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Ошибка при сохранении')
+      const appError = parseError(error)
+      logger.error('Failed to update compensation', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      })
+      toast.error(appError.message, { description: appError.action })
     } finally {
       setIsSubmitting(false)
     }

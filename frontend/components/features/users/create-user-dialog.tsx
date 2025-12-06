@@ -5,7 +5,8 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { useUsersStore } from '@/stores/users-store'
-import { isAxiosError } from 'axios'
+import { parseError, ErrorCodes } from '@/lib/errors'
+import { logger } from '@/lib/logger'
 import {
   Dialog,
   DialogBody,
@@ -100,6 +101,8 @@ const CreateUserDialogComponent = ({ open, onOpenChange }: CreateUserDialogProps
 
   const onSubmit = async (data: FormValues) => {
     setLoading(true)
+    logger.action('CreateUserAttempt', { phone: data.phone.substring(0, 6) + '...' })
+    
     try {
       const request: CreateUserRequest = {
         fullName: data.fullName,
@@ -110,15 +113,33 @@ const CreateUserDialogComponent = ({ open, onOpenChange }: CreateUserDialogProps
         permissions: data.permissions,
       }
       await createUser(request)
+      
+      logger.info('User created successfully')
       toast.success('Пользователь успешно создан')
       toast.message('Новый аккаунт получит статус "Не активный" до первого входа')
       form.reset()
       onOpenChange(false)
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Ошибка при создании пользователя')
+      const appError = parseError(error)
+      
+      logger.error('Create user failed', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      })
+
+      // Map specific errors to form fields
+      switch (appError.code) {
+        case ErrorCodes.USER_PHONE_EXISTS:
+        case ErrorCodes.USER_INVALID_PHONE_FORMAT:
+          form.setError('phone', { type: 'manual', message: appError.message })
+          break
+        case ErrorCodes.USER_EMAIL_EXISTS:
+          form.setError('email', { type: 'manual', message: appError.message })
+          break
+        default:
+          toast.error(appError.message, {
+            description: appError.action,
+          })
+      }
     } finally {
       setLoading(false)
     }

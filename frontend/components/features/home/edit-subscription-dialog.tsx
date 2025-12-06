@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { useHomeStore } from '@/stores/home-store'
-import { isAxiosError } from 'axios'
+import { parseError, ErrorCodes } from '@/lib/errors'
+import { logger } from '@/lib/logger'
 import { Loader2 } from 'lucide-react'
 import {
   Dialog,
@@ -75,10 +76,11 @@ export function EditSubscriptionDialog({ open, onOpenChange, order }: EditSubscr
       toast.success('Изменения сохранены')
       onOpenChange(false)
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Ошибка при сохранении')
+      const appError = parseError(error)
+      logger.error('Failed to update subscription', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      })
+      toast.error(appError.message, { description: appError.action })
     } finally {
       setIsSubmitting(false)
     }

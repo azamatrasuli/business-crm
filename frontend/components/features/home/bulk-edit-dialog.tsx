@@ -4,7 +4,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { useHomeStore } from '@/stores/home-store'
-import { isAxiosError } from 'axios'
+import { parseError, ErrorCodes } from '@/lib/errors'
+import { logger } from '@/lib/logger'
 import {
   Users,
   UtensilsCrossed,
@@ -379,10 +380,23 @@ export function BulkEditDialog({
       onSuccess?.()
       onOpenChange(false)
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Ошибка при выполнении действия')
+      const appError = parseError(error)
+      logger.error('Bulk action failed', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      })
+      
+      if (appError.code === ErrorCodes.FREEZE_LIMIT_EXCEEDED) {
+        toast.error('Лимит заморозок исчерпан', {
+          description: 'Вы использовали 2 заморозки на этой неделе. Дождитесь следующей недели.',
+          duration: 10000,
+        })
+      } else if (appError.code === ErrorCodes.ORDER_CUTOFF_PASSED) {
+        toast.error('Время для изменений истекло', {
+          description: 'Изменения на сегодня можно вносить до указанного времени',
+        })
+      } else {
+        toast.error(appError.message, { description: appError.action })
+      }
     } finally {
       setIsSubmitting(false)
       setFreezeProgress(0)

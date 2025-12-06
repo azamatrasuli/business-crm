@@ -5,7 +5,8 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { useUsersStore } from '@/stores/users-store'
-import { isAxiosError } from 'axios'
+import { parseError, ErrorCodes } from '@/lib/errors'
+import { logger } from '@/lib/logger'
 import {
   Dialog,
   DialogBody,
@@ -94,10 +95,9 @@ const EditUserDialogComponent = ({ open, onOpenChange, user }: EditUserDialogPro
         })
         setInitialPhone(freshUser.phone)
       } catch (error) {
-        const message = isAxiosError(error)
-          ? error.response?.data?.message
-          : (error as Error)?.message
-        toast.error(message || 'Не удалось загрузить данные пользователя')
+        const appError = parseError(error)
+        logger.error('Failed to load user', error instanceof Error ? error : new Error(appError.message))
+        toast.error(appError.message)
       }
     }
 
@@ -122,6 +122,8 @@ const EditUserDialogComponent = ({ open, onOpenChange, user }: EditUserDialogPro
 
   const onSubmit = async (data: FormValues) => {
     setLoading(true)
+    logger.action('UpdateUserAttempt', { userId: user.id })
+    
     try {
       const request: UpdateUserRequest = {
         fullName: data.fullName,
@@ -132,16 +134,36 @@ const EditUserDialogComponent = ({ open, onOpenChange, user }: EditUserDialogPro
         permissions: data.permissions,
       }
       await updateUser(user.id, request)
+      
+      logger.info('User updated successfully', { userId: user.id })
       toast.success('Пользователь успешно обновлен')
       if (data.phone !== initialPhone) {
         toast.message('Пользователю отправлено уведомление о смене логина')
       }
       onOpenChange(false)
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Ошибка при обновлении пользователя')
+      const appError = parseError(error)
+      
+      logger.error('Update user failed', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+        userId: user.id,
+      })
+
+      // Map specific errors to form fields
+      switch (appError.code) {
+        case ErrorCodes.USER_PHONE_EXISTS:
+        case ErrorCodes.USER_INVALID_PHONE_FORMAT:
+          form.setError('phone', { type: 'manual', message: appError.message })
+          break
+        case ErrorCodes.USER_EMAIL_EXISTS:
+        case ErrorCodes.USER_INVALID_EMAIL_FORMAT:
+          form.setError('email', { type: 'manual', message: appError.message })
+          break
+        default:
+          toast.error(appError.message, {
+            description: appError.action,
+          })
+      }
     } finally {
       setLoading(false)
     }

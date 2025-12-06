@@ -5,6 +5,9 @@ using YallaBusinessAdmin.Application.Compensation.Dtos;
 
 namespace YallaBusinessAdmin.Api.Controllers;
 
+/// <summary>
+/// Compensation (Phase 2) - all exceptions handled by global exception handler
+/// </summary>
 [ApiController]
 [Route("api/compensation")]
 [Authorize]
@@ -17,84 +20,43 @@ public class CompensationController : ControllerBase
         _compensationService = compensationService;
     }
 
-    /// <summary>Get compensation settings for a project</summary>
     [HttpGet("projects/{projectId}/settings")]
     public async Task<ActionResult<CompensationSettingsResponse>> GetSettings(
         Guid projectId, 
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var settings = await _compensationService.GetSettingsAsync(projectId, cancellationToken);
-            return Ok(settings);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
+        var settings = await _compensationService.GetSettingsAsync(projectId, cancellationToken);
+        return Ok(settings);
     }
 
-    /// <summary>Update compensation settings for a project</summary>
     [HttpPut("projects/{projectId}/settings")]
     public async Task<ActionResult<CompensationSettingsResponse>> UpdateSettings(
         Guid projectId, 
         [FromBody] UpdateCompensationSettingsRequest request,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var settings = await _compensationService.UpdateSettingsAsync(projectId, request, cancellationToken);
-            return Ok(settings);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
+        var settings = await _compensationService.UpdateSettingsAsync(projectId, request, cancellationToken);
+        return Ok(settings);
     }
 
-    /// <summary>Get employee's current compensation balance</summary>
     [HttpGet("employees/{employeeId}/balance")]
     public async Task<ActionResult<EmployeeCompensationResponse>> GetEmployeeBalance(
         Guid employeeId,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var balance = await _compensationService.GetEmployeeBalanceAsync(employeeId, cancellationToken);
-            return Ok(balance);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        var balance = await _compensationService.GetEmployeeBalanceAsync(employeeId, cancellationToken);
+        return Ok(balance);
     }
 
-    /// <summary>Process a compensation transaction (when employee pays at restaurant)</summary>
     [HttpPost("transactions")]
     public async Task<ActionResult<CompensationTransactionResponse>> ProcessTransaction(
         [FromBody] CreateCompensationTransactionRequest request,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            var transaction = await _compensationService.ProcessTransactionAsync(request, cancellationToken);
-            return Ok(transaction);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        var transaction = await _compensationService.ProcessTransactionAsync(request, cancellationToken);
+        return Ok(transaction);
     }
 
-    /// <summary>Get compensation transactions for an employee</summary>
     [HttpGet("employees/{employeeId}/transactions")]
     public async Task<ActionResult<IEnumerable<CompensationTransactionResponse>>> GetTransactions(
         Guid employeeId,
@@ -114,7 +76,6 @@ public class CompensationController : ControllerBase
         return Ok(transactions);
     }
 
-    /// <summary>Get daily summary of compensations for a project</summary>
     [HttpGet("projects/{projectId}/daily-summary")]
     public async Task<ActionResult<DailyCompensationSummary>> GetDailySummary(
         Guid projectId,
@@ -125,25 +86,7 @@ public class CompensationController : ControllerBase
         if (!string.IsNullOrEmpty(date) && DateOnly.TryParse(date, out var parsedDate))
             targetDate = parsedDate;
 
-        try
-        {
-            var summary = await _compensationService.GetDailySummaryAsync(projectId, targetDate, cancellationToken);
-            return Ok(summary);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
+        var summary = await _compensationService.GetDailySummaryAsync(projectId, targetDate, cancellationToken);
+        return Ok(summary);
     }
 }
-
-
-
-
-
-
-
-
-
-
-

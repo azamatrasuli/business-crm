@@ -5,6 +5,10 @@ using YallaBusinessAdmin.Application.Projects.Dtos;
 
 namespace YallaBusinessAdmin.Api.Controllers;
 
+/// <summary>
+/// Projects - all exceptions handled by global exception handler
+/// Critical: Address is IMMUTABLE after creation!
+/// </summary>
 [ApiController]
 [Route("api/projects")]
 [Authorize]
@@ -17,176 +21,103 @@ public class ProjectsController : BaseApiController
         _projectsService = projectsService;
     }
 
-    /// <summary>
-    /// Get all projects for the current company
-    /// </summary>
     [HttpGet]
     public async Task<ActionResult<IEnumerable<ProjectListItem>>> GetAll()
     {
         var companyId = GetCompanyId();
         if (companyId == null)
-        {
-            return Unauthorized();
-        }
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
 
         var projects = await _projectsService.GetAllAsync(companyId.Value);
         return Ok(projects);
     }
 
-    /// <summary>
-    /// Get project by ID
-    /// </summary>
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<ProjectResponse>> GetById(Guid id)
     {
         var companyId = GetCompanyId();
         if (companyId == null)
-        {
-            return Unauthorized();
-        }
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
 
         var project = await _projectsService.GetByIdAsync(id);
         
         if (project == null)
-        {
-            return NotFound(new { message = "Проект не найден" });
-        }
+            throw new KeyNotFoundException("Проект не найден");
 
-        // Verify project belongs to user's company
         if (project.CompanyId != companyId.Value)
-        {
-            return Forbid();
-        }
+            throw new InvalidOperationException("Проект не принадлежит вашей компании");
 
         return Ok(project);
     }
 
-    /// <summary>
-    /// Create a new project
-    /// </summary>
     [HttpPost]
     public async Task<ActionResult<ProjectResponse>> Create([FromBody] CreateProjectRequest request)
     {
         var companyId = GetCompanyId();
         if (companyId == null)
-        {
-            return Unauthorized();
-        }
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
 
-        try
-        {
-            var project = await _projectsService.CreateAsync(companyId.Value, request);
-            return CreatedAtAction(nameof(GetById), new { id = project.Id }, project);
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        var project = await _projectsService.CreateAsync(companyId.Value, request);
+        return CreatedAtAction(nameof(GetById), new { id = project.Id }, project);
     }
 
     /// <summary>
-    /// Update a project
+    /// Update project - NOTE: Address cannot be changed!
     /// </summary>
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<ProjectResponse>> Update(Guid id, [FromBody] UpdateProjectRequest request)
     {
         var companyId = GetCompanyId();
         if (companyId == null)
-        {
-            return Unauthorized();
-        }
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
 
-        // First check if project exists and belongs to company
         var existing = await _projectsService.GetByIdAsync(id);
         if (existing == null)
-        {
-            return NotFound(new { message = "Проект не найден" });
-        }
+            throw new KeyNotFoundException("Проект не найден");
         if (existing.CompanyId != companyId.Value)
-        {
-            return Forbid();
-        }
+            throw new InvalidOperationException("Проект не принадлежит вашей компании");
 
-        try
-        {
-            var project = await _projectsService.UpdateAsync(id, request);
-            return Ok(project);
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        var project = await _projectsService.UpdateAsync(id, request);
+        return Ok(project);
     }
 
-    /// <summary>
-    /// Delete a project (soft delete)
-    /// </summary>
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult> Delete(Guid id)
     {
         var companyId = GetCompanyId();
         if (companyId == null)
-        {
-            return Unauthorized();
-        }
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
 
-        // First check if project exists and belongs to company
         var existing = await _projectsService.GetByIdAsync(id);
         if (existing == null)
-        {
-            return NotFound(new { message = "Проект не найден" });
-        }
+            throw new KeyNotFoundException("Проект не найден");
         if (existing.CompanyId != companyId.Value)
-        {
-            return Forbid();
-        }
+            throw new InvalidOperationException("Проект не принадлежит вашей компании");
 
         var deleted = await _projectsService.DeleteAsync(id);
         if (!deleted)
-        {
-            return NotFound(new { message = "Проект не найден" });
-        }
+            throw new KeyNotFoundException("Проект не найден");
 
         return NoContent();
     }
 
-    /// <summary>
-    /// Get project statistics (for dashboard)
-    /// </summary>
     [HttpGet("{id:guid}/stats")]
     public async Task<ActionResult<ProjectStatsResponse>> GetStats(Guid id)
     {
         var companyId = GetCompanyId();
         if (companyId == null)
-        {
-            return Unauthorized();
-        }
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
 
-        // First check if project exists and belongs to company
         var existing = await _projectsService.GetByIdAsync(id);
         if (existing == null)
-        {
-            return NotFound(new { message = "Проект не найден" });
-        }
+            throw new KeyNotFoundException("Проект не найден");
         if (existing.CompanyId != companyId.Value)
-        {
-            return Forbid();
-        }
+            throw new InvalidOperationException("Проект не принадлежит вашей компании");
 
-        try
-        {
-            var stats = await _projectsService.GetStatsAsync(id);
-            return Ok(stats);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
+        var stats = await _projectsService.GetStatsAsync(id);
+        return Ok(stats);
     }
 
-    /// <summary>
-    /// Get available service types
-    /// </summary>
     [HttpGet("service-types")]
     [AllowAnonymous]
     public ActionResult<IEnumerable<object>> GetServiceTypes()
@@ -198,17 +129,4 @@ public class ProjectsController : BaseApiController
         };
         return Ok(types);
     }
-
 }
-
-
-
-
-
-
-
-
-
-
-
-

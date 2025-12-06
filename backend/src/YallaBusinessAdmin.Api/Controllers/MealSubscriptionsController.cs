@@ -7,6 +7,17 @@ using YallaBusinessAdmin.Application.MealSubscriptions.Dtos;
 
 namespace YallaBusinessAdmin.Api.Controllers;
 
+/// <summary>
+/// Meal Subscriptions - КРИТИЧЕСКИЙ КОНТРОЛЛЕР для Lunch функционала
+/// Все исключения обрабатываются глобальным обработчиком
+/// 
+/// Важные бизнес-правила:
+/// - Минимум 5 дней подписки
+/// - Нельзя создать подписку на прошедшие даты  
+/// - Freeze limit: 2 в неделю
+/// - Cutoff time блокирует изменения на сегодня
+/// - Адрес наследуется от проекта сотрудника (immutable)
+/// </summary>
 [ApiController]
 [Route("api/meal-subscriptions")]
 [Authorize]
@@ -21,9 +32,6 @@ public class MealSubscriptionsController : ControllerBase
 
     #region Subscriptions
 
-    /// <summary>
-    /// Get all subscriptions for a project
-    /// </summary>
     [HttpGet]
     public async Task<ActionResult<IEnumerable<SubscriptionResponse>>> GetAll([FromQuery] Guid projectId)
     {
@@ -31,75 +39,53 @@ public class MealSubscriptionsController : ControllerBase
         return Ok(subscriptions);
     }
 
-    /// <summary>
-    /// Get subscription by ID
-    /// </summary>
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<SubscriptionResponse>> GetById(Guid id)
     {
         var subscription = await _subscriptionsService.GetByIdAsync(id);
         if (subscription == null)
-            return NotFound(new { message = "Подписка не найдена" });
+            throw new KeyNotFoundException("Подписка не найдена");
         return Ok(subscription);
     }
 
     /// <summary>
-    /// Create a new subscription
+    /// Create subscription - validates min 5 days, no past dates, budget
     /// </summary>
     [HttpPost]
     public async Task<ActionResult<SubscriptionResponse>> Create([FromBody] CreateSubscriptionRequest request)
     {
-        try
-        {
-            var userId = GetUserId();
-            var subscription = await _subscriptionsService.CreateAsync(request, userId);
-            return CreatedAtAction(nameof(GetById), new { id = subscription.Id }, subscription);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        var userId = GetUserId();
+        var subscription = await _subscriptionsService.CreateAsync(request, userId);
+        return CreatedAtAction(nameof(GetById), new { id = subscription.Id }, subscription);
     }
 
-    /// <summary>
-    /// Cancel a subscription
-    /// </summary>
     [HttpPost("{id:guid}/cancel")]
     public async Task<ActionResult> Cancel(Guid id)
     {
         var result = await _subscriptionsService.CancelAsync(id);
         if (!result)
-            return NotFound(new { message = "Подписка не найдена" });
-        return Ok(new { message = "Подписка отменена" });
+            throw new KeyNotFoundException("Подписка не найдена");
+        return Ok(new { success = true, message = "Подписка отменена" });
     }
 
-    /// <summary>
-    /// Pause a subscription
-    /// </summary>
     [HttpPost("{id:guid}/pause")]
     public async Task<ActionResult> Pause(Guid id)
     {
         var result = await _subscriptionsService.PauseAsync(id);
         if (!result)
-            return NotFound(new { message = "Подписка не найдена" });
-        return Ok(new { message = "Подписка приостановлена" });
+            throw new KeyNotFoundException("Подписка не найдена");
+        return Ok(new { success = true, message = "Подписка приостановлена" });
     }
 
-    /// <summary>
-    /// Resume a subscription
-    /// </summary>
     [HttpPost("{id:guid}/resume")]
     public async Task<ActionResult> Resume(Guid id)
     {
         var result = await _subscriptionsService.ResumeAsync(id);
         if (!result)
-            return NotFound(new { message = "Подписка не найдена" });
-        return Ok(new { message = "Подписка возобновлена" });
+            throw new KeyNotFoundException("Подписка не найдена");
+        return Ok(new { success = true, message = "Подписка возобновлена" });
     }
 
-    /// <summary>
-    /// Calculate price preview
-    /// </summary>
     [HttpPost("price-preview")]
     public async Task<ActionResult<decimal>> PricePreview([FromBody] CreateSubscriptionRequest request)
     {
@@ -111,9 +97,6 @@ public class MealSubscriptionsController : ControllerBase
 
     #region Assignments
 
-    /// <summary>
-    /// Get assignments for a subscription
-    /// </summary>
     [HttpGet("{id:guid}/assignments")]
     public async Task<ActionResult<IEnumerable<MealAssignmentResponse>>> GetAssignments(
         Guid id,
@@ -124,9 +107,6 @@ public class MealSubscriptionsController : ControllerBase
         return Ok(assignments);
     }
 
-    /// <summary>
-    /// Get assignments for an employee
-    /// </summary>
     [HttpGet("employees/{employeeId:guid}/assignments")]
     public async Task<ActionResult<IEnumerable<MealAssignmentResponse>>> GetEmployeeAssignments(
         Guid employeeId,
@@ -137,9 +117,6 @@ public class MealSubscriptionsController : ControllerBase
         return Ok(assignments);
     }
 
-    /// <summary>
-    /// Get assignments for a project
-    /// </summary>
     [HttpGet("projects/{projectId:guid}/assignments")]
     public async Task<ActionResult<IEnumerable<MealAssignmentResponse>>> GetProjectAssignments(
         Guid projectId,
@@ -151,41 +128,32 @@ public class MealSubscriptionsController : ControllerBase
     }
 
     /// <summary>
-    /// Update an assignment
-    /// NOTE: Address cannot be changed - it comes from employee's project
+    /// Update assignment - Address is IMMUTABLE
     /// </summary>
     [HttpPut("assignments/{assignmentId:guid}")]
     public async Task<ActionResult<MealAssignmentResponse>> UpdateAssignment(
         Guid assignmentId,
         [FromBody] UpdateAssignmentRequest request)
     {
-        // NOTE: Address is immutable - comes from employee's project
-        var assignment = await _subscriptionsService.UpdateAssignmentAsync(
-            assignmentId, request.ComboType);
+        var assignment = await _subscriptionsService.UpdateAssignmentAsync(assignmentId, request.ComboType);
         if (assignment == null)
-            return NotFound(new { message = "Назначение не найдено" });
+            throw new KeyNotFoundException("Назначение не найдено");
         return Ok(assignment);
     }
 
-    /// <summary>
-    /// Cancel an assignment
-    /// </summary>
     [HttpPost("assignments/{assignmentId:guid}/cancel")]
     public async Task<ActionResult> CancelAssignment(Guid assignmentId)
     {
         var result = await _subscriptionsService.CancelAssignmentAsync(assignmentId);
         if (!result)
-            return NotFound(new { message = "Назначение не найдено" });
-        return Ok(new { message = "Назначение отменено" });
+            throw new KeyNotFoundException("Назначение не найдено");
+        return Ok(new { success = true, message = "Назначение отменено" });
     }
 
     #endregion
 
     #region Freeze
 
-    /// <summary>
-    /// Get freeze info for an employee
-    /// </summary>
     [HttpGet("employees/{employeeId:guid}/freeze-info")]
     public async Task<ActionResult<FreezeInfoResponse>> GetFreezeInfo(Guid employeeId)
     {
@@ -194,35 +162,26 @@ public class MealSubscriptionsController : ControllerBase
     }
 
     /// <summary>
-    /// Freeze an assignment
+    /// Freeze assignment - LIMIT: 2 per week!
+    /// Throws FREEZE_LIMIT_EXCEEDED if exceeded
     /// </summary>
     [HttpPost("assignments/{assignmentId:guid}/freeze")]
     public async Task<ActionResult<MealAssignmentResponse>> FreezeAssignment(
         Guid assignmentId,
         [FromBody] FreezeRequest? request = null)
     {
-        try
-        {
-            var assignment = await _subscriptionsService.FreezeAssignmentAsync(assignmentId, request?.Reason);
-            if (assignment == null)
-                return NotFound(new { message = "Назначение не найдено" });
-            return Ok(assignment);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        var assignment = await _subscriptionsService.FreezeAssignmentAsync(assignmentId, request?.Reason);
+        if (assignment == null)
+            throw new KeyNotFoundException("Назначение не найдено");
+        return Ok(assignment);
     }
 
-    /// <summary>
-    /// Unfreeze an assignment
-    /// </summary>
     [HttpPost("assignments/{assignmentId:guid}/unfreeze")]
     public async Task<ActionResult<MealAssignmentResponse>> UnfreezeAssignment(Guid assignmentId)
     {
         var assignment = await _subscriptionsService.UnfreezeAssignmentAsync(assignmentId);
         if (assignment == null)
-            return NotFound(new { message = "Назначение не найдено" });
+            throw new KeyNotFoundException("Назначение не найдено");
         return Ok(assignment);
     }
 
@@ -230,9 +189,6 @@ public class MealSubscriptionsController : ControllerBase
 
     #region Calendar
 
-    /// <summary>
-    /// Get calendar view for a project
-    /// </summary>
     [HttpGet("calendar")]
     public async Task<ActionResult<IEnumerable<CalendarDayResponse>>> GetCalendar(
         [FromQuery] Guid projectId,
@@ -249,14 +205,10 @@ public class MealSubscriptionsController : ControllerBase
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst(JwtRegisteredClaimNames.Sub);
         if (userIdClaim != null && Guid.TryParse(userIdClaim.Value, out var userId))
-        {
             return userId;
-        }
         return null;
     }
 }
 
 public record UpdateAssignmentRequest(string? ComboType = null, Guid? DeliveryAddressId = null);
 public record FreezeRequest(string? Reason = null);
-
-

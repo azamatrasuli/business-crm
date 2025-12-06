@@ -14,25 +14,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Lock, ArrowLeft } from 'lucide-react'
+import { Lock, ArrowLeft, AlertCircle, RefreshCw } from 'lucide-react'
 import { authApi } from '@/lib/api/auth'
 import { toast } from 'sonner'
-
-type ApiError = {
-  response?: {
-    data?: {
-      message?: string
-    }
-  }
-}
-
-const getErrorMessage = (error: unknown, fallback: string) => {
-  if (typeof error === 'object' && error !== null) {
-    const apiError = error as ApiError
-    return apiError.response?.data?.message ?? fallback
-  }
-  return fallback
-}
+import { parseError, isRetryableError } from '@/lib/errors'
+import { logger } from '@/lib/logger'
 
 function ResetPasswordContent() {
   const router = useRouter()
@@ -43,33 +29,54 @@ function ResetPasswordContent() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [errorAction, setErrorAction] = useState('')
+  const [canRetry, setCanRetry] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setErrorAction('')
+    setCanRetry(false)
 
     if (password !== confirmPassword) {
       setError('Пароли не совпадают')
+      setErrorAction('Убедитесь, что оба пароля идентичны')
       return
     }
 
     if (!token) {
       setError('Отсутствует токен для сброса пароля')
+      setErrorAction('Попробуйте запросить ссылку заново')
       return
     }
 
+    logger.action('ResetPasswordAttempt')
     setLoading(true)
+    
     try {
       await authApi.resetPassword({ token, password })
+      logger.info('Password reset successful')
       toast.success('Пароль успешно обновлен')
       router.push('/login')
     } catch (err: unknown) {
-      const message = getErrorMessage(err, 'Не удалось обновить пароль')
-      setError(message)
-      toast.error(message)
+      const appError = parseError(err)
+      
+      logger.error('Password reset failed', err instanceof Error ? err : new Error(appError.message), {
+        errorCode: appError.code,
+      })
+      
+      setError(appError.message)
+      setErrorAction(appError.action ?? '')
+      setCanRetry(isRetryableError(appError))
+      toast.error(appError.message)
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleRetry = () => {
+    setCanRetry(false)
+    handleSubmit(new Event('submit') as unknown as React.FormEvent)
   }
 
   return (
@@ -88,8 +95,26 @@ function ResetPasswordContent() {
           {token ? (
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
+                <Alert variant="destructive" className="animate-in fade-in-50">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription className="ml-2">
+                    <div className="font-medium">{error}</div>
+                    {errorAction && (
+                      <div className="text-sm opacity-90 mt-1">{errorAction}</div>
+                    )}
+                    {canRetry && (
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        size="sm" 
+                        className="mt-2"
+                        onClick={handleRetry}
+                      >
+                        <RefreshCw className="h-3 w-3 mr-1" />
+                        Повторить
+                      </Button>
+                    )}
+                  </AlertDescription>
                 </Alert>
               )}
 

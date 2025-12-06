@@ -28,7 +28,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { isAxiosError } from "axios";
+import { parseError, ErrorCodes } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 import { DaySelector } from "./day-selector";
 import { servicesApi, type ScheduleType, type ComboType } from "@/lib/api/services";
 import { employeesApi, type Employee, type EmployeeDetail, type DayOfWeek } from "@/lib/api/employees";
@@ -446,10 +447,26 @@ export function ManageLunchDialog({
       onSuccess?.();
       onOpenChange(false);
     } catch (error) {
-      const message = isAxiosError(error) 
-        ? error.response?.data?.message 
-        : (error as Error).message;
-      toast.error(message || "Ошибка сохранения");
+      const appError = parseError(error);
+      logger.error("Failed to save lunch subscription", error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      });
+      
+      if (appError.code === ErrorCodes.SUB_MIN_DAYS_REQUIRED) {
+        toast.error("Минимальный период подписки — 5 дней", {
+          description: "Выберите период не менее 5 рабочих дней",
+        });
+      } else if (appError.code === ErrorCodes.SUB_PAST_DATE_NOT_ALLOWED) {
+        toast.error("Нельзя создать подписку на прошедшие даты", {
+          description: "Выберите дату начала сегодня или позже",
+        });
+      } else if (appError.code === ErrorCodes.BUDGET_INSUFFICIENT) {
+        toast.error("Недостаточно бюджета", {
+          description: "Обратитесь к администратору для пополнения",
+        });
+      } else {
+        toast.error(appError.message, { description: appError.action });
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -498,10 +515,16 @@ export function ManageLunchDialog({
       onSuccess?.();
       onOpenChange(false);
     } catch (error) {
-      const message = isAxiosError(error) 
-        ? error.response?.data?.message 
-        : (error as Error).message;
-      toast.error(message || "Ошибка отмены подписки");
+      const appError = parseError(error);
+      logger.error("Failed to cancel subscription", error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      });
+      
+      if (appError.code === ErrorCodes.SUB_ALREADY_CANCELLED) {
+        toast.error("Подписка уже отменена");
+      } else {
+        toast.error(appError.message, { description: appError.action });
+      }
     } finally {
       setIsSubmitting(false);
     }

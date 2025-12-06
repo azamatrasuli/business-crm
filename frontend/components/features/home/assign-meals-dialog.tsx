@@ -6,7 +6,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { useHomeStore } from '@/stores/home-store'
 import { useEmployeesStore } from '@/stores/employees-store'
-import { isAxiosError } from 'axios'
+import { parseError, ErrorCodes } from '@/lib/errors'
+import { logger } from '@/lib/logger'
 import {
   Dialog,
   DialogBody,
@@ -186,10 +187,26 @@ export function AssignMealsDialog({ open, onOpenChange }: AssignMealsDialogProps
       toast.success('Обеды успешно назначены')
       onOpenChange(false)
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Ошибка при назначении обедов')
+      const appError = parseError(error)
+      logger.error('Failed to assign meals', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      })
+      
+      if (appError.code === ErrorCodes.SUB_MIN_DAYS_REQUIRED) {
+        toast.error('Минимальный период подписки — 5 дней', {
+          description: 'Выберите период не менее 5 рабочих дней',
+        })
+      } else if (appError.code === ErrorCodes.SUB_PAST_DATE_NOT_ALLOWED) {
+        toast.error('Нельзя создать подписку на прошедшие даты', {
+          description: 'Выберите дату начала сегодня или позже',
+        })
+      } else if (appError.code === ErrorCodes.BUDGET_INSUFFICIENT) {
+        toast.error('Недостаточно бюджета', {
+          description: 'Обратитесь к администратору для пополнения',
+        })
+      } else {
+        toast.error(appError.message, { description: appError.action })
+      }
     } finally {
       setLoading(false)
     }

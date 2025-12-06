@@ -20,7 +20,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { isAxiosError } from "axios";
+import { parseError, ErrorCodes } from "@/lib/errors";
+import { logger } from "@/lib/logger";
 import { servicesApi } from "@/lib/api/services";
 import type { Employee, EmployeeDetail } from "@/lib/api/employees";
 
@@ -246,10 +247,11 @@ export function ManageCompensationDialog({
       onSuccess?.();
       onOpenChange(false);
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error).message;
-      toast.error(message || "Ошибка сохранения");
+      const appError = parseError(error);
+      logger.error("Failed to save compensation", error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      });
+      toast.error(appError.message, { description: appError.action });
     } finally {
       setIsSubmitting(false);
     }

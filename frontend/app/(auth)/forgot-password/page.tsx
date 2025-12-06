@@ -13,47 +13,53 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Mail, ArrowLeft, CheckCircle2 } from 'lucide-react'
+import { Mail, ArrowLeft, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react'
 import { authApi } from '@/lib/api/auth'
 import { toast } from 'sonner'
-
-type ApiError = {
-  response?: {
-    data?: {
-      message?: string
-    }
-  }
-}
-
-const getErrorMessage = (error: unknown, fallback: string) => {
-  if (typeof error === 'object' && error !== null) {
-    const apiError = error as ApiError
-    return apiError.response?.data?.message ?? fallback
-  }
-  return fallback
-}
+import { parseError, isRetryableError } from '@/lib/errors'
+import { logger } from '@/lib/logger'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
+  const [errorAction, setErrorAction] = useState('')
+  const [canRetry, setCanRetry] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setErrorAction('')
+    setCanRetry(false)
     setLoading(true)
+    
+    logger.action('ForgotPasswordAttempt', { email: email.split('@')[0] + '@...' })
+    
     try {
       await authApi.forgotPassword({ email })
       setSuccess(true)
+      logger.info('Password reset email sent', { email: email.split('@')[0] + '@...' })
       toast.success('Мы отправили письмо со ссылкой на сброс пароля')
     } catch (err: unknown) {
-      const message = getErrorMessage(err, 'Не удалось отправить письмо')
-      setError(message)
-      toast.error(message)
+      const appError = parseError(err)
+      
+      logger.error('Forgot password failed', err instanceof Error ? err : new Error(appError.message), {
+        errorCode: appError.code,
+      })
+      
+      setError(appError.message)
+      setErrorAction(appError.action ?? '')
+      setCanRetry(isRetryableError(appError))
+      toast.error(appError.message)
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleRetry = () => {
+    setCanRetry(false)
+    handleSubmit(new Event('submit') as unknown as React.FormEvent)
   }
 
   return (
@@ -85,8 +91,26 @@ export default function ForgotPasswordPage() {
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
+                <Alert variant="destructive" className="animate-in fade-in-50">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription className="ml-2">
+                    <div className="font-medium">{error}</div>
+                    {errorAction && (
+                      <div className="text-sm opacity-90 mt-1">{errorAction}</div>
+                    )}
+                    {canRetry && (
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        size="sm" 
+                        className="mt-2"
+                        onClick={handleRetry}
+                      >
+                        <RefreshCw className="h-3 w-3 mr-1" />
+                        Повторить
+                      </Button>
+                    )}
+                  </AlertDescription>
                 </Alert>
               )}
 

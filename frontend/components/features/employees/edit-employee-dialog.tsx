@@ -5,7 +5,8 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { useEmployeesStore } from '@/stores/employees-store'
-import { isAxiosError } from 'axios'
+import { parseError, ErrorCodes } from '@/lib/errors'
+import { logger } from '@/lib/logger'
 import {
   Dialog,
   DialogBody,
@@ -170,11 +171,32 @@ export function EditEmployeeDialog({
       onOpenChange(false)
       onSuccess?.()
     } catch (error) {
-      console.error('[EditEmployee] Error:', error)
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Ошибка при обновлении сотрудника')
+      const appError = parseError(error)
+      
+      logger.error('Failed to update employee', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+        employeeId: employee.id,
+      })
+      
+      // Map specific errors to form fields
+      switch (appError.code) {
+        case ErrorCodes.EMP_PHONE_EXISTS:
+        case ErrorCodes.EMP_PHONE_DELETED:
+        case ErrorCodes.EMP_INVALID_PHONE_FORMAT:
+          form.setError('phone', { message: appError.message })
+          break
+        case ErrorCodes.EMP_SERVICE_TYPE_SWITCH_BLOCKED:
+          form.setError('serviceType', { message: appError.message })
+          toast.error(appError.message, {
+            description: 'Дождитесь окончания подписки или отмените её',
+            duration: 8000,
+          })
+          break
+        default:
+          toast.error(appError.message, {
+            description: appError.action,
+          })
+      }
     } finally {
       setLoading(false)
     }

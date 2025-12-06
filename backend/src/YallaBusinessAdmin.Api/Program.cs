@@ -52,8 +52,38 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-// Add Controllers
-builder.Services.AddControllers();
+// Add Controllers with custom validation error response
+builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        // Customize model validation error response to match our structured format
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var errors = context.ModelState
+                .Where(e => e.Value?.Errors.Count > 0)
+                .ToDictionary(
+                    e => e.Key,
+                    e => e.Value!.Errors.Select(err => err.ErrorMessage).ToArray()
+                );
+            
+            var response = new
+            {
+                success = false,
+                error = new
+                {
+                    code = "VALIDATION_ERROR",
+                    message = "Ошибка валидации данных",
+                    type = "Validation",
+                    details = errors,
+                    action = "Проверьте правильность заполнения всех полей"
+                },
+                path = context.HttpContext.Request.Path.Value,
+                timestamp = DateTime.UtcNow
+            };
+            
+            return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(response);
+        };
+    });
 
 // Configure CORS - allow all origins in development for mobile testing
 builder.Services.AddCors(options =>

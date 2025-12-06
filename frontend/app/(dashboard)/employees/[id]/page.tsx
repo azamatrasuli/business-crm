@@ -64,7 +64,8 @@ import { ru } from 'date-fns/locale'
 import { employeesApi, type EmployeeOrder, type DayOfWeek } from '@/lib/api/employees'
 import { getFreezeInfo, freezeAssignment, unfreezeAssignment, getEmployeeAssignments } from '@/lib/api/meal-subscriptions'
 import { toast } from 'sonner'
-import { isAxiosError } from 'axios'
+import { parseError, ErrorCodes } from '@/lib/errors'
+import { logger } from '@/lib/logger'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import type { ColumnDef } from '@tanstack/react-table'
 
@@ -294,10 +295,11 @@ export default function EmployeeDetailPage() {
       toast.success('Заказ разморожен')
       loadOrders()
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Не удалось разморозить заказ')
+      const appError = parseError(error)
+      logger.error('Failed to unfreeze order', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      })
+      toast.error(appError.message, { description: appError.action })
     } finally {
       setActionLoading(false)
     }
@@ -320,10 +322,24 @@ export default function EmployeeDetailPage() {
       setFreezeDialogOrder(null)
       loadOrders()
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Не удалось заморозить заказ')
+      const appError = parseError(error)
+      logger.error('Failed to freeze order', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      })
+      
+      // Special handling for freeze limit
+      if (appError.code === ErrorCodes.FREEZE_LIMIT_EXCEEDED) {
+        toast.error('Лимит заморозок исчерпан!', {
+          description: 'Вы уже использовали 2 заморозки на этой неделе. Дождитесь следующей недели.',
+          duration: 10000,
+        })
+      } else if (appError.code === ErrorCodes.ORDER_CUTOFF_PASSED) {
+        toast.error('Время для заморозки истекло', {
+          description: 'Заморозка на сегодня невозможна после времени отсечки',
+        })
+      } else {
+        toast.error(appError.message, { description: appError.action })
+      }
     } finally {
       setActionLoading(false)
     }
@@ -342,10 +358,18 @@ export default function EmployeeDetailPage() {
       setCancelDialogOrder(null)
       loadOrders()
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Не удалось отменить заказ')
+      const appError = parseError(error)
+      logger.error('Failed to cancel order', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      })
+      
+      if (appError.code === ErrorCodes.ORDER_CUTOFF_PASSED) {
+        toast.error('Время для отмены истекло', {
+          description: 'Отмена заказов на сегодня невозможна после времени отсечки',
+        })
+      } else {
+        toast.error(appError.message, { description: appError.action })
+      }
     } finally {
       setActionLoading(false)
     }
@@ -364,10 +388,16 @@ export default function EmployeeDetailPage() {
       fetchEmployee(id)
       loadOrders()
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Не удалось приостановить подписку')
+      const appError = parseError(error)
+      logger.error('Failed to pause subscription', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      })
+      
+      if (appError.code === ErrorCodes.SUB_ALREADY_PAUSED) {
+        toast.error('Подписка уже приостановлена')
+      } else {
+        toast.error(appError.message, { description: appError.action })
+      }
     } finally {
       setActionLoading(false)
     }
@@ -384,10 +414,16 @@ export default function EmployeeDetailPage() {
       fetchEmployee(id)
       loadOrders()
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Не удалось возобновить подписку')
+      const appError = parseError(error)
+      logger.error('Failed to resume subscription', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      })
+      
+      if (appError.code === ErrorCodes.SUB_ALREADY_ACTIVE) {
+        toast.error('Подписка уже активна')
+      } else {
+        toast.error(appError.message, { description: appError.action })
+      }
     } finally {
       setActionLoading(false)
     }

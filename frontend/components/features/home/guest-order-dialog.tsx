@@ -43,7 +43,8 @@ import { COMBO_METADATA, COMBO_TYPES, getComboPrice } from '@/lib/combos'
 import { cn } from '@/lib/utils'
 import { format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { isAxiosError } from 'axios'
+import { parseError, ErrorCodes } from '@/lib/errors'
+import { logger } from '@/lib/logger'
 import {
   Form,
   FormControl,
@@ -226,10 +227,24 @@ export function GuestOrderDialog({ open, onOpenChange }: GuestOrderDialogProps) 
       setConfirmOpen(false)
       onOpenChange(false)
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Ошибка при создании гостевого заказа')
+      const appError = parseError(error)
+      logger.error('Failed to create guest order', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      })
+      
+      // Handle specific errors
+      if (appError.code === ErrorCodes.ORDER_CUTOFF_PASSED) {
+        toast.error('Время для создания заказов истекло', {
+          description: 'Заказы на сегодня можно создавать до указанного времени отсечки',
+          duration: 8000,
+        })
+      } else if (appError.code === ErrorCodes.BUDGET_INSUFFICIENT) {
+        toast.error('Недостаточно бюджета', {
+          description: 'Обратитесь к администратору для пополнения',
+        })
+      } else {
+        toast.error(appError.message, { description: appError.action })
+      }
     } finally {
       setLoading(false)
       setPendingData(null)

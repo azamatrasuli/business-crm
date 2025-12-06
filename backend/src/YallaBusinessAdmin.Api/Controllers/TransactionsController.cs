@@ -4,6 +4,9 @@ using YallaBusinessAdmin.Application.Transactions;
 
 namespace YallaBusinessAdmin.Api.Controllers;
 
+/// <summary>
+/// Transactions - all exceptions handled by global exception handler
+/// </summary>
 [ApiController]
 [Route("api/transactions")]
 [Authorize]
@@ -16,9 +19,6 @@ public class TransactionsController : BaseApiController
         _transactionsService = transactionsService;
     }
 
-    /// <summary>
-    /// Get all transactions (ledger history)
-    /// </summary>
     [HttpGet]
     public async Task<ActionResult> GetAll(
         [FromQuery] int page = 1,
@@ -29,52 +29,33 @@ public class TransactionsController : BaseApiController
         CancellationToken cancellationToken = default)
     {
         var companyId = GetCompanyId();
-        if (companyId == null) return Unauthorized();
+        if (companyId == null) 
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
 
         var result = await _transactionsService.GetAllAsync(
             companyId.Value, page, pageSize, type, startDate, endDate, cancellationToken);
         return Ok(result);
     }
 
-    /// <summary>
-    /// Get transaction by ID
-    /// </summary>
     [HttpGet("{id:guid}")]
     public async Task<ActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
         var companyId = GetCompanyId();
-        if (companyId == null) return Unauthorized();
+        if (companyId == null) 
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
 
-        try
-        {
-            var result = await _transactionsService.GetByIdAsync(id, companyId.Value, cancellationToken);
-            return Ok(result);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
+        var result = await _transactionsService.GetByIdAsync(id, companyId.Value, cancellationToken);
+        return Ok(result);
     }
 
-    /// <summary>
-    /// Get current balance
-    /// </summary>
     [HttpGet("balance")]
     public async Task<ActionResult> GetBalance(CancellationToken cancellationToken)
     {
         var companyId = GetCompanyId();
-        if (companyId == null) return Unauthorized();
+        if (companyId == null) 
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
 
-        try
-        {
-            var balance = await _transactionsService.GetCurrentBalanceAsync(companyId.Value, cancellationToken);
-            return Ok(new { balance });
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
+        var balance = await _transactionsService.GetCurrentBalanceAsync(companyId.Value, cancellationToken);
+        return Ok(new { balance });
     }
-
 }
-

@@ -54,7 +54,8 @@ import {
 } from '@/components/ui/tooltip'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { toast } from 'sonner'
-import { isAxiosError } from 'axios'
+import { parseError, ErrorCodes } from '@/lib/errors'
+import { logger } from '@/lib/logger'
 import { isFeatureEnabled } from '@/lib/features.config'
 import { FeatureVisible } from '@/components/features/feature-gate'
 import { DataTable } from '@/components/ui/data-table'
@@ -410,10 +411,11 @@ function HomePageContent() {
       toast.success(`Заказ для ${order.employeeName} разморожен`)
       fetchOrders(1)
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Не удалось разморозить заказ')
+      const appError = parseError(error)
+      logger.error('Failed to unfreeze order', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      })
+      toast.error(appError.message, { description: appError.action })
     } finally {
       setActionLoading(false)
     }
@@ -431,10 +433,18 @@ function HomePageContent() {
       toast.success(`Заказ для ${cancelDialogOrder.employeeName} отменён`)
       setCancelDialogOrder(null)
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Не удалось отменить заказ')
+      const appError = parseError(error)
+      logger.error('Failed to cancel order', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      })
+      
+      if (appError.code === ErrorCodes.ORDER_CUTOFF_PASSED) {
+        toast.error('Время для отмены истекло', {
+          description: 'Отмена заказов на сегодня невозможна после времени отсечки',
+        })
+      } else {
+        toast.error(appError.message, { description: appError.action })
+      }
     } finally {
       setActionLoading(false)
     }
@@ -461,10 +471,26 @@ function HomePageContent() {
       setFreezeDialogOrder(null)
       fetchOrders(1)
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Не удалось заморозить заказ')
+      const appError = parseError(error)
+      logger.error('Failed to freeze order', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      })
+      
+      // Special handling for freeze limit
+      if (appError.code === ErrorCodes.FREEZE_LIMIT_EXCEEDED) {
+        toast.error('Лимит заморозок исчерпан!', {
+          description: 'Вы уже использовали 2 заморозки на этой неделе. Дождитесь следующей недели.',
+          duration: 10000,
+        })
+      } else if (appError.code === ErrorCodes.ORDER_CUTOFF_PASSED) {
+        toast.error('Время для заморозки истекло', {
+          description: 'Заморозка на сегодня невозможна после времени отсечки',
+        })
+      } else if (appError.code === ErrorCodes.ORDER_GUEST_CANNOT_FREEZE) {
+        toast.error('Гостевые заказы нельзя замораживать')
+      } else {
+        toast.error(appError.message, { description: appError.action })
+      }
     } finally {
       setActionLoading(false)
     }
@@ -1151,10 +1177,11 @@ function HomePageContent() {
       )
       setSingleActionDialog(null)
     } catch (error) {
-      const message = isAxiosError(error)
-        ? error.response?.data?.message
-        : (error as Error)?.message
-      toast.error(message || 'Не удалось применить действие')
+      const appError = parseError(error)
+      logger.error('Single action failed', error instanceof Error ? error : new Error(appError.message), {
+        errorCode: appError.code,
+      })
+      toast.error(appError.message, { description: appError.action })
     } finally {
       setSingleActionLoading(false)
     }

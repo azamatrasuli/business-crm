@@ -4,6 +4,9 @@ using YallaBusinessAdmin.Application.News;
 
 namespace YallaBusinessAdmin.Api.Controllers;
 
+/// <summary>
+/// News (Phase 2) - all exceptions handled by global exception handler
+/// </summary>
 [ApiController]
 [Route("api/news")]
 [Authorize]
@@ -16,9 +19,6 @@ public class NewsController : ControllerBase
         _newsService = newsService;
     }
 
-    /// <summary>
-    /// Get all published news for the current user
-    /// </summary>
     [HttpGet]
     public async Task<ActionResult> GetAll(
         [FromQuery] int page = 1,
@@ -27,61 +27,42 @@ public class NewsController : ControllerBase
     {
         var userId = GetUserId();
         var userRole = GetUserRole();
-        if (userId == null) return Unauthorized();
+        if (userId == null) 
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
 
         var result = await _newsService.GetAllAsync(userId.Value, userRole ?? "ADMIN", page, pageSize, cancellationToken);
         return Ok(result);
     }
 
-    /// <summary>
-    /// Get news by ID
-    /// </summary>
     [HttpGet("{id:guid}")]
     public async Task<ActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (userId == null) return Unauthorized();
+        if (userId == null) 
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
 
-        try
-        {
-            var result = await _newsService.GetByIdAsync(id, userId.Value, cancellationToken);
-            return Ok(result);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
+        var result = await _newsService.GetByIdAsync(id, userId.Value, cancellationToken);
+        return Ok(result);
     }
 
-    /// <summary>
-    /// Mark a news item as read
-    /// </summary>
     [HttpPost("{id:guid}/read")]
     public async Task<ActionResult> MarkAsRead(Guid id, CancellationToken cancellationToken)
     {
         var userId = GetUserId();
-        if (userId == null) return Unauthorized();
+        if (userId == null) 
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
 
-        try
-        {
-            await _newsService.MarkAsReadAsync(id, userId.Value, cancellationToken);
-            return Ok(new { message = "Новость отмечена как прочитанная" });
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
+        await _newsService.MarkAsReadAsync(id, userId.Value, cancellationToken);
+        return Ok(new { success = true, message = "Новость отмечена как прочитанная" });
     }
 
-    /// <summary>
-    /// Get unread news count for the current user
-    /// </summary>
     [HttpGet("unread-count")]
     public async Task<ActionResult> GetUnreadCount(CancellationToken cancellationToken)
     {
         var userId = GetUserId();
         var userRole = GetUserRole();
-        if (userId == null) return Unauthorized();
+        if (userId == null) 
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
 
         var count = await _newsService.GetUnreadCountAsync(userId.Value, userRole ?? "ADMIN", cancellationToken);
         return Ok(new { count });
@@ -91,9 +72,7 @@ public class NewsController : ControllerBase
     {
         var userIdClaim = User.FindFirst("sub") ?? User.FindFirst("userId") ?? User.FindFirst("user_id");
         if (userIdClaim != null && Guid.TryParse(userIdClaim.Value, out var userId))
-        {
             return userId;
-        }
         return null;
     }
 
@@ -102,4 +81,3 @@ public class NewsController : ControllerBase
         return User.FindFirst("role")?.Value ?? User.FindFirst("Role")?.Value;
     }
 }
-

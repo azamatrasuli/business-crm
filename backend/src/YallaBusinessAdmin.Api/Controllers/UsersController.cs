@@ -5,6 +5,9 @@ using YallaBusinessAdmin.Application.Users.Dtos;
 
 namespace YallaBusinessAdmin.Api.Controllers;
 
+/// <summary>
+/// Users management - all exceptions handled by global exception handler
+/// </summary>
 [ApiController]
 [Route("api/users")]
 [Authorize]
@@ -34,7 +37,7 @@ public class UsersController : BaseApiController
         var companyId = GetCompanyId();
         if (companyId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
         var result = await _usersService.GetAllAsync(
@@ -53,18 +56,11 @@ public class UsersController : BaseApiController
         var companyId = GetCompanyId();
         if (companyId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
-        try
-        {
-            var result = await _usersService.GetByIdAsync(id, companyId.Value, cancellationToken);
-            return Ok(result);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
+        var result = await _usersService.GetByIdAsync(id, companyId.Value, cancellationToken);
+        return Ok(result);
     }
 
     /// <summary>
@@ -77,18 +73,11 @@ public class UsersController : BaseApiController
         var currentUserId = GetUserId();
         if (companyId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
-        try
-        {
-            var result = await _usersService.CreateAsync(request, companyId.Value, currentUserId, cancellationToken);
-            return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        var result = await _usersService.CreateAsync(request, companyId.Value, currentUserId, cancellationToken);
+        return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
     }
 
     /// <summary>
@@ -101,22 +90,11 @@ public class UsersController : BaseApiController
         var currentUserId = GetUserId();
         if (companyId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
-        try
-        {
-            var result = await _usersService.UpdateAsync(id, request, companyId.Value, currentUserId, cancellationToken);
-            return Ok(result);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        var result = await _usersService.UpdateAsync(id, request, companyId.Value, currentUserId, cancellationToken);
+        return Ok(result);
     }
 
     /// <summary>
@@ -129,22 +107,11 @@ public class UsersController : BaseApiController
         var currentUserId = GetUserId();
         if (companyId == null || currentUserId == null)
         {
-            return Unauthorized();
+            return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
         }
 
-        try
-        {
-            await _usersService.DeleteAsync(id, companyId.Value, currentUserId.Value, cancellationToken);
-            return NoContent();
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return NotFound(new { message = ex.Message });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
+        await _usersService.DeleteAsync(id, companyId.Value, currentUserId.Value, cancellationToken);
+        return NoContent();
     }
 
     /// <summary>
@@ -189,5 +156,4 @@ public class UsersController : BaseApiController
         var roles = new[] { "admin", "manager" };
         return Ok(roles);
     }
-
 }
