@@ -88,23 +88,21 @@ export function ImpersonateDialog({ open, onOpenChange }: ImpersonateDialogProps
           </DialogDescription>
         </DialogHeader>
 
-        <DialogBody className="p-0">
+        <DialogBody>
           {/* Search */}
-          <div className="px-6 pb-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Поиск по имени, компании, телефону..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-10"
-              />
-            </div>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Поиск по имени, компании, телефону..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-10"
+            />
           </div>
 
           {/* Admins list */}
-          <ScrollArea className="h-[400px]">
-            <div className="px-6 pb-4">
+          <ScrollArea className="h-[350px] -mx-6 mt-4">
+            <div className="px-6">
               {adminsLoading ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
