@@ -182,7 +182,6 @@ public class UsersService : IUsersService
     public async Task<UserResponse> UpdateAsync(Guid id, UpdateUserRequest request, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
     {
         var user = await _context.AdminUsers
-            .Include(u => u.Permissions)
             .FirstOrDefaultAsync(u => u.Id == id && u.CompanyId == companyId, cancellationToken);
 
         if (user == null)
@@ -216,16 +215,20 @@ public class UsersService : IUsersService
         user.Status = AdminStatusExtensions.FromRussian(request.Status);
         user.UpdatedAt = DateTime.UtcNow;
 
-        // Update permissions
-        _context.UserPermissions.RemoveRange(user.Permissions);
-        user.Permissions.Clear();
+        // Delete existing permissions directly (avoid concurrency issues with Include)
+        var existingPermissions = await _context.UserPermissions
+            .Where(p => p.AdminUserId == id)
+            .ToListAsync(cancellationToken);
+        _context.UserPermissions.RemoveRange(existingPermissions);
+
+        // Add new permissions
         var validPermissions = SanitizePermissions(request.Permissions, request.Role);
         foreach (var route in validPermissions)
         {
-            user.Permissions.Add(new UserPermission
+            _context.UserPermissions.Add(new UserPermission
             {
                 Id = Guid.NewGuid(),
-                AdminUserId = user.Id,
+                AdminUserId = id,
                 Route = route
             });
         }
@@ -242,7 +245,20 @@ public class UsersService : IUsersService
             newValues: new { request.FullName, request.Phone, request.Email, request.Role, request.Status },
             cancellationToken: cancellationToken);
 
-        return MapToResponse(user);
+        // Create response with the new permissions
+        return new UserResponse
+        {
+            Id = user.Id,
+            FullName = user.FullName,
+            Phone = user.Phone,
+            Email = user.Email,
+            Role = user.Role,
+            Status = user.Status.ToRussian(),
+            CompanyId = user.CompanyId,
+            Permissions = validPermissions,
+            CreatedAt = user.CreatedAt,
+            LastLoginAt = user.LastLoginAt
+        };
     }
 
     public async Task DeleteAsync(Guid id, Guid companyId, Guid currentUserId, CancellationToken cancellationToken = default)
