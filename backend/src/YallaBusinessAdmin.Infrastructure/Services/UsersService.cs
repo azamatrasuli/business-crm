@@ -16,18 +16,17 @@ public class UsersService : IUsersService
     private readonly IPasswordHasher _passwordHasher;
     private readonly IAuditService _auditService;
 
-    // Available routes that can be assigned as permissions
+    // Available routes that can be assigned as permissions (without leading slashes to match frontend)
     private static readonly string[] AvailableRoutes = new[]
     {
-        "/home",
-        "/employees",
-        "/users",
-        "/addresses",
-        "/settings",
-        "/invoices",
-        "/transactions",
-        "/documents",
-        "/news"
+        "home",
+        "employees",
+        "users",
+        "projects",
+        "payments",
+        "analytics",
+        "meals",
+        "news"
     };
 
     public UsersService(AppDbContext context, IPasswordHasher passwordHasher, IAuditService auditService)
@@ -386,10 +385,10 @@ public class UsersService : IUsersService
             return AvailableRoutes;
         }
 
-        // Managers get /home by default
+        // Managers get home by default
         if (role == "manager")
         {
-            permissionSet.Add("/home");
+            permissionSet.Add("home");
         }
 
         // Filter to only valid routes
