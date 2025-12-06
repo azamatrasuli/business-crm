@@ -49,7 +49,40 @@ interface EmployeesState {
 
 const getErrorMessage = (error: unknown, fallback = 'Произошла ошибка') => {
   if (typeof error === 'string') return error
-  if (error instanceof Error) return error.message
+  
+  // Handle Axios errors
+  if (error && typeof error === 'object' && 'response' in error) {
+    const axiosError = error as { response?: { status?: number; data?: { message?: string; error?: { message?: string } } }; message?: string }
+    const status = axiosError.response?.status
+    
+    if (status === 500) {
+      return 'Сервер временно недоступен. Пожалуйста, попробуйте позже.'
+    }
+    if (status === 502 || status === 503 || status === 504) {
+      return 'Сервер перезагружается. Подождите 1-2 минуты и обновите страницу.'
+    }
+    if (status === 401) {
+      return 'Сессия истекла. Пожалуйста, войдите заново.'
+    }
+    if (status === 403) {
+      return 'Доступ запрещён'
+    }
+    if (!axiosError.response) {
+      return 'Нет соединения с сервером. Проверьте интернет.'
+    }
+    
+    // Try to get message from response
+    const message = axiosError.response.data?.message || axiosError.response.data?.error?.message
+    if (message) return message
+  }
+  
+  if (error instanceof Error) {
+    if (error.message.includes('Network Error')) {
+      return 'Нет соединения с сервером. Проверьте интернет.'
+    }
+    return error.message
+  }
+  
   return fallback
 }
 

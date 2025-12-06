@@ -33,6 +33,8 @@ import {
   Trash2,
   MoreHorizontal,
   Pencil,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react'
 // DropdownMenu imports removed - using inline buttons instead
 import { GuestOrderDialog } from '@/components/features/home/guest-order-dialog'
@@ -1684,8 +1686,25 @@ function HomePageContent() {
 
       {/* Error Alert */}
       {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
+        <Alert variant="destructive" className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 mt-0.5 flex-shrink-0" />
+            <div>
+              <AlertDescription className="font-medium">{error}</AlertDescription>
+              <p className="text-sm text-destructive/70 mt-1">
+                Если проблема повторяется, обратитесь в поддержку.
+              </p>
+            </div>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => fetchDashboard()}
+            className="w-full sm:w-auto flex-shrink-0 border-destructive/30 hover:bg-destructive/10"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Повторить
+          </Button>
         </Alert>
       )}
 
