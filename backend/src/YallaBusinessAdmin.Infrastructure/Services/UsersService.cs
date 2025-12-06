@@ -280,7 +280,7 @@ public class UsersService : IUsersService
         if (user.Role == "admin")
         {
             var adminCount = await _context.AdminUsers
-                .CountAsync(u => u.CompanyId == companyId && u.Role == "admin", cancellationToken);
+                .CountAsync(u => u.CompanyId == companyId && u.Role == "admin" && u.DeletedAt == null, cancellationToken);
             
             if (adminCount <= 1)
             {
