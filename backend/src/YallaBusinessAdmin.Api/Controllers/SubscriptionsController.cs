@@ -8,7 +8,7 @@ namespace YallaBusinessAdmin.Api.Controllers;
 [ApiController]
 [Route("api/subscriptions")]
 [Authorize]
-public class SubscriptionsController : ControllerBase
+public class SubscriptionsController : BaseApiController
 {
     private readonly ISubscriptionsService _subscriptionsService;
 
@@ -81,6 +81,9 @@ public class SubscriptionsController : ControllerBase
     [HttpPost]
     public async Task<ActionResult> Create([FromBody] CreateSubscriptionRequest request, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -105,6 +108,9 @@ public class SubscriptionsController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<ActionResult> Update(Guid id, [FromBody] UpdateSubscriptionDetailsRequest request, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -125,6 +131,9 @@ public class SubscriptionsController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -145,6 +154,9 @@ public class SubscriptionsController : ControllerBase
     [HttpPost("bulk")]
     public async Task<ActionResult> BulkCreate([FromBody] BulkCreateSubscriptionRequest request, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -158,6 +170,9 @@ public class SubscriptionsController : ControllerBase
     [HttpPut("bulk")]
     public async Task<ActionResult> BulkUpdate([FromBody] BulkUpdateSubscriptionRequest request, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -171,6 +186,9 @@ public class SubscriptionsController : ControllerBase
     [HttpPost("{id:guid}/pause")]
     public async Task<ActionResult> Pause(Guid id, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -195,6 +213,9 @@ public class SubscriptionsController : ControllerBase
     [HttpPost("{id:guid}/resume")]
     public async Task<ActionResult> Resume(Guid id, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -219,6 +240,9 @@ public class SubscriptionsController : ControllerBase
     [HttpPost("bulk/pause")]
     public async Task<ActionResult> BulkPause([FromBody] BulkSubscriptionActionRequest request, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -232,6 +256,9 @@ public class SubscriptionsController : ControllerBase
     [HttpPost("bulk/resume")]
     public async Task<ActionResult> BulkResume([FromBody] BulkSubscriptionActionRequest request, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -264,14 +291,5 @@ public class SubscriptionsController : ControllerBase
         }
     }
 
-    private Guid? GetCompanyId()
-    {
-        var companyIdClaim = User.FindFirst("company_id") ?? User.FindFirst("companyId");
-        if (companyIdClaim != null && Guid.TryParse(companyIdClaim.Value, out var companyId))
-        {
-            return companyId;
-        }
-        return null;
-    }
 }
 

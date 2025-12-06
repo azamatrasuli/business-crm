@@ -1,5 +1,3 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using YallaBusinessAdmin.Application.Users;
@@ -10,7 +8,7 @@ namespace YallaBusinessAdmin.Api.Controllers;
 [ApiController]
 [Route("api/users")]
 [Authorize]
-public class UsersController : ControllerBase
+public class UsersController : BaseApiController
 {
     private readonly IUsersService _usersService;
 
@@ -75,6 +73,9 @@ public class UsersController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<UserResponse>> Create([FromBody] CreateUserRequest request, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         var currentUserId = GetUserId();
         if (companyId == null)
@@ -99,6 +100,9 @@ public class UsersController : ControllerBase
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<UserResponse>> Update(Guid id, [FromBody] UpdateUserRequest request, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         var currentUserId = GetUserId();
         if (companyId == null)
@@ -127,6 +131,9 @@ public class UsersController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         var currentUserId = GetUserId();
         if (companyId == null || currentUserId == null)
@@ -179,23 +186,4 @@ public class UsersController : ControllerBase
         return Ok(roles);
     }
 
-    private Guid? GetCompanyId()
-    {
-        var companyIdClaim = User.FindFirst("company_id") ?? User.FindFirst("companyId");
-        if (companyIdClaim != null && Guid.TryParse(companyIdClaim.Value, out var companyId))
-        {
-            return companyId;
-        }
-        return null;
-    }
-
-    private Guid? GetUserId()
-    {
-        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst(JwtRegisteredClaimNames.Sub);
-        if (userIdClaim != null && Guid.TryParse(userIdClaim.Value, out var userId))
-        {
-            return userId;
-        }
-        return null;
-    }
 }

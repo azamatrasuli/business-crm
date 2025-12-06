@@ -67,6 +67,9 @@ public class ProjectsController : BaseApiController
     [HttpPost]
     public async Task<ActionResult<ProjectResponse>> Create([FromBody] CreateProjectRequest request)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         if (companyId == null)
         {
@@ -90,6 +93,9 @@ public class ProjectsController : BaseApiController
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<ProjectResponse>> Update(Guid id, [FromBody] UpdateProjectRequest request)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         if (companyId == null)
         {
@@ -124,6 +130,9 @@ public class ProjectsController : BaseApiController
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult> Delete(Guid id)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         if (companyId == null)
         {

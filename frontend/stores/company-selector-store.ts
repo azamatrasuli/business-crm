@@ -20,6 +20,9 @@ interface CompanySelectorState {
   
   // Computed - returns selected company or user's company
   getEffectiveCompanyId: (userCompanyId: string) => string
+  
+  // Check if viewing another company (read-only mode)
+  isViewingOtherCompany: (userCompanyId: string | null) => boolean
 }
 
 export const useCompanySelectorStore = create<CompanySelectorState>()(
@@ -45,8 +48,11 @@ export const useCompanySelectorStore = create<CompanySelectorState>()(
         set({ 
           selectedCompanyId: null,
           selectedCompanyName: null,
-          companies: []
         })
+        // Reload page to refresh all data with original company
+        if (typeof window !== 'undefined') {
+          window.location.reload()
+        }
       },
       
       fetchCompanies: async () => {
@@ -63,6 +69,14 @@ export const useCompanySelectorStore = create<CompanySelectorState>()(
       getEffectiveCompanyId: (userCompanyId: string) => {
         const { selectedCompanyId } = get()
         return selectedCompanyId || userCompanyId
+      },
+      
+      isViewingOtherCompany: (userCompanyId: string | null) => {
+        const { selectedCompanyId } = get()
+        // If no selected company or no user company, not viewing other
+        if (!selectedCompanyId || !userCompanyId) return false
+        // If selected company is different from user's company
+        return selectedCompanyId !== userCompanyId
       }
     }),
     {

@@ -8,7 +8,7 @@ namespace YallaBusinessAdmin.Api.Controllers;
 [ApiController]
 [Route("api/invoices")]
 [Authorize]
-public class InvoicesController : ControllerBase
+public class InvoicesController : BaseApiController
 {
     private readonly IInvoicesService _invoicesService;
 
@@ -60,6 +60,9 @@ public class InvoicesController : ControllerBase
     [HttpPost]
     public async Task<ActionResult> Create([FromBody] CreateInvoiceRequest request, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -80,6 +83,9 @@ public class InvoicesController : ControllerBase
     [HttpPost("{id:guid}/pay")]
     public async Task<ActionResult> Pay(Guid id, [FromBody] PayInvoiceRequest request, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -98,14 +104,5 @@ public class InvoicesController : ControllerBase
         }
     }
 
-    private Guid? GetCompanyId()
-    {
-        var companyIdClaim = User.FindFirst("company_id") ?? User.FindFirst("companyId");
-        if (companyIdClaim != null && Guid.TryParse(companyIdClaim.Value, out var companyId))
-        {
-            return companyId;
-        }
-        return null;
-    }
 }
 

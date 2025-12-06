@@ -7,7 +7,7 @@ namespace YallaBusinessAdmin.Api.Controllers;
 [ApiController]
 [Route("api/documents")]
 [Authorize]
-public class DocumentsController : ControllerBase
+public class DocumentsController : BaseApiController
 {
     private readonly IDocumentsService _documentsService;
 
@@ -73,14 +73,5 @@ public class DocumentsController : ControllerBase
         }
     }
 
-    private Guid? GetCompanyId()
-    {
-        var companyIdClaim = User.FindFirst("company_id") ?? User.FindFirst("companyId");
-        if (companyIdClaim != null && Guid.TryParse(companyIdClaim.Value, out var companyId))
-        {
-            return companyId;
-        }
-        return null;
-    }
 }
 

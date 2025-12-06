@@ -7,7 +7,7 @@ namespace YallaBusinessAdmin.Api.Controllers;
 [ApiController]
 [Route("api/transactions")]
 [Authorize]
-public class TransactionsController : ControllerBase
+public class TransactionsController : BaseApiController
 {
     private readonly ITransactionsService _transactionsService;
 
@@ -76,14 +76,5 @@ public class TransactionsController : ControllerBase
         }
     }
 
-    private Guid? GetCompanyId()
-    {
-        var companyIdClaim = User.FindFirst("company_id") ?? User.FindFirst("companyId");
-        if (companyIdClaim != null && Guid.TryParse(companyIdClaim.Value, out var companyId))
-        {
-            return companyId;
-        }
-        return null;
-    }
 }
 

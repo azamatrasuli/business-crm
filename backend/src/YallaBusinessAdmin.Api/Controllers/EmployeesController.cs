@@ -80,6 +80,9 @@ public class EmployeesController : BaseApiController
     [HttpPost]
     public async Task<ActionResult<EmployeeResponse>> Create([FromBody] CreateEmployeeRequest request, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         var currentUserId = GetUserId();
         if (companyId == null)
@@ -104,6 +107,9 @@ public class EmployeesController : BaseApiController
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<EmployeeResponse>> Update(Guid id, [FromBody] UpdateEmployeeRequest request, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         var currentUserId = GetUserId();
         if (companyId == null)
@@ -128,6 +134,9 @@ public class EmployeesController : BaseApiController
     [HttpPatch("{id:guid}/activate")]
     public async Task<ActionResult<EmployeeResponse>> ToggleActivation(Guid id, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         var currentUserId = GetUserId();
         if (companyId == null)
@@ -152,6 +161,9 @@ public class EmployeesController : BaseApiController
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         var currentUserId = GetUserId();
         if (companyId == null)
@@ -176,6 +188,9 @@ public class EmployeesController : BaseApiController
     [HttpPut("{id:guid}/budget")]
     public async Task<ActionResult> UpdateBudget(Guid id, [FromBody] UpdateBudgetRequest request, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         var currentUserId = GetUserId();
         if (companyId == null)
@@ -200,6 +215,9 @@ public class EmployeesController : BaseApiController
     [HttpPut("budget/batch")]
     public async Task<ActionResult> BatchUpdateBudget([FromBody] BatchUpdateBudgetRequest request, CancellationToken cancellationToken)
     {
+        var readOnlyCheck = CheckReadOnlyMode();
+        if (readOnlyCheck != null) return readOnlyCheck;
+        
         var companyId = GetCompanyId();
         var currentUserId = GetUserId();
         if (companyId == null)

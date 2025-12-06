@@ -79,5 +79,57 @@ public abstract class BaseApiController : ControllerBase
         }
         return null;
     }
+    
+    /// <summary>
+    /// Get the company ID from JWT (not from header)
+    /// </summary>
+    protected Guid? GetJwtCompanyId()
+    {
+        var companyIdClaim = User.FindFirst("company_id") ?? User.FindFirst("companyId");
+        if (companyIdClaim != null && Guid.TryParse(companyIdClaim.Value, out var companyId))
+        {
+            return companyId;
+        }
+        return null;
+    }
+    
+    /// <summary>
+    /// Check if SUPER_ADMIN is viewing another company (read-only mode)
+    /// Returns true if viewing a different company than their JWT company
+    /// </summary>
+    protected bool IsViewingOtherCompany()
+    {
+        if (!IsSuperAdmin()) return false;
+        
+        var jwtCompanyId = GetJwtCompanyId();
+        var headerCompanyId = Request.Headers["X-Company-Id"].FirstOrDefault();
+        
+        // If no header, not viewing other company
+        if (string.IsNullOrEmpty(headerCompanyId)) return false;
+        
+        // If header exists and is different from JWT company
+        if (Guid.TryParse(headerCompanyId, out var parsedHeaderCompanyId))
+        {
+            return parsedHeaderCompanyId != jwtCompanyId;
+        }
+        
+        return false;
+    }
+    
+    /// <summary>
+    /// Returns Forbidden if SUPER_ADMIN tries to modify data in view-only mode
+    /// Use this at the start of POST/PUT/DELETE methods
+    /// </summary>
+    protected ActionResult? CheckReadOnlyMode()
+    {
+        if (IsViewingOtherCompany())
+        {
+            return StatusCode(403, new { 
+                message = "Режим просмотра - редактирование запрещено",
+                code = "READ_ONLY_MODE"
+            });
+        }
+        return null;
+    }
 }
 
