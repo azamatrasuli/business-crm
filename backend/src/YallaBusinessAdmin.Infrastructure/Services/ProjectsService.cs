@@ -31,7 +31,7 @@ public class ProjectsService : IProjectsService
                 p.CurrencyCode,
                 p.CutoffTime,
                 Status = p.Status.ToDatabase(),
-                ServiceType = p.ServiceType.ToDatabase(),
+                p.ServiceTypes,
                 p.IsHeadquarters,
                 
                 // Employee counts
@@ -64,7 +64,7 @@ public class ProjectsService : IProjectsService
             p.CurrencyCode,
             p.CutoffTime,
             p.Status,
-            p.ServiceType,
+            p.ServiceTypes,
             p.IsHeadquarters,
             p.EmployeesCount,
             p.EmployeesWithLunch,
@@ -105,7 +105,7 @@ public class ProjectsService : IProjectsService
             CurrencyCode = request.CurrencyCode,
             Timezone = request.Timezone,
             CutoffTime = request.CutoffTime ?? new TimeOnly(10, 30),
-            ServiceType = ServiceTypeExtensions.FromDatabase(request.ServiceType.ToUpperInvariant()),
+            ServiceTypes = request.ServiceTypes ?? new List<string> { "LUNCH" },
             CompensationDailyLimit = request.CompensationDailyLimit,
             CompensationRollover = request.CompensationRollover,
             CreatedAt = DateTime.UtcNow,
@@ -151,8 +151,8 @@ public class ProjectsService : IProjectsService
         if (request.CutoffTime.HasValue)
             project.CutoffTime = request.CutoffTime.Value;
         
-        if (request.ServiceType != null)
-            project.ServiceType = ServiceTypeExtensions.FromDatabase(request.ServiceType.ToUpperInvariant());
+        if (request.ServiceTypes != null)
+            project.ServiceTypes = request.ServiceTypes;
         
         if (request.CompensationDailyLimit.HasValue)
             project.CompensationDailyLimit = request.CompensationDailyLimit.Value;
@@ -236,7 +236,7 @@ public class ProjectsService : IProjectsService
             project.Status.ToDatabase(),
             project.Timezone,
             project.CutoffTime,
-            project.ServiceType.ToDatabase(),
+            project.ServiceTypes,
             project.CompensationDailyLimit,
             project.CompensationRollover,
             project.CreatedAt,

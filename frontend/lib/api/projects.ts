@@ -17,7 +17,7 @@ export interface Project {
   status: 'ACTIVE' | 'BLOCKED_DEBT' | 'ARCHIVED';
   timezone: string;
   cutoffTime: string;
-  serviceType: 'LUNCH' | 'COMPENSATION';
+  serviceTypes: ('LUNCH' | 'COMPENSATION')[];
   compensationDailyLimit: number;
   compensationRollover: boolean;
   isHeadquarters: boolean;
@@ -38,7 +38,7 @@ export interface ProjectListItem {
   currencyCode?: string;
   cutoffTime?: string;
   status: string;
-  serviceType: string;
+  serviceTypes: string[];
   isHeadquarters: boolean;
   
   // Employee counts
@@ -78,7 +78,7 @@ export interface CreateProjectRequest {
   currencyCode?: string;
   timezone?: string;
   cutoffTime?: string;
-  serviceType?: 'LUNCH' | 'COMPENSATION';
+  serviceTypes?: ('LUNCH' | 'COMPENSATION')[];
   compensationDailyLimit?: number;
   compensationRollover?: boolean;
 }
@@ -91,7 +91,7 @@ export interface UpdateProjectRequest {
   status?: 'ACTIVE' | 'BLOCKED_DEBT' | 'ARCHIVED';
   timezone?: string;
   cutoffTime?: string;
-  serviceType?: 'LUNCH' | 'COMPENSATION';
+  serviceTypes?: ('LUNCH' | 'COMPENSATION')[];
   compensationDailyLimit?: number;
   compensationRollover?: boolean;
 }

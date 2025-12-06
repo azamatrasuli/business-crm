@@ -27,6 +27,7 @@ public class UserDto
     public Guid? ProjectId { get; set; }
     public string? ProjectName { get; set; }
     public bool IsHeadquarters { get; set; }
+    public List<string>? ProjectServiceTypes { get; set; }
     
     public IEnumerable<string> Permissions { get; set; } = Enumerable.Empty<string>();
 }

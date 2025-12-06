@@ -20,7 +20,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
-import { UserCircle, Mail, Phone, Shield, Lock, Building2, Crown, UtensilsCrossed, Calendar } from 'lucide-react'
+import { UserCircle, Mail, Phone, Shield, Lock, Building2, Crown, UtensilsCrossed, CreditCard } from 'lucide-react'
 import { toast } from 'sonner'
 import { parseError } from '@/lib/errors'
 
@@ -36,7 +36,7 @@ const passwordSchema = z
   })
 
 export default function ProfilePage() {
-  const { user, changePassword, projectName, isHeadquarters } = useAuthStore()
+  const { user, changePassword, projectName, isHeadquarters, projectServiceTypes } = useAuthStore()
   const [passwordLoading, setPasswordLoading] = useState(false)
   const isInitialLogin = user?.status === 'Не активный'
 
@@ -204,11 +204,24 @@ export default function ProfilePage() {
               </div>
               
               <div className="space-y-1">
-                <Label className="text-muted-foreground text-xs">Тип услуги</Label>
-                <p className="font-medium flex items-center gap-2">
-                  <UtensilsCrossed className="h-4 w-4 text-muted-foreground" />
-                  Комплексные обеды
-                </p>
+                <Label className="text-muted-foreground text-xs">Типы услуг</Label>
+                <div className="flex flex-wrap gap-2">
+                  {projectServiceTypes?.includes('LUNCH') && (
+                    <Badge variant="outline" className="gap-1 bg-amber-500/10 text-amber-600 border-amber-200">
+                      <UtensilsCrossed className="h-3 w-3" />
+                      Комплексные обеды
+                    </Badge>
+                  )}
+                  {projectServiceTypes?.includes('COMPENSATION') && (
+                    <Badge variant="outline" className="gap-1 bg-emerald-500/10 text-emerald-600 border-emerald-200">
+                      <CreditCard className="h-3 w-3" />
+                      Компенсация
+                    </Badge>
+                  )}
+                  {(!projectServiceTypes || projectServiceTypes.length === 0) && (
+                    <span className="text-muted-foreground">Не указано</span>
+                  )}
+                </div>
               </div>
             </div>
             

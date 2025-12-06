@@ -10,7 +10,9 @@ public class CurrentUserResponse
     public string Status { get; set; } = string.Empty;
     public Guid CompanyId { get; set; }
     public Guid? ProjectId { get; set; }
+    public string? ProjectName { get; set; }
     public bool IsHeadquarters { get; set; }
+    public List<string>? ProjectServiceTypes { get; set; }
     public IEnumerable<string> Permissions { get; set; } = Enumerable.Empty<string>();
     
     // Company info
@@ -41,7 +43,7 @@ public class ProjectInfoDto
     public string Name { get; set; } = string.Empty;
     public decimal Budget { get; set; }
     public string Status { get; set; } = string.Empty;
-    public string ServiceType { get; set; } = "LUNCH";
+    public List<string> ServiceTypes { get; set; } = new List<string> { "LUNCH" };
     public bool IsHeadquarters { get; set; }
     public string CurrencyCode { get; set; } = "TJS";
     public string Timezone { get; set; } = "Asia/Dushanbe";

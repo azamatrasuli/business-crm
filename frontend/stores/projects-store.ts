@@ -156,7 +156,7 @@ export const useProjectsStore = create<ProjectsState>()(
             currencyCode: project.currencyCode ?? 'TJS',
             cutoffTime: project.cutoffTime ?? '10:30',
             status: project.status,
-            serviceType: project.serviceType,
+            serviceTypes: project.serviceTypes,
             isHeadquarters: project.isHeadquarters,
             // New project has no employees yet
             employeesCount: 0,
@@ -195,7 +195,7 @@ export const useProjectsStore = create<ProjectsState>()(
             name: project.name,
             budget: project.budget,
             status: project.status,
-            serviceType: project.serviceType,
+            serviceTypes: project.serviceTypes,
             // Address stays the same (immutable)
           } : p);
           set({ 

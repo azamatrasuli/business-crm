@@ -50,10 +50,10 @@ public class Project
     /// <summary>True if this is the headquarters/main office. HQ admin can see all projects.</summary>
     public bool IsHeadquarters { get; set; }
     
-    /// <summary>Type of service: LUNCH or COMPENSATION</summary>
-    public ServiceType ServiceType { get; set; } = ServiceType.Lunch;
+    /// <summary>Types of services available for this project: LUNCH and/or COMPENSATION</summary>
+    public List<string> ServiceTypes { get; set; } = new List<string> { "LUNCH" };
     
-    // Compensation settings (if ServiceType = Compensation)
+    // Compensation settings (if ServiceTypes contains COMPENSATION)
     /// <summary>Daily limit per employee for compensation</summary>
     public decimal CompensationDailyLimit { get; set; }
     /// <summary>If true, remaining balance accumulates; if false, it expires daily</summary>

@@ -18,8 +18,8 @@ public record UpdateProjectRequest(
     string? Timezone = null,
     TimeOnly? CutoffTime = null,
     
-    /// <summary>LUNCH or COMPENSATION</summary>
-    string? ServiceType = null,
+    /// <summary>Array of service types: LUNCH and/or COMPENSATION</summary>
+    List<string>? ServiceTypes = null,
     
     /// <summary>Daily limit per employee (for COMPENSATION)</summary>
     decimal? CompensationDailyLimit = null,

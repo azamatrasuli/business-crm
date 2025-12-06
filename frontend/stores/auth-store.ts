@@ -15,6 +15,7 @@ export interface User {
   projectId?: string | null
   projectName?: string | null
   isHeadquarters: boolean
+  projectServiceTypes?: string[] | null  // ['LUNCH'], ['COMPENSATION'], or ['LUNCH', 'COMPENSATION']
   permissions: string[]
 }
 
@@ -27,6 +28,7 @@ interface AuthState {
   projectId: string | null
   projectName: string | null
   isHeadquarters: boolean
+  projectServiceTypes: string[] | null
   
   // Impersonation state
   isImpersonating: boolean
@@ -64,6 +66,7 @@ export const useAuthStore = create<AuthState>()(
       projectId: null,
       projectName: null,
       isHeadquarters: false,
+      projectServiceTypes: null,
       
       // Impersonation state
       isImpersonating: false,
@@ -107,6 +110,7 @@ export const useAuthStore = create<AuthState>()(
                   projectId: null,
                   projectName: null,
                   isHeadquarters: false,
+                  projectServiceTypes: null,
                   isImpersonating: false,
                   impersonatedBy: null,
                   originalToken: null,
@@ -138,6 +142,7 @@ export const useAuthStore = create<AuthState>()(
                   projectId: user.projectId || null,
                   projectName: user.projectName || null,
                   isHeadquarters: user.isHeadquarters || false,
+                  projectServiceTypes: user.projectServiceTypes || null,
                   isImpersonating,
                   originalToken: originalTokenStr || null,
                   originalUser,
@@ -159,6 +164,7 @@ export const useAuthStore = create<AuthState>()(
                   projectId: null,
                   projectName: null,
                   isHeadquarters: false,
+                  projectServiceTypes: null,
                   isImpersonating: false,
                   impersonatedBy: null,
                   originalToken: null,
@@ -243,6 +249,7 @@ export const useAuthStore = create<AuthState>()(
             projectId: response.user.projectId || null,
             projectName: response.user.projectName || null,
             isHeadquarters: response.user.isHeadquarters || false,
+            projectServiceTypes: response.user.projectServiceTypes || null,
             isImpersonating: false,
             impersonatedBy: null,
             originalToken: null,
@@ -367,6 +374,7 @@ export const useAuthStore = create<AuthState>()(
             projectId: response.user.projectId || null,
             projectName: response.user.projectName || null,
             isHeadquarters: response.user.isHeadquarters || false,
+            projectServiceTypes: response.user.projectServiceTypes || null,
           })
         } catch (error) {
           console.error('Token refresh failed:', error)
@@ -479,6 +487,7 @@ export const useAuthStore = create<AuthState>()(
             projectId: response.user.projectId || null,
             projectName: response.user.projectName || null,
             isHeadquarters: response.user.isHeadquarters || false,
+            projectServiceTypes: response.user.projectServiceTypes || null,
             isImpersonating: true,
             impersonatedBy: response.impersonatedBy || user.id,
             originalToken: currentToken,
@@ -528,6 +537,7 @@ export const useAuthStore = create<AuthState>()(
           projectId: originalUser.projectId || null,
           projectName: originalUser.projectName || null,
           isHeadquarters: originalUser.isHeadquarters || false,
+          projectServiceTypes: originalUser.projectServiceTypes || null,
           isImpersonating: false,
           impersonatedBy: null,
           originalToken: null,
@@ -563,6 +573,7 @@ export const useAuthStore = create<AuthState>()(
         projectId: state.projectId,
         projectName: state.projectName,
         isHeadquarters: state.isHeadquarters,
+        projectServiceTypes: state.projectServiceTypes,
         isImpersonating: state.isImpersonating,
         impersonatedBy: state.impersonatedBy,
         originalToken: state.originalToken,

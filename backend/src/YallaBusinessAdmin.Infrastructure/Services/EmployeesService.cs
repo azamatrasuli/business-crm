@@ -760,7 +760,7 @@ public class EmployeesService : IEmployeesService
             // ═══════════════════════════════════════════════════════════════
             // Service Type (attached to employee, not project)
             // ═══════════════════════════════════════════════════════════════
-            ServiceType = employee.ServiceType?.ToDatabase() ?? employee.Project?.ServiceType.ToDatabase(),
+            ServiceType = employee.ServiceType?.ToDatabase() ?? (employee.Project?.ServiceTypes.FirstOrDefault() ?? "LUNCH"),
             CanSwitchToCompensation = !hasActiveLunchSubscription,
             CanSwitchToLunch = !hasActiveCompensation,
             SwitchToCompensationBlockedReason = hasActiveLunchSubscription ? switchBlockedReason : null,

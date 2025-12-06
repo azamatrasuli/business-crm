@@ -40,8 +40,8 @@ public record CreateProjectRequest(
     string Timezone = "Asia/Dushanbe",
     TimeOnly? CutoffTime = null,
     
-    /// <summary>LUNCH or COMPENSATION</summary>
-    string ServiceType = "LUNCH",
+    /// <summary>Array of service types: LUNCH and/or COMPENSATION</summary>
+    List<string>? ServiceTypes = null,
     
     /// <summary>Daily limit per employee (for COMPENSATION)</summary>
     decimal CompensationDailyLimit = 0,

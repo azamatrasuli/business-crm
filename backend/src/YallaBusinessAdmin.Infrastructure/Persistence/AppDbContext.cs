@@ -92,10 +92,7 @@ public class AppDbContext : DbContext
                     v => CompanyStatusExtensions.FromDatabase(v));
             entity.Property(e => e.Timezone).HasColumnName("timezone").HasMaxLength(50);
             entity.Property(e => e.CutoffTime).HasColumnName("cutoff_time");
-            entity.Property(e => e.ServiceType).HasColumnName("service_type")
-                .HasConversion(
-                    v => v.ToDatabase(),
-                    v => ServiceTypeExtensions.FromDatabase(v));
+            entity.Property(e => e.ServiceTypes).HasColumnName("service_types");
             entity.Property(e => e.CompensationDailyLimit).HasColumnName("compensation_daily_limit").HasPrecision(10, 2);
             entity.Property(e => e.CompensationRollover).HasColumnName("compensation_rollover");
             entity.Property(e => e.IsHeadquarters).HasColumnName("is_headquarters");

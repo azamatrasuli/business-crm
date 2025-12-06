@@ -22,6 +22,7 @@ export interface LoginResponse {
     projectId?: string | null
     projectName?: string | null
     isHeadquarters: boolean
+    projectServiceTypes?: string[] | null  // ['LUNCH'], ['COMPENSATION'], or ['LUNCH', 'COMPENSATION']
     permissions: string[]
   }
   // Impersonation info

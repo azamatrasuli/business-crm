@@ -19,7 +19,7 @@ public class CompensationService : ICompensationService
     public async Task<CompensationSettingsResponse> GetSettingsAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
         var project = await _context.Projects
-            .FirstOrDefaultAsync(p => p.Id == projectId && p.ServiceType == ServiceType.Compensation, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Id == projectId && p.ServiceTypes.Contains("COMPENSATION"), cancellationToken);
 
         if (project == null)
             throw new KeyNotFoundException("Проект компенсации не найден");
@@ -39,7 +39,7 @@ public class CompensationService : ICompensationService
         CancellationToken cancellationToken = default)
     {
         var project = await _context.Projects
-            .FirstOrDefaultAsync(p => p.Id == projectId && p.ServiceType == ServiceType.Compensation, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Id == projectId && p.ServiceTypes.Contains("COMPENSATION"), cancellationToken);
 
         if (project == null)
             throw new KeyNotFoundException("Проект компенсации не найден");
@@ -70,7 +70,7 @@ public class CompensationService : ICompensationService
         if (employee == null)
             throw new KeyNotFoundException("Сотрудник не найден");
 
-        if (employee.Project == null || employee.Project.ServiceType != ServiceType.Compensation)
+        if (employee.Project == null || !employee.Project.ServiceTypes.Contains("COMPENSATION"))
             throw new InvalidOperationException("Сотрудник не привязан к проекту компенсации");
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -116,7 +116,7 @@ public class CompensationService : ICompensationService
         if (employee == null)
             throw new KeyNotFoundException("Сотрудник не найден");
 
-        if (employee.Project == null || employee.Project.ServiceType != ServiceType.Compensation)
+        if (employee.Project == null || !employee.Project.ServiceTypes.Contains("COMPENSATION"))
             throw new InvalidOperationException("Сотрудник не привязан к проекту компенсации");
 
         var project = employee.Project;

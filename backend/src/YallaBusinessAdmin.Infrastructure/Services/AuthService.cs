@@ -124,6 +124,7 @@ public class AuthService : IAuthService
                 ProjectId = user.ProjectId,
                 ProjectName = user.Project?.Name,
                 IsHeadquarters = user.Project?.IsHeadquarters ?? false,
+                ProjectServiceTypes = user.Project?.ServiceTypes,
                 Permissions = user.Permissions.Select(p => p.Route)
             }
         };
@@ -204,6 +205,7 @@ public class AuthService : IAuthService
                 ProjectId = user.ProjectId,
                 ProjectName = user.Project?.Name,
                 IsHeadquarters = user.Project?.IsHeadquarters ?? false,
+                ProjectServiceTypes = user.Project?.ServiceTypes,
                 Permissions = user.Permissions.Select(p => p.Route)
             }
         };
@@ -357,6 +359,7 @@ public class AuthService : IAuthService
                 ProjectId = user.ProjectId,
                 ProjectName = user.Project?.Name,
                 IsHeadquarters = user.Project?.IsHeadquarters ?? false,
+                ProjectServiceTypes = user.Project?.ServiceTypes,
                 Permissions = user.Permissions.Select(p => p.Route)
             }
         };
@@ -411,6 +414,7 @@ public class AuthService : IAuthService
             ProjectId = user.ProjectId,
             ProjectName = user.Project?.Name,
             IsHeadquarters = user.Project?.IsHeadquarters ?? false,
+            ProjectServiceTypes = user.Project?.ServiceTypes,
             Permissions = user.Permissions.Select(p => p.Route)
         };
     }
@@ -438,7 +442,9 @@ public class AuthService : IAuthService
             Status = user.Status.ToRussian(),
             CompanyId = user.CompanyId,
             ProjectId = user.ProjectId,
+            ProjectName = user.Project?.Name,
             IsHeadquarters = user.Project?.IsHeadquarters ?? false,
+            ProjectServiceTypes = user.Project?.ServiceTypes,
             Permissions = user.Permissions.Select(p => p.Route),
             LastLoginAt = user.LastLoginAt,
             CreatedAt = user.CreatedAt,
@@ -458,7 +464,7 @@ public class AuthService : IAuthService
                 Name = user.Project.Name,
                 Budget = user.Project.Budget,
                 Status = user.Project.Status.ToDatabase(),
-                ServiceType = user.Project.ServiceType.ToDatabase(),
+                ServiceTypes = user.Project.ServiceTypes,
                 IsHeadquarters = user.Project.IsHeadquarters,
                 CurrencyCode = user.Project.CurrencyCode,
                 Timezone = user.Project.Timezone,
@@ -539,6 +545,7 @@ public class AuthService : IAuthService
                 ProjectId = targetUser.ProjectId,
                 ProjectName = targetUser.Project?.Name,
                 IsHeadquarters = targetUser.Project?.IsHeadquarters ?? false,
+                ProjectServiceTypes = targetUser.Project?.ServiceTypes,
                 Permissions = targetUser.Permissions.Select(p => p.Route)
             }
         };

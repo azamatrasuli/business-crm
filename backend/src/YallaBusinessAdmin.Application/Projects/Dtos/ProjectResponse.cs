@@ -17,7 +17,7 @@ public record ProjectResponse(
     string Status,
     string Timezone,
     TimeOnly CutoffTime,
-    string ServiceType,
+    List<string> ServiceTypes,
     decimal CompensationDailyLimit,
     bool CompensationRollover,
     DateTime CreatedAt,
@@ -42,7 +42,7 @@ public record ProjectListItem(
     string CurrencyCode,
     TimeOnly CutoffTime,
     string Status,
-    string ServiceType,
+    List<string> ServiceTypes,
     bool IsHeadquarters,
     
     // Employee counts
