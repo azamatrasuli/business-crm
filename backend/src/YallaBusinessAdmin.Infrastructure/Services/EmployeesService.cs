@@ -189,7 +189,8 @@ public class EmployeesService : IEmployeesService
             Email = request.Email,
             Position = request.Position,
             IsActive = true,
-            InviteStatus = EmployeeInviteStatus.Pending,
+            // TODO: вернуть EmployeeInviteStatus.Pending когда запустим Client Web и бюджетирование
+            InviteStatus = EmployeeInviteStatus.Accepted,
             // Service type and work schedule
             ServiceType = !string.IsNullOrWhiteSpace(request.ServiceType) 
                 ? ServiceTypeExtensions.FromDatabase(request.ServiceType) 

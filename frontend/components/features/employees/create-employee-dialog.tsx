@@ -148,15 +148,10 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
         workStartTime: data.workStartTime,
         workEndTime: data.workEndTime,
       }
-      const created = await createEmployee(request)
+      await createEmployee(request)
 
-      if (created?.inviteStatus === 'Ожидает') {
-        toast.success('Приглашение отправлено')
-        toast.message('Сотрудник появится в списке после принятия приглашения.')
-      } else {
-        toast.success('Сотрудник успешно создан')
-        toast.message('Статус приглашения: Принято. После первого входа станет активным.')
-      }
+      // TODO: вернуть логику инвайтов когда запустим Client Web и бюджетирование
+      toast.success('Сотрудник успешно создан')
 
       form.reset()
       onOpenChange(false)
