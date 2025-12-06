@@ -123,6 +123,23 @@ public class UsersService : IUsersService
 
     public async Task<UserResponse> CreateAsync(CreateUserRequest request, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
     {
+        // Validate required fields
+        if (string.IsNullOrWhiteSpace(request.FullName))
+        {
+            throw new InvalidOperationException("ФИО обязательно для заполнения");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Phone))
+        {
+            throw new InvalidOperationException("Телефон обязателен для заполнения");
+        }
+
+        // Validate phone format (must start with + and contain only digits after)
+        if (!IsValidPhoneFormat(request.Phone))
+        {
+            throw new InvalidOperationException("Неверный формат телефона. Телефон должен начинаться с + и содержать только цифры");
+        }
+
         // Check for duplicate phone (across all companies for global uniqueness)
         var existingUser = await _context.AdminUsers
             .IgnoreQueryFilters()
@@ -356,6 +373,20 @@ public class UsersService : IUsersService
             ProjectName = u.Project?.Name,
             LastLoginAt = u.LastLoginAt
         });
+    }
+
+    /// <summary>
+    /// Validates phone format: must start with + and contain 10-15 digits
+    /// </summary>
+    private static bool IsValidPhoneFormat(string phone)
+    {
+        if (string.IsNullOrWhiteSpace(phone)) return false;
+        if (!phone.StartsWith('+')) return false;
+        
+        var digitsOnly = phone.Substring(1);
+        if (digitsOnly.Length < 10 || digitsOnly.Length > 15) return false;
+        
+        return digitsOnly.All(char.IsDigit);
     }
 
     private static UserResponse MapToResponse(AdminUser user)

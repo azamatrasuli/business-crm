@@ -165,6 +165,32 @@ public class EmployeesService : IEmployeesService
 
     public async Task<EmployeeResponse> CreateAsync(CreateEmployeeRequest request, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
     {
+        // Validate required fields
+        if (string.IsNullOrWhiteSpace(request.Phone))
+        {
+            throw new InvalidOperationException("Телефон обязателен для заполнения");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.FullName))
+        {
+            throw new InvalidOperationException("ФИО обязательно для заполнения");
+        }
+
+        // Validate phone format
+        if (!IsValidPhoneFormat(request.Phone))
+        {
+            throw new InvalidOperationException("Неверный формат телефона. Телефон должен начинаться с + и содержать только цифры");
+        }
+
+        // Validate project exists and belongs to the company
+        var project = await _context.Projects
+            .FirstOrDefaultAsync(p => p.Id == request.ProjectId && p.CompanyId == companyId, cancellationToken);
+
+        if (project == null)
+        {
+            throw new InvalidOperationException("Указанный проект не найден или не принадлежит вашей компании");
+        }
+
         // Check for duplicate phone across all employees (including deleted)
         var existingEmployee = await _context.Employees
             .IgnoreQueryFilters()
@@ -634,6 +660,20 @@ public class EmployeesService : IEmployeesService
             .Take(pageSize);
 
         return PagedResult<EmployeeOrderResponse>.Create(pagedItems, total, page, pageSize);
+    }
+
+    /// <summary>
+    /// Validates phone format: must start with + and contain 10-15 digits
+    /// </summary>
+    private static bool IsValidPhoneFormat(string phone)
+    {
+        if (string.IsNullOrWhiteSpace(phone)) return false;
+        if (!phone.StartsWith('+')) return false;
+        
+        var digitsOnly = phone.Substring(1);
+        if (digitsOnly.Length < 10 || digitsOnly.Length > 15) return false;
+        
+        return digitsOnly.All(char.IsDigit);
     }
 
     private static EmployeeResponse MapToResponse(Employee employee, CompanySubscription? activeProjectSubscription = null)

@@ -3,16 +3,20 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
+using Serilog.Context;
 using YallaBusinessAdmin.Application;
 using YallaBusinessAdmin.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configure Serilog
+// Configure Serilog with structured logging
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.FromLogContext()
-    .WriteTo.Console()
+    .Enrich.WithProperty("Application", "YallaBusinessAdmin")
+    .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName)
+    .WriteTo.Console(outputTemplate: 
+        "[{Timestamp:HH:mm:ss} {Level:u3}] [{CorrelationId}] {Message:lj}{NewLine}{Exception}")
     .CreateLogger();
 
 builder.Host.UseSerilog();
@@ -120,29 +124,76 @@ var app = builder.Build();
 
 // Configure middleware pipeline
 
-// Global exception handler
+// Global exception handler with structured error responses
 app.UseExceptionHandler(errorApp =>
 {
     errorApp.Run(async context =>
     {
         context.Response.ContentType = "application/json";
-        context.Response.StatusCode = 500;
         
         var exceptionHandlerPathFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerPathFeature>();
         var exception = exceptionHandlerPathFeature?.Error;
         
-        Log.Error(exception, "Unhandled exception occurred at {Path}", context.Request.Path);
+        // Determine error type and status code
+        var (statusCode, errorCode, errorType, message, details) = exception switch
+        {
+            YallaBusinessAdmin.Application.Common.Errors.AppException appEx => 
+                (GetStatusCode(appEx.Type), appEx.Code, appEx.Type.ToString(), appEx.Message, appEx.Details),
+            
+            KeyNotFoundException keyNotFound => 
+                (404, "NOT_FOUND", "NotFound", keyNotFound.Message, null as Dictionary<string, object>),
+            
+            InvalidOperationException invalidOp => 
+                (400, "VALIDATION_ERROR", "Validation", invalidOp.Message, null as Dictionary<string, object>),
+            
+            UnauthorizedAccessException => 
+                (401, "AUTH_UNAUTHORIZED", "Forbidden", "Требуется авторизация", null as Dictionary<string, object>),
+            
+            ArgumentException argEx => 
+                (400, "VALIDATION_ERROR", "Validation", argEx.Message, null as Dictionary<string, object>),
+            
+            _ => (500, "INTERNAL_ERROR", "Internal", 
+                app.Environment.IsDevelopment() ? exception?.Message ?? "Внутренняя ошибка" : "Произошла внутренняя ошибка. Попробуйте позже",
+                null as Dictionary<string, object>)
+        };
         
+        context.Response.StatusCode = statusCode;
+        
+        // Log the error with structured data
+        Log.Error(exception, 
+            "Exception occurred: {ErrorCode} - {ErrorMessage} at {Path} (Status: {StatusCode})", 
+            errorCode, message, context.Request.Path, statusCode);
+        
+        // Return structured error response
         var response = new
         {
-            error = "Internal server error",
-            message = app.Environment.IsDevelopment() ? exception?.Message : "An unexpected error occurred",
-            path = context.Request.Path.Value
+            success = false,
+            error = new
+            {
+                code = errorCode,
+                message = message,
+                type = errorType,
+                details = details,
+                action = YallaBusinessAdmin.Application.Common.Errors.ErrorActions.GetAction(errorCode)
+            },
+            path = context.Request.Path.Value,
+            timestamp = DateTime.UtcNow
         };
         
         await context.Response.WriteAsJsonAsync(response);
     });
 });
+
+// Helper function to map ErrorType to HTTP status code
+static int GetStatusCode(YallaBusinessAdmin.Application.Common.ErrorType type) => type switch
+{
+    YallaBusinessAdmin.Application.Common.ErrorType.Validation => 400,
+    YallaBusinessAdmin.Application.Common.ErrorType.NotFound => 404,
+    YallaBusinessAdmin.Application.Common.ErrorType.Forbidden => 403,
+    YallaBusinessAdmin.Application.Common.ErrorType.Conflict => 409,
+    YallaBusinessAdmin.Application.Common.ErrorType.Internal => 500,
+    _ => 500
+};
 
 if (app.Environment.IsDevelopment())
 {
@@ -153,7 +204,39 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.UseSerilogRequestLogging();
+// Correlation ID middleware for request tracing
+app.Use(async (context, next) =>
+{
+    var correlationId = context.Request.Headers["X-Correlation-ID"].FirstOrDefault() 
+        ?? Guid.NewGuid().ToString("N")[..12];
+    
+    context.Items["CorrelationId"] = correlationId;
+    context.Response.Headers["X-Correlation-ID"] = correlationId;
+    
+    using (LogContext.PushProperty("CorrelationId", correlationId))
+    using (LogContext.PushProperty("UserId", context.User.FindFirst("sub")?.Value ?? "anonymous"))
+    using (LogContext.PushProperty("CompanyId", context.User.FindFirst("company_id")?.Value ?? "none"))
+    {
+        await next();
+    }
+});
+
+// Enhanced Serilog request logging with additional context
+app.UseSerilogRequestLogging(options =>
+{
+    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+    {
+        diagnosticContext.Set("RequestHost", httpContext.Request.Host.Value);
+        diagnosticContext.Set("RequestScheme", httpContext.Request.Scheme);
+        diagnosticContext.Set("UserAgent", httpContext.Request.Headers["User-Agent"].FirstOrDefault() ?? "unknown");
+        diagnosticContext.Set("ClientIP", httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown");
+        
+        if (httpContext.Items.TryGetValue("CorrelationId", out var correlationId))
+        {
+            diagnosticContext.Set("CorrelationId", correlationId);
+        }
+    };
+});
 
 app.UseCors("AllowFrontend");
 
