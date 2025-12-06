@@ -544,6 +544,27 @@ public class AuthService : IAuthService
         };
     }
 
+    public async Task StopImpersonatingAsync(
+        Guid impersonatorId, 
+        Guid impersonatedUserId, 
+        string? ipAddress = null, 
+        string? userAgent = null,
+        CancellationToken cancellationToken = default)
+    {
+        // Get the impersonated user's info for audit log
+        var impersonatedUser = await _context.AdminUsers
+            .Include(u => u.Company)
+            .FirstOrDefaultAsync(u => u.Id == impersonatedUserId, cancellationToken);
+
+        // Audit log - record end of impersonation session
+        await _auditService.LogAsync(impersonatorId, "STOP_IMPERSONATE", AuditEntityTypes.User, impersonatedUserId,
+            newValues: new { 
+                impersonatedUser = impersonatedUser?.FullName ?? "Unknown", 
+                impersonatedCompany = impersonatedUser?.Company?.Name ?? "Unknown" 
+            },
+            ipAddress: ipAddress, userAgent: userAgent, cancellationToken: cancellationToken);
+    }
+
     // Helper methods
     private static string GenerateRefreshToken()
     {

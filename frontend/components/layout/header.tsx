@@ -105,6 +105,18 @@ export function Header() {
                   <span>Мой профиль</span>
                 </a>
               </DropdownMenuItem>
+              {/* Switch Account for SUPER_ADMIN (visible on mobile, hidden on desktop where button is shown) */}
+              {isSuperAdmin && !isImpersonating && (
+                <>
+                  <DropdownMenuItem 
+                    className="sm:hidden cursor-pointer"
+                    onClick={() => setImpersonateDialogOpen(true)}
+                  >
+                    <Users className="mr-2 h-4 w-4" />
+                    <span>Сменить аккаунт</span>
+                  </DropdownMenuItem>
+                </>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout} className="cursor-pointer">
                 <LogOut className="mr-2 h-4 w-4" />

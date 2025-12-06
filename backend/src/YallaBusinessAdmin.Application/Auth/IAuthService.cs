@@ -17,5 +17,10 @@ public interface IAuthService
     /// Impersonate another user (SUPER_ADMIN only)
     /// </summary>
     Task<LoginResponse> ImpersonateAsync(Guid targetUserId, Guid impersonatorId, string? ipAddress = null, string? userAgent = null, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Stop impersonating and log the action (called when returning to original account)
+    /// </summary>
+    Task StopImpersonatingAsync(Guid impersonatorId, Guid impersonatedUserId, string? ipAddress = null, string? userAgent = null, CancellationToken cancellationToken = default);
 }
 

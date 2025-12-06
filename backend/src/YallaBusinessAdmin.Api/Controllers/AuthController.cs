@@ -224,12 +224,48 @@ public class AuthController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Stop impersonation and log the action
+    /// </summary>
+    [HttpPost("stop-impersonation")]
+    [Authorize]
+    public async Task<ActionResult> StopImpersonation([FromBody] StopImpersonationRequest request, CancellationToken cancellationToken)
+    {
+        var impersonatorId = GetImpersonatorId();
+        if (impersonatorId == null)
+        {
+            return BadRequest(new { message = "Not in impersonation mode" });
+        }
+
+        var impersonatedUserId = GetUserId();
+        if (impersonatedUserId == null)
+        {
+            return Unauthorized();
+        }
+
+        var ipAddress = GetClientIpAddress();
+        var userAgent = GetUserAgent();
+        await _authService.StopImpersonatingAsync(impersonatorId.Value, impersonatedUserId.Value, ipAddress, userAgent, cancellationToken);
+        
+        return Ok(new { message = "Impersonation ended" });
+    }
+
     private Guid? GetUserId()
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst(JwtRegisteredClaimNames.Sub);
         if (userIdClaim != null && Guid.TryParse(userIdClaim.Value, out var userId))
         {
             return userId;
+        }
+        return null;
+    }
+
+    private Guid? GetImpersonatorId()
+    {
+        var impersonatorClaim = User.FindFirst("impersonated_by");
+        if (impersonatorClaim != null && Guid.TryParse(impersonatorClaim.Value, out var impersonatorId))
+        {
+            return impersonatorId;
         }
         return null;
     }
@@ -258,4 +294,11 @@ public class AuthController : ControllerBase
 public class LogoutRequest
 {
     public string? RefreshToken { get; set; }
+}
+
+/// <summary>
+/// Request for stopping impersonation (empty body, just for POST semantics)
+/// </summary>
+public class StopImpersonationRequest
+{
 }

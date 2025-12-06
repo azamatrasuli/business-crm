@@ -48,7 +48,7 @@ interface AuthState {
   
   // Impersonation actions
   impersonate: (userId: string) => Promise<void>
-  stopImpersonating: () => void
+  stopImpersonating: () => Promise<void>
   fetchAllAdmins: (search?: string) => Promise<AdminListItem[]>
 }
 
@@ -303,6 +303,16 @@ export const useAuthStore = create<AuthState>()(
       refreshSession: async () => {
         if (typeof window === 'undefined') return
         
+        const { isImpersonating, stopImpersonating } = get()
+        
+        // If impersonating, don't try to refresh - return to original account
+        // Impersonation tokens don't have refresh tokens for security
+        if (isImpersonating) {
+          console.log('Impersonation session expired, returning to original account')
+          stopImpersonating()
+          return
+        }
+        
         const refreshToken = localStorage.getItem('refreshToken')
         if (!refreshToken) {
           // No refresh token, clear auth state
@@ -483,12 +493,20 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      stopImpersonating: () => {
+      stopImpersonating: async () => {
         const { originalToken, originalUser } = get()
         
         if (!originalToken || !originalUser) {
           console.error('No original token or user to restore')
           return
+        }
+
+        // Call API to log the end of impersonation (fire and forget - don't block on errors)
+        try {
+          await authApi.stopImpersonation()
+        } catch (error) {
+          console.warn('Failed to log stop impersonation:', error)
+          // Continue anyway - the important thing is to restore the original token
         }
 
         if (typeof window !== 'undefined') {
