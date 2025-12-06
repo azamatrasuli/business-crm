@@ -146,8 +146,8 @@ app.UseExceptionHandler(errorApp =>
             InvalidOperationException invalidOp => 
                 (400, "VALIDATION_ERROR", "Validation", invalidOp.Message, null as Dictionary<string, object>),
             
-            UnauthorizedAccessException => 
-                (401, "AUTH_UNAUTHORIZED", "Forbidden", "Требуется авторизация", null as Dictionary<string, object>),
+            UnauthorizedAccessException unauthEx => 
+                (401, "AUTH_INVALID_CREDENTIALS", "Forbidden", unauthEx.Message, null as Dictionary<string, object>),
             
             ArgumentException argEx => 
                 (400, "VALIDATION_ERROR", "Validation", argEx.Message, null as Dictionary<string, object>),
