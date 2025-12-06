@@ -180,11 +180,6 @@ export function EditEmployeeDialog({
       
       // Map specific errors to form fields
       switch (appError.code) {
-        case ErrorCodes.EMP_PHONE_EXISTS:
-        case ErrorCodes.EMP_PHONE_DELETED:
-        case ErrorCodes.EMP_INVALID_PHONE_FORMAT:
-          form.setError('phone', { message: appError.message })
-          break
         case ErrorCodes.EMP_SERVICE_TYPE_SWITCH_BLOCKED:
           form.setError('serviceType', { message: appError.message })
           toast.error(appError.message, {
@@ -193,6 +188,7 @@ export function EditEmployeeDialog({
           })
           break
         default:
+          // Note: phone is not editable in this dialog
           toast.error(appError.message, {
             description: appError.action,
           })
