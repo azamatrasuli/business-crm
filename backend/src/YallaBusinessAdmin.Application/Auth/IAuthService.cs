@@ -12,5 +12,10 @@ public interface IAuthService
     Task<object> ChangePasswordAsync(Guid userId, ChangePasswordRequest request, string? ipAddress = null, CancellationToken cancellationToken = default);
     Task<UserDto> UpdateProfileAsync(Guid userId, UpdateProfileRequest request, CancellationToken cancellationToken = default);
     Task<CurrentUserResponse> GetCurrentUserAsync(Guid userId, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Impersonate another user (SUPER_ADMIN only)
+    /// </summary>
+    Task<LoginResponse> ImpersonateAsync(Guid targetUserId, Guid impersonatorId, string? ipAddress = null, string? userAgent = null, CancellationToken cancellationToken = default);
 }
 

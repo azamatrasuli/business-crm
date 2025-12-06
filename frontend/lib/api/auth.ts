@@ -17,12 +17,30 @@ export interface LoginResponse {
     role: string
     status: string
     companyId: string
+    companyName?: string | null
     // Project info
     projectId?: string | null
     projectName?: string | null
     isHeadquarters: boolean
     permissions: string[]
   }
+  // Impersonation info
+  isImpersonating?: boolean
+  impersonatedBy?: string | null
+}
+
+export interface AdminListItem {
+  id: string
+  fullName: string
+  phone: string
+  email: string
+  role: string
+  status: string
+  companyId: string
+  companyName: string
+  projectId?: string | null
+  projectName?: string | null
+  lastLoginAt?: string | null
 }
 
 export interface ForgotPasswordRequest {
@@ -93,6 +111,17 @@ export const authApi = {
 
   async updateProfile(data: UpdateProfileRequest): Promise<LoginResponse['user']> {
     const response = await apiClient.put<LoginResponse['user']>('/auth/profile', data)
+    return response.data
+  },
+
+  async impersonate(userId: string): Promise<LoginResponse> {
+    const response = await apiClient.post<LoginResponse>(`/auth/impersonate/${userId}`)
+    return response.data
+  },
+
+  async getAllAdmins(search?: string): Promise<AdminListItem[]> {
+    const params = search ? { search } : {}
+    const response = await apiClient.get<AdminListItem[]>('/users/all-admins', { params })
     return response.data
   },
 }

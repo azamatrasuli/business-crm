@@ -43,6 +43,7 @@ public class AuthService : IAuthService
             .IgnoreQueryFilters() // Include soft-deleted for proper error messages
             .Include(u => u.Permissions)
             .Include(u => u.Project)
+            .Include(u => u.Company)
             .FirstOrDefaultAsync(u => u.Phone == request.Phone, cancellationToken);
 
         if (user == null)
@@ -119,6 +120,7 @@ public class AuthService : IAuthService
                 Role = user.Role,
                 Status = user.Status.ToRussian(),
                 CompanyId = user.CompanyId,
+                CompanyName = user.Company?.Name,
                 ProjectId = user.ProjectId,
                 ProjectName = user.Project?.Name,
                 IsHeadquarters = user.Project?.IsHeadquarters ?? false,
@@ -139,6 +141,8 @@ public class AuthService : IAuthService
                 .ThenInclude(u => u!.Permissions)
             .Include(t => t.User)
                 .ThenInclude(u => u!.Project)
+            .Include(t => t.User)
+                .ThenInclude(u => u!.Company)
             .FirstOrDefaultAsync(t => t.TokenHash == tokenHash, cancellationToken);
 
         if (storedToken == null)
@@ -196,6 +200,7 @@ public class AuthService : IAuthService
                 Role = user.Role,
                 Status = user.Status.ToRussian(),
                 CompanyId = user.CompanyId,
+                CompanyName = user.Company?.Name,
                 ProjectId = user.ProjectId,
                 ProjectName = user.Project?.Name,
                 IsHeadquarters = user.Project?.IsHeadquarters ?? false,
@@ -461,6 +466,81 @@ public class AuthService : IAuthService
                 CompensationDailyLimit = user.Project.CompensationDailyLimit,
                 CompensationRollover = user.Project.CompensationRollover
             } : null
+        };
+    }
+
+    public async Task<LoginResponse> ImpersonateAsync(
+        Guid targetUserId, 
+        Guid impersonatorId, 
+        string? ipAddress = null, 
+        string? userAgent = null,
+        CancellationToken cancellationToken = default)
+    {
+        // Get the target user to impersonate
+        var targetUser = await _context.AdminUsers
+            .Include(u => u.Permissions)
+            .Include(u => u.Project)
+            .Include(u => u.Company)
+            .FirstOrDefaultAsync(u => u.Id == targetUserId && u.DeletedAt == null, cancellationToken);
+
+        if (targetUser == null)
+        {
+            throw new KeyNotFoundException("Пользователь не найден");
+        }
+
+        if (targetUser.Status == AdminStatus.Blocked)
+        {
+            throw new InvalidOperationException("Невозможно войти под заблокированным пользователем");
+        }
+
+        // Generate token with impersonation claim
+        var accessToken = _jwtService.GenerateToken(targetUser, impersonatorId);
+        var refreshToken = GenerateRefreshToken();
+        var refreshTokenHash = HashToken(refreshToken);
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(24).ToUnixTimeMilliseconds();
+        
+        // Store refresh token
+        var refreshTokenEntity = new RefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = targetUser.Id,
+            TokenHash = refreshTokenHash,
+            ExpiresAt = DateTime.UtcNow.AddDays(RefreshTokenExpirationDays),
+            CreatedAt = DateTime.UtcNow,
+            IpAddress = ipAddress,
+            DeviceInfo = userAgent
+        };
+        
+        await _context.RefreshTokens.AddAsync(refreshTokenEntity, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        // Audit log
+        await _auditService.LogAsync(impersonatorId, "IMPERSONATE", AuditEntityTypes.User, targetUserId,
+            newValues: new { targetUser = targetUser.FullName, targetCompany = targetUser.Company?.Name },
+            ipAddress: ipAddress, userAgent: userAgent, cancellationToken: cancellationToken);
+
+        return new LoginResponse
+        {
+            Token = accessToken,
+            RefreshToken = refreshToken,
+            ExpiresAt = expiresAt,
+            IsImpersonating = true,
+            ImpersonatedBy = impersonatorId,
+            User = new UserDto
+            {
+                Id = targetUser.Id,
+                FullName = targetUser.FullName,
+                Phone = targetUser.Phone,
+                Email = targetUser.Email,
+                Role = targetUser.Role,
+                Status = targetUser.Status.ToRussian(),
+                CompanyId = targetUser.CompanyId,
+                CompanyName = targetUser.Company?.Name,
+                ProjectId = targetUser.ProjectId,
+                ProjectName = targetUser.Project?.Name,
+                IsHeadquarters = targetUser.Project?.IsHeadquarters ?? false,
+                Permissions = targetUser.Permissions.Select(p => p.Route)
+            }
         };
     }
 

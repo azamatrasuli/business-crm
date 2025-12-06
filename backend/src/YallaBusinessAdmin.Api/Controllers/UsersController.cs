@@ -73,9 +73,6 @@ public class UsersController : BaseApiController
     [HttpPost]
     public async Task<ActionResult<UserResponse>> Create([FromBody] CreateUserRequest request, CancellationToken cancellationToken)
     {
-        var readOnlyCheck = CheckReadOnlyMode();
-        if (readOnlyCheck != null) return readOnlyCheck;
-        
         var companyId = GetCompanyId();
         var currentUserId = GetUserId();
         if (companyId == null)
@@ -100,9 +97,6 @@ public class UsersController : BaseApiController
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<UserResponse>> Update(Guid id, [FromBody] UpdateUserRequest request, CancellationToken cancellationToken)
     {
-        var readOnlyCheck = CheckReadOnlyMode();
-        if (readOnlyCheck != null) return readOnlyCheck;
-        
         var companyId = GetCompanyId();
         var currentUserId = GetUserId();
         if (companyId == null)
@@ -131,9 +125,6 @@ public class UsersController : BaseApiController
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var readOnlyCheck = CheckReadOnlyMode();
-        if (readOnlyCheck != null) return readOnlyCheck;
-        
         var companyId = GetCompanyId();
         var currentUserId = GetUserId();
         if (companyId == null || currentUserId == null)
@@ -154,6 +145,19 @@ public class UsersController : BaseApiController
         {
             return BadRequest(new { message = ex.Message });
         }
+    }
+
+    /// <summary>
+    /// Get all admins across all companies (SUPER_ADMIN only)
+    /// </summary>
+    [HttpGet("all-admins")]
+    [Authorize(Roles = "SUPER_ADMIN")]
+    public async Task<ActionResult<IEnumerable<AdminListItem>>> GetAllAdmins(
+        [FromQuery] string? search = null,
+        CancellationToken cancellationToken = default)
+    {
+        var admins = await _usersService.GetAllAdminsAsync(search, cancellationToken);
+        return Ok(admins);
     }
 
     /// <summary>

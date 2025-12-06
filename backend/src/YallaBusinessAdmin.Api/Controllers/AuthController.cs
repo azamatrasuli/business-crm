@@ -194,6 +194,36 @@ public class AuthController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Impersonate another user (SUPER_ADMIN only)
+    /// </summary>
+    [HttpPost("impersonate/{userId:guid}")]
+    [Authorize(Roles = "SUPER_ADMIN")]
+    public async Task<ActionResult<LoginResponse>> Impersonate(Guid userId, CancellationToken cancellationToken)
+    {
+        var currentUserId = GetUserId();
+        if (currentUserId == null)
+        {
+            return Unauthorized();
+        }
+
+        try
+        {
+            var ipAddress = GetClientIpAddress();
+            var userAgent = GetUserAgent();
+            var result = await _authService.ImpersonateAsync(userId, currentUserId.Value, ipAddress, userAgent, cancellationToken);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     private Guid? GetUserId()
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? User.FindFirst(JwtRegisteredClaimNames.Sub);

@@ -301,6 +301,45 @@ public class UsersService : IUsersService
 
     public IEnumerable<string> GetAvailableRoutes() => AvailableRoutes;
 
+    public async Task<IEnumerable<AdminListItem>> GetAllAdminsAsync(string? search = null, CancellationToken cancellationToken = default)
+    {
+        var query = _context.AdminUsers
+            .Include(u => u.Company)
+            .Include(u => u.Project)
+            .Where(u => u.Role == "admin" || u.Role == "ADMIN" || u.Role == "manager");
+
+        // Apply search filter
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var searchLower = search.ToLower();
+            query = query.Where(u => 
+                u.FullName.ToLower().Contains(searchLower) ||
+                u.Phone.ToLower().Contains(searchLower) ||
+                u.Email.ToLower().Contains(searchLower) ||
+                (u.Company != null && u.Company.Name.ToLower().Contains(searchLower)));
+        }
+
+        var users = await query
+            .OrderBy(u => u.Company!.Name)
+            .ThenBy(u => u.FullName)
+            .ToListAsync(cancellationToken);
+
+        return users.Select(u => new AdminListItem
+        {
+            Id = u.Id,
+            FullName = u.FullName,
+            Phone = u.Phone,
+            Email = u.Email,
+            Role = u.Role,
+            Status = u.Status.ToRussian(),
+            CompanyId = u.CompanyId,
+            CompanyName = u.Company?.Name ?? "",
+            ProjectId = u.ProjectId,
+            ProjectName = u.Project?.Name,
+            LastLoginAt = u.LastLoginAt
+        });
+    }
+
     private static UserResponse MapToResponse(AdminUser user)
     {
         return new UserResponse

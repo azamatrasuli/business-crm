@@ -81,9 +81,6 @@ public class SubscriptionsController : BaseApiController
     [HttpPost]
     public async Task<ActionResult> Create([FromBody] CreateSubscriptionRequest request, CancellationToken cancellationToken)
     {
-        var readOnlyCheck = CheckReadOnlyMode();
-        if (readOnlyCheck != null) return readOnlyCheck;
-        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -108,9 +105,6 @@ public class SubscriptionsController : BaseApiController
     [HttpPut("{id:guid}")]
     public async Task<ActionResult> Update(Guid id, [FromBody] UpdateSubscriptionDetailsRequest request, CancellationToken cancellationToken)
     {
-        var readOnlyCheck = CheckReadOnlyMode();
-        if (readOnlyCheck != null) return readOnlyCheck;
-        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -131,9 +125,6 @@ public class SubscriptionsController : BaseApiController
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        var readOnlyCheck = CheckReadOnlyMode();
-        if (readOnlyCheck != null) return readOnlyCheck;
-        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -154,9 +145,6 @@ public class SubscriptionsController : BaseApiController
     [HttpPost("bulk")]
     public async Task<ActionResult> BulkCreate([FromBody] BulkCreateSubscriptionRequest request, CancellationToken cancellationToken)
     {
-        var readOnlyCheck = CheckReadOnlyMode();
-        if (readOnlyCheck != null) return readOnlyCheck;
-        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -170,9 +158,6 @@ public class SubscriptionsController : BaseApiController
     [HttpPut("bulk")]
     public async Task<ActionResult> BulkUpdate([FromBody] BulkUpdateSubscriptionRequest request, CancellationToken cancellationToken)
     {
-        var readOnlyCheck = CheckReadOnlyMode();
-        if (readOnlyCheck != null) return readOnlyCheck;
-        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -186,9 +171,6 @@ public class SubscriptionsController : BaseApiController
     [HttpPost("{id:guid}/pause")]
     public async Task<ActionResult> Pause(Guid id, CancellationToken cancellationToken)
     {
-        var readOnlyCheck = CheckReadOnlyMode();
-        if (readOnlyCheck != null) return readOnlyCheck;
-        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -213,9 +195,6 @@ public class SubscriptionsController : BaseApiController
     [HttpPost("{id:guid}/resume")]
     public async Task<ActionResult> Resume(Guid id, CancellationToken cancellationToken)
     {
-        var readOnlyCheck = CheckReadOnlyMode();
-        if (readOnlyCheck != null) return readOnlyCheck;
-        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -240,9 +219,6 @@ public class SubscriptionsController : BaseApiController
     [HttpPost("bulk/pause")]
     public async Task<ActionResult> BulkPause([FromBody] BulkSubscriptionActionRequest request, CancellationToken cancellationToken)
     {
-        var readOnlyCheck = CheckReadOnlyMode();
-        if (readOnlyCheck != null) return readOnlyCheck;
-        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -256,9 +232,6 @@ public class SubscriptionsController : BaseApiController
     [HttpPost("bulk/resume")]
     public async Task<ActionResult> BulkResume([FromBody] BulkSubscriptionActionRequest request, CancellationToken cancellationToken)
     {
-        var readOnlyCheck = CheckReadOnlyMode();
-        if (readOnlyCheck != null) return readOnlyCheck;
-        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 

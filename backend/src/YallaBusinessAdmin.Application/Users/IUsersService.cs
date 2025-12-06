@@ -20,5 +20,10 @@ public interface IUsersService
     Task<UserResponse> UpdateAsync(Guid id, UpdateUserRequest request, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid id, Guid companyId, Guid currentUserId, CancellationToken cancellationToken = default);
     IEnumerable<string> GetAvailableRoutes();
+    
+    /// <summary>
+    /// Get all admins across all companies (SUPER_ADMIN only)
+    /// </summary>
+    Task<IEnumerable<AdminListItem>> GetAllAdminsAsync(string? search = null, CancellationToken cancellationToken = default);
 }
 

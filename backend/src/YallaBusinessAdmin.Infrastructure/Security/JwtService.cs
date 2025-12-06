@@ -25,7 +25,7 @@ public class JwtService : IJwtService
         _expirationHours = int.Parse(configuration["Jwt:ExpirationHours"] ?? "24");
     }
 
-    public string GenerateToken(AdminUser user)
+    public string GenerateToken(AdminUser user, Guid? impersonatedBy = null)
     {
         var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secret));
         var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
@@ -53,6 +53,12 @@ public class JwtService : IJwtService
         {
             claims.Add(new Claim("is_headquarters", user.Project.IsHeadquarters.ToString().ToLower()));
             claims.Add(new Claim("project_name", user.Project.Name));
+        }
+        
+        // Add impersonation claim if this is an impersonated session
+        if (impersonatedBy.HasValue)
+        {
+            claims.Add(new Claim("impersonated_by", impersonatedBy.Value.ToString()));
         }
 
         var token = new JwtSecurityToken(

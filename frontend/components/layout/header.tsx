@@ -1,8 +1,7 @@
 "use client"
 
-import { useEffect } from 'react'
+import { useState } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
-import { useCompanySelectorStore } from '@/stores/company-selector-store'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,28 +14,15 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { Badge } from '@/components/ui/badge'
-import { UserCircle, LogOut, Building2, Crown, ChevronDown, Briefcase } from 'lucide-react'
+import { UserCircle, LogOut, Building2, Crown, Users } from 'lucide-react'
 import { MobileSidebar } from './mobile-sidebar'
+import { ImpersonateDialog } from '@/components/features/auth/impersonate-dialog'
 
 export function Header() {
-  const { user, logout, projectName, isHeadquarters } = useAuthStore()
-  const { 
-    companies, 
-    selectedCompanyId, 
-    selectedCompanyName,
-    isLoadingCompanies,
-    fetchCompanies, 
-    setSelectedCompany 
-  } = useCompanySelectorStore()
+  const { user, logout, projectName, isHeadquarters, isImpersonating } = useAuthStore()
+  const [impersonateDialogOpen, setImpersonateDialogOpen] = useState(false)
   
   const isSuperAdmin = user?.role === 'SUPER_ADMIN'
-  
-  // Fetch companies for SUPER_ADMIN
-  useEffect(() => {
-    if (isSuperAdmin && companies.length === 0) {
-      fetchCompanies()
-    }
-  }, [isSuperAdmin, companies.length, fetchCompanies])
 
   const handleLogout = async () => {
     await logout()
@@ -58,49 +44,17 @@ export function Header() {
         <div className="flex items-center gap-4">
           <MobileSidebar />
           <h1 className="hidden md:block text-lg font-semibold text-foreground lg:text-xl">Yalla Business Admin</h1>
-          {/* Company selector for SUPER_ADMIN */}
-          {isSuperAdmin && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="hidden sm:flex items-center gap-2 h-9">
-                  <Briefcase className="h-4 w-4 text-primary" />
-                  <span className="text-sm font-medium truncate max-w-[150px]">
-                    {selectedCompanyName || 'Все компании'}
-                  </span>
-                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-64" align="start">
-                <DropdownMenuLabel className="flex items-center gap-2">
-                  <Crown className="h-4 w-4 text-amber-500" />
-                  Выбор компании
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {isLoadingCompanies ? (
-                  <DropdownMenuItem disabled>Загрузка...</DropdownMenuItem>
-                ) : companies.length === 0 ? (
-                  <DropdownMenuItem disabled>Нет компаний</DropdownMenuItem>
-                ) : (
-                  companies.map((company) => (
-                    <DropdownMenuItem 
-                      key={company.id}
-                      onClick={() => setSelectedCompany(company.id, company.name)}
-                      className="flex items-center justify-between cursor-pointer"
-                    >
-                      <div className="flex flex-col">
-                        <span className="font-medium">{company.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {company.employeesCount} сотр. • {company.budget.toLocaleString()} TJS
-                        </span>
-                      </div>
-                      {selectedCompanyId === company.id && (
-                        <Badge variant="secondary" className="ml-2">✓</Badge>
-                      )}
-                    </DropdownMenuItem>
-                  ))
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+          
+          {/* Switch Account button for SUPER_ADMIN (only when not impersonating) */}
+          {isSuperAdmin && !isImpersonating && (
+            <Button 
+              variant="outline" 
+              className="hidden sm:flex items-center gap-2 h-9"
+              onClick={() => setImpersonateDialogOpen(true)}
+            >
+              <Users className="h-4 w-4 text-primary" />
+              <span className="text-sm font-medium">Сменить аккаунт</span>
+            </Button>
           )}
           
           {/* Project name badge */}
@@ -137,6 +91,11 @@ export function Header() {
                   <p className="text-xs leading-none text-muted-foreground">
                     {user?.email}
                   </p>
+                  {user?.companyName && (
+                    <p className="text-xs leading-none text-muted-foreground">
+                      {user.companyName}
+                    </p>
+                  )}
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
@@ -155,7 +114,12 @@ export function Header() {
           </DropdownMenu>
         </div>
       </div>
+      
+      {/* Impersonate Dialog */}
+      <ImpersonateDialog 
+        open={impersonateDialogOpen} 
+        onOpenChange={setImpersonateDialogOpen} 
+      />
     </header>
   )
 }
-

@@ -6,6 +6,10 @@ public class LoginResponse
     public string RefreshToken { get; set; } = string.Empty;
     public long? ExpiresAt { get; set; }
     public UserDto User { get; set; } = new();
+    
+    // Impersonation info
+    public bool IsImpersonating { get; set; }
+    public Guid? ImpersonatedBy { get; set; }
 }
 
 public class UserDto
@@ -17,6 +21,7 @@ public class UserDto
     public string Role { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public Guid CompanyId { get; set; }
+    public string? CompanyName { get; set; }
     
     // Project info
     public Guid? ProjectId { get; set; }

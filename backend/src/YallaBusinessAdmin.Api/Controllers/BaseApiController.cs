@@ -10,25 +10,10 @@ namespace YallaBusinessAdmin.Api.Controllers;
 public abstract class BaseApiController : ControllerBase
 {
     /// <summary>
-    /// Get company ID from JWT or X-Company-Id header (for SUPER_ADMIN)
+    /// Get company ID from JWT
     /// </summary>
     protected Guid? GetCompanyId()
     {
-        // Check if user is SUPER_ADMIN and has X-Company-Id header
-        var role = GetUserRole();
-        if (role == "SUPER_ADMIN")
-        {
-            // Try to get company from header first
-            if (Request.Headers.TryGetValue("X-Company-Id", out var headerValue))
-            {
-                if (Guid.TryParse(headerValue.FirstOrDefault(), out var headerCompanyId))
-                {
-                    return headerCompanyId;
-                }
-            }
-        }
-        
-        // Fall back to JWT claim
         var companyIdClaim = User.FindFirst("company_id") ?? User.FindFirst("companyId");
         if (companyIdClaim != null && Guid.TryParse(companyIdClaim.Value, out var companyId))
         {
@@ -81,55 +66,23 @@ public abstract class BaseApiController : ControllerBase
     }
     
     /// <summary>
-    /// Get the company ID from JWT (not from header)
+    /// Get impersonator ID from JWT (if current session is impersonated)
     /// </summary>
-    protected Guid? GetJwtCompanyId()
+    protected Guid? GetImpersonatedBy()
     {
-        var companyIdClaim = User.FindFirst("company_id") ?? User.FindFirst("companyId");
-        if (companyIdClaim != null && Guid.TryParse(companyIdClaim.Value, out var companyId))
+        var impersonatedByClaim = User.FindFirst("impersonated_by");
+        if (impersonatedByClaim != null && Guid.TryParse(impersonatedByClaim.Value, out var impersonatedBy))
         {
-            return companyId;
+            return impersonatedBy;
         }
         return null;
     }
     
     /// <summary>
-    /// Check if SUPER_ADMIN is viewing another company (read-only mode)
-    /// Returns true if viewing a different company than their JWT company
+    /// Check if current session is an impersonation session
     /// </summary>
-    protected bool IsViewingOtherCompany()
+    protected bool IsImpersonating()
     {
-        if (!IsSuperAdmin()) return false;
-        
-        var jwtCompanyId = GetJwtCompanyId();
-        var headerCompanyId = Request.Headers["X-Company-Id"].FirstOrDefault();
-        
-        // If no header, not viewing other company
-        if (string.IsNullOrEmpty(headerCompanyId)) return false;
-        
-        // If header exists and is different from JWT company
-        if (Guid.TryParse(headerCompanyId, out var parsedHeaderCompanyId))
-        {
-            return parsedHeaderCompanyId != jwtCompanyId;
-        }
-        
-        return false;
-    }
-    
-    /// <summary>
-    /// Returns Forbidden if SUPER_ADMIN tries to modify data in view-only mode
-    /// Use this at the start of POST/PUT/DELETE methods
-    /// </summary>
-    protected ActionResult? CheckReadOnlyMode()
-    {
-        if (IsViewingOtherCompany())
-        {
-            return StatusCode(403, new { 
-                message = "Режим просмотра - редактирование запрещено",
-                code = "READ_ONLY_MODE"
-            });
-        }
-        return null;
+        return GetImpersonatedBy() != null;
     }
 }
-

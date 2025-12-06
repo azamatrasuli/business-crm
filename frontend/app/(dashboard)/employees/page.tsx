@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useEmployeesStore } from '@/stores/employees-store'
 import { useAuthStore } from '@/stores/auth-store'
-import { useCompanySelectorStore } from '@/stores/company-selector-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -110,9 +109,6 @@ export default function EmployeesPage() {
     setSearchQuery,
     setActiveFilters,
   } = useEmployeesStore()
-  const { user } = useAuthStore()
-  const { isViewingOtherCompany } = useCompanySelectorStore()
-  const isReadOnly = user?.role === 'SUPER_ADMIN' && isViewingOtherCompany(user?.companyId || null)
   const { projects, fetchProjects } = useProjectsStore()
   const [createOpen, setCreateOpen] = useState(false)
   const { sortConfig, toggleSort } = useSort<string>()
@@ -383,30 +379,6 @@ export default function EmployeesPage() {
       header: 'Действия',
       cell: ({ row }) => {
         const employee = row.original
-        // Hide all edit actions in read-only mode
-        if (isReadOnly) {
-          return (
-            <div className="flex gap-2">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(event) => handleNameClick(event, employee.id)}
-                        aria-label="Просмотреть профиль"
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>Просмотреть профиль</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-          )
-        }
         return (
           <div
             className="flex gap-2"
@@ -528,7 +500,7 @@ export default function EmployeesPage() {
         )
       },
     },
-  ], [handleManageLunch, handleManageCompensation, handleNameClick, openActivationDialog, sortConfig, toggleSort, getProjectName, isReadOnly])
+  ], [handleManageLunch, handleManageCompensation, handleNameClick, openActivationDialog, sortConfig, toggleSort, getProjectName])
 
   const confirmActivationChange = async () => {
     if (!activationContext) return
@@ -550,13 +522,11 @@ export default function EmployeesPage() {
             Управление сотрудниками и их бюджетами
           </p>
         </div>
-        {!isReadOnly && (
-          <Button onClick={() => setCreateOpen(true)} size="lg" className="gap-2 w-full sm:w-auto">
-            <Plus className="h-5 w-5" />
-            <span className="hidden sm:inline">Создать сотрудника</span>
-            <span className="sm:hidden">Создать</span>
-          </Button>
-        )}
+        <Button onClick={() => setCreateOpen(true)} size="lg" className="gap-2 w-full sm:w-auto">
+          <Plus className="h-5 w-5" />
+          <span className="hidden sm:inline">Создать сотрудника</span>
+          <span className="sm:hidden">Создать</span>
+        </Button>
       </div>
 
       {/* Error Alert */}

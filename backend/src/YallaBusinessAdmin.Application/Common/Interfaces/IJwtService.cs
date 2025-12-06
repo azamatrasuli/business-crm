@@ -7,7 +7,7 @@ namespace YallaBusinessAdmin.Application.Common.Interfaces;
 /// </summary>
 public interface IJwtService
 {
-    string GenerateToken(AdminUser user);
+    string GenerateToken(AdminUser user, Guid? impersonatedBy = null);
     (Guid userId, Guid companyId)? ValidateToken(string token);
 }
 

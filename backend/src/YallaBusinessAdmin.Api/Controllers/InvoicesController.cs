@@ -60,9 +60,6 @@ public class InvoicesController : BaseApiController
     [HttpPost]
     public async Task<ActionResult> Create([FromBody] CreateInvoiceRequest request, CancellationToken cancellationToken)
     {
-        var readOnlyCheck = CheckReadOnlyMode();
-        if (readOnlyCheck != null) return readOnlyCheck;
-        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
@@ -83,9 +80,6 @@ public class InvoicesController : BaseApiController
     [HttpPost("{id:guid}/pay")]
     public async Task<ActionResult> Pay(Guid id, [FromBody] PayInvoiceRequest request, CancellationToken cancellationToken)
     {
-        var readOnlyCheck = CheckReadOnlyMode();
-        if (readOnlyCheck != null) return readOnlyCheck;
-        
         var companyId = GetCompanyId();
         if (companyId == null) return Unauthorized();
 
