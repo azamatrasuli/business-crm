@@ -1,6 +1,8 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using YallaBusinessAdmin.Application.Audit;
 using YallaBusinessAdmin.Application.Common.Models;
+using YallaBusinessAdmin.Application.Common.Validators;
 using YallaBusinessAdmin.Application.Employees;
 using YallaBusinessAdmin.Application.Employees.Dtos;
 using YallaBusinessAdmin.Domain.Entities;
@@ -13,11 +15,19 @@ public class EmployeesService : IEmployeesService
 {
     private readonly AppDbContext _context;
     private readonly IAuditService _auditService;
+    private readonly IEmployeeBudgetService _budgetService;
+    private readonly IEmployeeOrderHistoryService _orderHistoryService;
 
-    public EmployeesService(AppDbContext context, IAuditService auditService)
+    public EmployeesService(
+        AppDbContext context, 
+        IAuditService auditService,
+        IEmployeeBudgetService budgetService,
+        IEmployeeOrderHistoryService orderHistoryService)
     {
         _context = context;
         _auditService = auditService;
+        _budgetService = budgetService;
+        _orderHistoryService = orderHistoryService;
     }
 
     public async Task<PagedResult<EmployeeResponse>> GetAllAsync(
@@ -37,6 +47,7 @@ public class EmployeesService : IEmployeesService
         CancellationToken cancellationToken = default)
     {
         var query = _context.Employees
+            .AsNoTracking()
             .Include(e => e.Budget)
             .Include(e => e.Project)
             .Include(e => e.Orders.Where(o => o.OrderDate >= DateTime.UtcNow.Date))
@@ -135,13 +146,14 @@ public class EmployeesService : IEmployeesService
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        var items = employees.Select(e => MapToResponse(e, null));
+        var items = employees.Select(MapToResponse);
         return PagedResult<EmployeeResponse>.Create(items, total, page, pageSize);
     }
 
     public async Task<EmployeeResponse> GetByIdAsync(Guid id, Guid companyId, CancellationToken cancellationToken = default)
     {
         var employee = await _context.Employees
+            .AsNoTracking()
             .Include(e => e.Budget)
             .Include(e => e.Project)
             .Include(e => e.Orders.Where(o => o.OrderDate >= DateTime.UtcNow.Date.AddDays(-7)))
@@ -153,14 +165,7 @@ public class EmployeesService : IEmployeesService
             throw new KeyNotFoundException("Сотрудник не найден");
         }
 
-        // Get active company subscription for the project (to show subscription dates)
-        var activeProjectSubscription = await _context.CompanySubscriptions
-            .Where(s => s.ProjectId == employee.ProjectId && 
-                       s.Status == Domain.Enums.SubscriptionStatus.Active)
-            .OrderByDescending(s => s.EndDate)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        return MapToResponse(employee, activeProjectSubscription);
+        return MapToResponse(employee);
     }
 
     public async Task<EmployeeResponse> CreateAsync(CreateEmployeeRequest request, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
@@ -176,10 +181,43 @@ public class EmployeesService : IEmployeesService
             throw new InvalidOperationException("ФИО обязательно для заполнения");
         }
 
-        // Validate phone format
-        if (!IsValidPhoneFormat(request.Phone))
+        // Validate phone format using Domain model method
+        if (!Employee.IsValidPhoneFormat(request.Phone))
         {
             throw new InvalidOperationException("Неверный формат телефона. Телефон должен начинаться с + и содержать только цифры");
+        }
+        
+        // Validate email format
+        var emailValidation = EmployeeValidator.ValidateEmail(request.Email);
+        if (!emailValidation.IsValid)
+        {
+            throw new InvalidOperationException(emailValidation.ErrorMessage);
+        }
+        
+        // Validate working days
+        var workingDaysValidation = EmployeeValidator.ValidateWorkingDays(request.WorkingDays);
+        if (!workingDaysValidation.IsValid)
+        {
+            throw new InvalidOperationException(workingDaysValidation.ErrorMessage);
+        }
+        
+        // Validate work time
+        var startTimeValidation = EmployeeValidator.ValidateAndParseTime(request.WorkStartTime, "Время начала работы");
+        if (!startTimeValidation.IsValid)
+        {
+            throw new InvalidOperationException(startTimeValidation.ErrorMessage);
+        }
+        
+        var endTimeValidation = EmployeeValidator.ValidateAndParseTime(request.WorkEndTime, "Время окончания работы");
+        if (!endTimeValidation.IsValid)
+        {
+            throw new InvalidOperationException(endTimeValidation.ErrorMessage);
+        }
+        
+        var timeRangeValidation = EmployeeValidator.ValidateWorkTimeRange(startTimeValidation.Time, endTimeValidation.Time);
+        if (!timeRangeValidation.IsValid)
+        {
+            throw new InvalidOperationException(timeRangeValidation.ErrorMessage);
         }
 
         // Validate project exists and belongs to the company
@@ -225,12 +263,9 @@ public class EmployeesService : IEmployeesService
                 ? ShiftTypeExtensions.FromDatabase(request.ShiftType) 
                 : null,
             WorkingDays = request.WorkingDays,
-            WorkStartTime = !string.IsNullOrWhiteSpace(request.WorkStartTime) 
-                ? TimeOnly.Parse(request.WorkStartTime) 
-                : null,
-            WorkEndTime = !string.IsNullOrWhiteSpace(request.WorkEndTime) 
-                ? TimeOnly.Parse(request.WorkEndTime) 
-                : null,
+            // Use pre-validated TimeOnly values (validation done above)
+            WorkStartTime = startTimeValidation.Time,
+            WorkEndTime = endTimeValidation.Time,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -268,6 +303,7 @@ public class EmployeesService : IEmployeesService
     public async Task<EmployeeResponse> UpdateAsync(Guid id, UpdateEmployeeRequest request, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
     {
         var employee = await _context.Employees
+            .IgnoreQueryFilters() // Include soft-deleted to check and report
             .Include(e => e.Budget)
             .Include(e => e.Project)
             .Include(e => e.Orders.Where(o => o.OrderDate >= DateTime.UtcNow.Date))
@@ -277,6 +313,14 @@ public class EmployeesService : IEmployeesService
         if (employee == null)
         {
             throw new KeyNotFoundException("Сотрудник не найден");
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // VALIDATION: Cannot update deleted employee
+        // ═══════════════════════════════════════════════════════════════
+        if (employee.DeletedAt.HasValue)
+        {
+            throw new InvalidOperationException("Невозможно обновить удалённого сотрудника. Сначала восстановите сотрудника.");
         }
 
         var oldValues = new { employee.FullName, employee.Email, employee.Position, employee.ProjectId, employee.ServiceType, employee.ShiftType };
@@ -291,21 +335,13 @@ public class EmployeesService : IEmployeesService
             employee.ProjectId = request.ProjectId.Value;
         
         // ═══════════════════════════════════════════════════════════════
-        // Service Type Update with Business Rules
+        // Service Type Update - Uses Rich Domain Model method
         // ═══════════════════════════════════════════════════════════════
         if (!string.IsNullOrWhiteSpace(request.ServiceType))
         {
             var newServiceType = ServiceTypeExtensions.FromDatabase(request.ServiceType);
-            
-            // Check business rule: cannot switch to COMPENSATION if active lunch subscription exists
-            if (newServiceType == ServiceType.Compensation && employee.LunchSubscription?.IsActive == true)
-            {
-                throw new InvalidOperationException(
-                    "Невозможно переключиться на Компенсацию: у сотрудника активная подписка на обеды. " +
-                    "Сначала отмените или дождитесь окончания подписки.");
-            }
-            
-            employee.ServiceType = newServiceType;
+            // Domain method handles business rule validation
+            employee.SwitchServiceType(newServiceType);
         }
         
         // ═══════════════════════════════════════════════════════════════
@@ -361,21 +397,15 @@ public class EmployeesService : IEmployeesService
         }
 
         var wasActive = employee.IsActive;
-        employee.IsActive = !employee.IsActive;
-        employee.UpdatedAt = DateTime.UtcNow;
-
-        // If deactivating, pause all active orders
-        if (wasActive && !employee.IsActive)
+        
+        // Use Rich Domain Model methods
+        if (wasActive)
         {
-            var activeOrders = employee.Orders
-                .Where(o => o.Status == OrderStatus.Active && o.OrderDate >= DateTime.UtcNow.Date)
-                .ToList();
-
-            foreach (var order in activeOrders)
-            {
-                order.Status = OrderStatus.Paused;
-                order.UpdatedAt = DateTime.UtcNow;
-            }
+            employee.Deactivate(); // This also pauses active orders
+        }
+        else
+        {
+            employee.Activate();
         }
 
         await _context.SaveChangesAsync(cancellationToken);
@@ -396,6 +426,7 @@ public class EmployeesService : IEmployeesService
     public async Task DeleteAsync(Guid id, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
     {
         var employee = await _context.Employees
+            .IgnoreQueryFilters() // Include soft-deleted to check and report
             .Include(e => e.Orders)
             .Include(e => e.LunchSubscription)
             .FirstOrDefaultAsync(e => e.Id == id && e.CompanyId == companyId, cancellationToken);
@@ -405,28 +436,18 @@ public class EmployeesService : IEmployeesService
             throw new KeyNotFoundException("Сотрудник не найден");
         }
 
-        // Soft delete
-        employee.DeletedAt = DateTime.UtcNow;
-        employee.UpdatedAt = DateTime.UtcNow;
-        employee.IsActive = false;
-
-        // Cancel all active orders
-        var activeOrders = employee.Orders
-            .Where(o => o.Status == OrderStatus.Active && o.OrderDate >= DateTime.UtcNow.Date)
-            .ToList();
-
-        foreach (var order in activeOrders)
+        // ═══════════════════════════════════════════════════════════════
+        // VALIDATION: Cannot delete already deleted employee
+        // ═══════════════════════════════════════════════════════════════
+        if (employee.DeletedAt.HasValue)
         {
-            order.Status = OrderStatus.Completed;
-            order.UpdatedAt = DateTime.UtcNow;
+            throw new InvalidOperationException("Сотрудник уже удалён");
         }
 
-        // Deactivate subscription if exists
-        if (employee.LunchSubscription != null)
-        {
-            employee.LunchSubscription.IsActive = false;
-            employee.LunchSubscription.UpdatedAt = DateTime.UtcNow;
-        }
+        var oldValues = new { employee.FullName, employee.Phone, employee.Email };
+        
+        // Use Rich Domain Model method - handles all cascading operations
+        employee.SoftDelete();
 
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -436,108 +457,32 @@ public class EmployeesService : IEmployeesService
             AuditActions.Delete,
             AuditEntityTypes.Employee,
             employee.Id,
-            oldValues: new { employee.FullName, employee.Phone, employee.Email },
+            oldValues: oldValues,
             cancellationToken: cancellationToken);
     }
 
+    /// <summary>
+    /// Delegates to IEmployeeBudgetService for SRP compliance.
+    /// Kept for backwards compatibility.
+    /// </summary>
     public async Task UpdateBudgetAsync(Guid id, UpdateBudgetRequest request, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
     {
-        var employee = await _context.Employees
-            .Include(e => e.Budget)
-            .FirstOrDefaultAsync(e => e.Id == id && e.CompanyId == companyId, cancellationToken);
-
-        if (employee == null)
-        {
-            throw new KeyNotFoundException("Сотрудник не найден");
-        }
-
-        var oldValues = employee.Budget != null 
-            ? new { employee.Budget.TotalBudget, employee.Budget.DailyLimit, Period = employee.Budget.Period.ToRussian(), employee.Budget.AutoRenew }
-            : null;
-
-        if (employee.Budget == null)
-        {
-            employee.Budget = new EmployeeBudget
-            {
-                Id = Guid.NewGuid(),
-                EmployeeId = employee.Id,
-                CreatedAt = DateTime.UtcNow
-            };
-            await _context.EmployeeBudgets.AddAsync(employee.Budget, cancellationToken);
-        }
-
-        employee.Budget.TotalBudget = request.TotalBudget;
-        employee.Budget.DailyLimit = request.DailyLimit;
-        employee.Budget.Period = BudgetPeriodExtensions.FromRussian(request.Period);
-        employee.Budget.AutoRenew = request.AutoRenew;
-        employee.Budget.UpdatedAt = DateTime.UtcNow;
-
-        await _context.SaveChangesAsync(cancellationToken);
-
-        // Audit log
-        await _auditService.LogAsync(
-            currentUserId,
-            AuditActions.Update,
-            AuditEntityTypes.Budget,
-            employee.Id,
-            oldValues: oldValues,
-            newValues: new { request.TotalBudget, request.DailyLimit, request.Period, request.AutoRenew },
-            cancellationToken: cancellationToken);
+        await _budgetService.UpdateBudgetAsync(id, request, companyId, currentUserId, cancellationToken);
     }
 
+    /// <summary>
+    /// Delegates to IEmployeeBudgetService for SRP compliance.
+    /// Kept for backwards compatibility.
+    /// </summary>
     public async Task BatchUpdateBudgetAsync(BatchUpdateBudgetRequest request, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
     {
-        var employeeIds = request.EmployeeIds.ToList();
-        var employees = await _context.Employees
-            .Include(e => e.Budget)
-            .Where(e => employeeIds.Contains(e.Id) && e.CompanyId == companyId)
-            .ToListAsync(cancellationToken);
-
-        if (employees.Count != employeeIds.Count)
-        {
-            throw new InvalidOperationException("Некоторые сотрудники не найдены");
-        }
-
-        var period = BudgetPeriodExtensions.FromRussian(request.Period);
-
-        foreach (var employee in employees)
-        {
-            if (employee.Budget == null)
-            {
-                employee.Budget = new EmployeeBudget
-                {
-                    Id = Guid.NewGuid(),
-                    EmployeeId = employee.Id,
-                    CreatedAt = DateTime.UtcNow
-                };
-                await _context.EmployeeBudgets.AddAsync(employee.Budget, cancellationToken);
-            }
-
-            employee.Budget.TotalBudget = request.TotalBudget;
-            employee.Budget.DailyLimit = request.DailyLimit;
-            employee.Budget.Period = period;
-            employee.Budget.AutoRenew = request.AutoRenew;
-            employee.Budget.UpdatedAt = DateTime.UtcNow;
-        }
-
-        await _context.SaveChangesAsync(cancellationToken);
-
-        // Audit log for batch operation
-        await _auditService.LogAsync(
-            currentUserId,
-            AuditActions.Update,
-            AuditEntityTypes.Budget,
-            newValues: new { 
-                EmployeeCount = employees.Count, 
-                EmployeeIds = employeeIds,
-                request.TotalBudget, 
-                request.DailyLimit, 
-                request.Period, 
-                request.AutoRenew 
-            },
-            cancellationToken: cancellationToken);
+        await _budgetService.BatchUpdateBudgetAsync(request, companyId, currentUserId, cancellationToken);
     }
 
+    /// <summary>
+    /// Delegates to IEmployeeOrderHistoryService for SRP compliance.
+    /// Kept for backwards compatibility.
+    /// </summary>
     public async Task<PagedResult<EmployeeOrderResponse>> GetEmployeeOrdersAsync(
         Guid id, 
         int page, 
@@ -548,135 +493,10 @@ public class EmployeesService : IEmployeesService
         string? status = null,
         CancellationToken cancellationToken = default)
     {
-        var employee = await _context.Employees
-            .FirstOrDefaultAsync(e => e.Id == id && e.CompanyId == companyId, cancellationToken);
-
-        if (employee == null)
-        {
-            throw new KeyNotFoundException("Сотрудник не найден");
-        }
-
-        var results = new List<EmployeeOrderResponse>();
-        
-        // ═══════════════════════════════════════════════════════════════
-        // BUSINESS RULE: Load orders ONLY for employee's ServiceType
-        // Employee can have EITHER lunch OR compensation, NOT both
-        // ═══════════════════════════════════════════════════════════════
-        var employeeServiceType = employee.ServiceType;
-
-        // ═══════════════════════════════════════════════════════════════
-        // 1. Load LUNCH orders (only if ServiceType is LUNCH or not set)
-        // ═══════════════════════════════════════════════════════════════
-        if (employeeServiceType == null || employeeServiceType == ServiceType.Lunch)
-        {
-            var ordersQuery = _context.Orders
-                .Include(o => o.Project)
-                .Where(o => o.EmployeeId == id);
-
-            // Apply date range filter for lunch orders
-            if (!string.IsNullOrWhiteSpace(dateFrom) && DateTime.TryParse(dateFrom, out var fromDate))
-            {
-                ordersQuery = ordersQuery.Where(o => o.OrderDate >= fromDate.Date);
-            }
-            if (!string.IsNullOrWhiteSpace(dateTo) && DateTime.TryParse(dateTo, out var toDate))
-            {
-                ordersQuery = ordersQuery.Where(o => o.OrderDate <= toDate.Date);
-            }
-
-            // Apply status filter for lunch orders
-            if (!string.IsNullOrWhiteSpace(status))
-            {
-                var orderStatus = OrderStatusExtensions.FromRussian(status);
-                ordersQuery = ordersQuery.Where(o => o.Status == orderStatus);
-            }
-
-            var lunchOrders = await ordersQuery.ToListAsync(cancellationToken);
-
-            results.AddRange(lunchOrders.Select(o => new EmployeeOrderResponse
-            {
-                Id = o.Id,
-                Date = o.OrderDate.ToString("yyyy-MM-dd"),
-                Type = o.IsGuestOrder ? "Гость" : "Сотрудник",
-                Status = o.Status.ToRussian(),
-                Amount = o.Price,
-                Address = o.Project?.AddressName ?? "",
-                ServiceType = "LUNCH",
-                ComboType = o.ComboType
-            }));
-        }
-
-        // ═══════════════════════════════════════════════════════════════
-        // 2. Load COMPENSATION transactions (only if ServiceType is COMPENSATION)
-        // ═══════════════════════════════════════════════════════════════
-        if (employeeServiceType == ServiceType.Compensation)
-        {
-            var compQuery = _context.CompensationTransactions
-                .Include(ct => ct.Project)
-                .Where(ct => ct.EmployeeId == id);
-
-            // Apply date range filter for compensations
-            if (!string.IsNullOrWhiteSpace(dateFrom) && DateOnly.TryParse(dateFrom, out var compFromDate))
-            {
-                compQuery = compQuery.Where(ct => ct.TransactionDate >= compFromDate);
-            }
-            if (!string.IsNullOrWhiteSpace(dateTo) && DateOnly.TryParse(dateTo, out var compToDate))
-            {
-                compQuery = compQuery.Where(ct => ct.TransactionDate <= compToDate);
-            }
-
-            var compTransactions = await compQuery.ToListAsync(cancellationToken);
-
-            results.AddRange(compTransactions.Select(ct => new EmployeeOrderResponse
-            {
-                Id = ct.Id,
-                Date = ct.TransactionDate.ToString("yyyy-MM-dd"),
-                Type = "Сотрудник",
-                Status = "Завершен",
-                Amount = ct.TotalAmount,
-                Address = ct.RestaurantName ?? "",
-                ServiceType = "COMPENSATION",
-                ComboType = "",
-                CompensationLimit = ct.Project?.CompensationDailyLimit ?? 0,
-                CompensationSpent = ct.TotalAmount,
-                RestaurantName = ct.RestaurantName
-            }));
-        }
-
-        // ═══════════════════════════════════════════════════════════════
-        // NOTE: Demo data removed - was causing business logic violation
-        // by showing both LUNCH and COMPENSATION for same employee
-        // ═══════════════════════════════════════════════════════════════
-
-        // ═══════════════════════════════════════════════════════════════
-        // 3. Sort and paginate combined results
-        // ═══════════════════════════════════════════════════════════════
-        var sortedResults = results
-            .OrderByDescending(r => r.Date)
-            .ToList();
-
-        var total = sortedResults.Count;
-        var pagedItems = sortedResults
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize);
-
-        return PagedResult<EmployeeOrderResponse>.Create(pagedItems, total, page, pageSize);
+        return await _orderHistoryService.GetOrderHistoryAsync(id, page, pageSize, companyId, dateFrom, dateTo, status, cancellationToken);
     }
 
-    /// <summary>
-    /// Validates phone format: must start with + and contain 10-15 digits
-    /// </summary>
-    private static bool IsValidPhoneFormat(string phone)
-    {
-        if (string.IsNullOrWhiteSpace(phone)) return false;
-        if (!phone.StartsWith('+')) return false;
-        
-        var digitsOnly = phone.Substring(1);
-        if (digitsOnly.Length < 10 || digitsOnly.Length > 15) return false;
-        
-        return digitsOnly.All(char.IsDigit);
-    }
-
-    private static EmployeeResponse MapToResponse(Employee employee, CompanySubscription? activeProjectSubscription = null)
+    private static EmployeeResponse MapToResponse(Employee employee)
     {
         var todayOrder = employee.Orders
             .FirstOrDefault(o => o.OrderDate.Date == DateTime.UtcNow.Date);
@@ -685,13 +505,13 @@ public class EmployeesService : IEmployeesService
             .OrderByDescending(o => o.OrderDate)
             .FirstOrDefault();
 
-        var hasActiveLunchSubscription = employee.LunchSubscription?.IsActive ?? false;
+        // Use Rich Domain Model properties
+        var hasActiveLunchSubscription = employee.HasActiveLunchSubscription;
         
         // TODO: Add real compensation tracking when available
         var hasActiveCompensation = false; // placeholder
         
-        // Calculate subscription dates and remaining days
-        // Priority: 1) LunchSubscription own dates, 2) CompanySubscription dates
+        // Calculate subscription dates and remaining days from LunchSubscription
         DateOnly? subscriptionStartDate = null;
         DateOnly? subscriptionEndDate = null;
         int? remainingDays = null;
@@ -699,41 +519,61 @@ public class EmployeesService : IEmployeesService
         string subscriptionStatus = "Активна";
         decimal? totalPrice = null;
         
+        // Order statistics for subscription
+        int futureOrdersCount = 0;
+        int completedOrdersCount = 0;
+        int? totalDays = null;
+        string subscriptionScheduleType = "EVERY_DAY";
+        List<string>? customDays = null;
+        
         if (hasActiveLunchSubscription && employee.LunchSubscription != null)
         {
             var sub = employee.LunchSubscription;
             
-            // First try to get dates from LunchSubscription itself
-            if (sub.StartDate.HasValue && sub.EndDate.HasValue)
+            subscriptionStartDate = sub.StartDate;
+            subscriptionEndDate = sub.EndDate;
+            totalPrice = sub.TotalPrice;
+            subscriptionStatus = sub.Status ?? "Активна";
+            totalDays = sub.TotalDays;
+            
+            // Use Rich Domain Model method for remaining days
+            remainingDays = employee.GetSubscriptionRemainingDays() ?? sub.RemainingDays;
+            
+            // Count future orders (today and forward, Active or Frozen status)
+            var today = DateTime.UtcNow.Date;
+            futureOrdersCount = employee.Orders.Count(o => 
+                o.OrderDate.Date >= today && 
+                (o.Status == Domain.Enums.OrderStatus.Active || o.Status == Domain.Enums.OrderStatus.Frozen));
+            
+            // Count completed orders (Delivered or Completed status)
+            completedOrdersCount = employee.Orders.Count(o => 
+                o.Status == Domain.Enums.OrderStatus.Delivered || 
+                o.Status == Domain.Enums.OrderStatus.Completed);
+            
+            // Get schedule type
+            subscriptionScheduleType = sub.ScheduleType ?? "EVERY_DAY";
+            
+            // For CUSTOM schedules, extract dates from orders
+            if (subscriptionScheduleType == "CUSTOM" && subscriptionStartDate.HasValue && subscriptionEndDate.HasValue)
             {
-                subscriptionStartDate = sub.StartDate;
-                subscriptionEndDate = sub.EndDate;
-                totalPrice = sub.TotalPrice;
-                subscriptionStatus = sub.Status ?? "Активна";
-            }
-            // Fall back to CompanySubscription if LunchSubscription doesn't have dates
-            else if (activeProjectSubscription != null)
-            {
-                subscriptionStartDate = activeProjectSubscription.StartDate;
-                subscriptionEndDate = activeProjectSubscription.EndDate;
-                totalPrice = activeProjectSubscription.TotalAmount;
-                subscriptionStatus = activeProjectSubscription.Status.ToRussian();
+                customDays = employee.Orders
+                    .Where(o => o.OrderDate.Date >= subscriptionStartDate.Value.ToDateTime(TimeOnly.MinValue) &&
+                               o.OrderDate.Date <= subscriptionEndDate.Value.ToDateTime(TimeOnly.MinValue))
+                    .Select(o => o.OrderDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))
+                    .Distinct()
+                    .OrderBy(d => d)
+                    .ToList();
             }
             
-            // Calculate remaining days
             if (subscriptionEndDate.HasValue)
             {
-                var today = DateOnly.FromDateTime(DateTime.UtcNow);
-                remainingDays = Math.Max(0, subscriptionEndDate.Value.DayNumber - today.DayNumber);
-                
                 // Create blocked reason with expiry date
                 switchBlockedReason = $"У сотрудника активная подписка на обеды до {subscriptionEndDate:dd.MM.yyyy}. " +
-                                      $"Осталось {remainingDays} {GetDaysWord(remainingDays.Value)}. " +
+                                      $"Осталось {remainingDays} {GetDaysWord(remainingDays ?? 0)}. " +
                                       $"Переключение на компенсацию будет возможно после {subscriptionEndDate:dd.MM.yyyy}.";
             }
             else
             {
-                // LunchSubscription exists but no dates (legacy data)
                 switchBlockedReason = "У сотрудника активная подписка на обеды. Переключение на компенсацию невозможно.";
             }
         }
@@ -759,11 +599,12 @@ public class EmployeesService : IEmployeesService
             
             // ═══════════════════════════════════════════════════════════════
             // Service Type (attached to employee, not project)
+            // Uses Rich Domain Model property for business rule
             // ═══════════════════════════════════════════════════════════════
             ServiceType = employee.ServiceType?.ToDatabase() ?? (employee.Project?.ServiceTypes.FirstOrDefault() ?? "LUNCH"),
-            CanSwitchToCompensation = !hasActiveLunchSubscription,
+            CanSwitchToCompensation = employee.CanSwitchToCompensation,
             CanSwitchToLunch = !hasActiveCompensation,
-            SwitchToCompensationBlockedReason = hasActiveLunchSubscription ? switchBlockedReason : null,
+            SwitchToCompensationBlockedReason = !employee.CanSwitchToCompensation ? switchBlockedReason : null,
             SwitchToLunchBlockedReason = hasActiveCompensation ? "У сотрудника активная компенсация" : null,
             
             // ═══════════════════════════════════════════════════════════════
@@ -787,7 +628,12 @@ public class EmployeesService : IEmployeesService
                 StartDate = subscriptionStartDate?.ToString("yyyy-MM-dd"),
                 EndDate = subscriptionEndDate?.ToString("yyyy-MM-dd"),
                 TotalPrice = totalPrice,
-                RemainingDays = remainingDays
+                RemainingDays = remainingDays,
+                TotalDays = totalDays,
+                ScheduleType = subscriptionScheduleType,
+                CustomDays = customDays,
+                FutureOrdersCount = futureOrdersCount,
+                CompletedOrdersCount = completedOrdersCount
             } : null,
             Compensation = null, // TODO: Add when compensation entity is available
             

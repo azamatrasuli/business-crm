@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
@@ -8,6 +8,13 @@ import { useEmployeesStore } from '@/stores/employees-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
+import {
+  DAYS_OF_WEEK,
+  WORKING_DAYS_PRESETS,
+  PHONE_REGEX,
+  TIME_REGEX,
+  toggleWorkingDay,
+} from '@/lib/constants'
 import {
   Dialog,
   DialogBody,
@@ -40,25 +47,6 @@ import { Sun, Moon, Calendar, UtensilsCrossed, Wallet, Clock, User } from 'lucid
 import { cn } from '@/lib/utils'
 import type { CreateEmployeeRequest, ShiftType, DayOfWeek, ServiceType } from '@/lib/api/employees'
 
-const phoneRegex = /^\+?[0-9]{9,15}$/
-const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/
-
-const DAYS_OF_WEEK: { value: DayOfWeek; label: string; shortLabel: string }[] = [
-  { value: 1, label: 'Понедельник', shortLabel: 'Пн' },
-  { value: 2, label: 'Вторник', shortLabel: 'Вт' },
-  { value: 3, label: 'Среда', shortLabel: 'Ср' },
-  { value: 4, label: 'Четверг', shortLabel: 'Чт' },
-  { value: 5, label: 'Пятница', shortLabel: 'Пт' },
-  { value: 6, label: 'Суббота', shortLabel: 'Сб' },
-  { value: 0, label: 'Воскресенье', shortLabel: 'Вс' },
-]
-
-const QUICK_PRESETS = [
-  { label: '5-дневка', days: [1, 2, 3, 4, 5] as DayOfWeek[] },
-  { label: '6-дневка', days: [1, 2, 3, 4, 5, 6] as DayOfWeek[] },
-  { label: 'Все дни', days: [0, 1, 2, 3, 4, 5, 6] as DayOfWeek[] },
-]
-
 const formSchema = z.object({
   // Личные данные - все обязательные
   fullName: z.string().trim().min(1, 'Обязательное поле'),
@@ -66,16 +54,16 @@ const formSchema = z.object({
     .string()
     .trim()
     .min(1, 'Обязательное поле')
-    .regex(phoneRegex, 'Введите корректный номер телефона'),
+    .regex(PHONE_REGEX, 'Введите корректный номер телефона'),
   email: z.string().trim().min(1, 'Обязательное поле').email('Некорректный email'),
   position: z.string().trim().min(1, 'Обязательное поле'),
-  
+
   // Рабочий график - все обязательные
   shiftType: z.enum(['DAY', 'NIGHT'], { message: 'Выберите тип смены' }),
-  workStartTime: z.string().min(1, 'Обязательное поле').regex(timeRegex, 'Формат: ЧЧ:ММ'),
-  workEndTime: z.string().min(1, 'Обязательное поле').regex(timeRegex, 'Формат: ЧЧ:ММ'),
+  workStartTime: z.string().min(1, 'Обязательное поле').regex(TIME_REGEX, 'Формат: ЧЧ:ММ'),
+  workEndTime: z.string().min(1, 'Обязательное поле').regex(TIME_REGEX, 'Формат: ЧЧ:ММ'),
   workingDays: z.array(z.number()).min(1, 'Выберите хотя бы один день'),
-  
+
   // Тип услуги - опционально
   serviceType: z.enum(['LUNCH', 'COMPENSATION']).nullable().optional(),
 })
@@ -108,21 +96,10 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
   })
 
   const workingDays = form.watch('workingDays') || []
-  const shiftType = form.watch('shiftType')
 
   const toggleDay = (day: DayOfWeek) => {
-    const current = form.getValues('workingDays') || []
-    if (current.includes(day)) {
-      if (current.length > 1) { // Keep at least one day
-        form.setValue('workingDays', current.filter(d => d !== day))
-      }
-    } else {
-      form.setValue('workingDays', [...current, day].sort((a, b) => {
-        const aVal = a === 0 ? 7 : a
-        const bVal = b === 0 ? 7 : b
-        return aVal - bVal
-      }))
-    }
+    const current = (form.getValues('workingDays') || []) as DayOfWeek[]
+    form.setValue('workingDays', toggleWorkingDay(current, day, 1))
   }
 
   const applyPreset = (days: DayOfWeek[]) => {
@@ -134,7 +111,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
       toast.error('Не удалось определить проект. Пожалуйста, перезайдите в систему.')
       return
     }
-    
+
     setLoading(true)
     try {
       const request: CreateEmployeeRequest = {
@@ -158,11 +135,11 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
       onOpenChange(false)
     } catch (error) {
       const appError = parseError(error)
-      
+
       logger.error('Failed to create employee', error instanceof Error ? error : new Error(appError.message), {
         errorCode: appError.code,
       })
-      
+
       // Map specific errors to form fields
       switch (appError.code) {
         case ErrorCodes.EMP_PHONE_EXISTS:
@@ -199,7 +176,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
             </DialogHeader>
 
             <DialogBody className="space-y-6">
-              
+
               {/* ═══════════════════════════════════════════════════════════════ */}
               {/* СЕКЦИЯ 1: Личные данные */}
               {/* ═══════════════════════════════════════════════════════════════ */}
@@ -355,7 +332,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
                   <div className="flex items-center justify-between">
                     <Label>Рабочие дни</Label>
                     <div className="flex gap-1">
-                      {QUICK_PRESETS.map((preset) => (
+                      {WORKING_DAYS_PRESETS.map((preset) => (
                         <Button
                           key={preset.label}
                           type="button"
@@ -369,7 +346,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
                       ))}
                     </div>
                   </div>
-                  
+
                   <div className="flex gap-1">
                     {DAYS_OF_WEEK.map((day) => {
                       const isSelected = workingDays.includes(day.value)

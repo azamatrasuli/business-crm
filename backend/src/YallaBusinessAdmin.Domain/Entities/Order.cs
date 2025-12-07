@@ -29,6 +29,16 @@ public class Order
     public OrderStatus Status { get; set; } = OrderStatus.Active;
     public DateTime OrderDate { get; set; }
     
+    // Freeze-related fields
+    /// <summary>Когда заказ был заморожен</summary>
+    public DateTime? FrozenAt { get; set; }
+    
+    /// <summary>Причина заморозки</summary>
+    public string? FrozenReason { get; set; }
+    
+    /// <summary>ID заменяющего заказа (создаётся в конце подписки)</summary>
+    public Guid? ReplacementOrderId { get; set; }
+    
     // Timestamps
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
@@ -39,4 +49,210 @@ public class Order
     public Employee? Employee { get; set; }
     public AdminUser? CreatedByUser { get; set; }
     public ICollection<CompanyTransaction> Transactions { get; set; } = new List<CompanyTransaction>();
+    
+    /// <summary>Заменяющий заказ (создан при заморозке)</summary>
+    public Order? ReplacementOrder { get; set; }
+    
+    // ═══════════════════════════════════════════════════════════════
+    // RICH DOMAIN MODEL - Business Logic Methods
+    // ═══════════════════════════════════════════════════════════════
+    
+    /// <summary>
+    /// Checks if the order is for today.
+    /// </summary>
+    public bool IsForToday => OrderDate.Date == DateTime.UtcNow.Date;
+    
+    /// <summary>
+    /// Checks if the order is active (can be modified).
+    /// </summary>
+    public bool IsActive => Status == OrderStatus.Active;
+    
+    /// <summary>
+    /// Checks if the order is frozen.
+    /// </summary>
+    public bool IsFrozen => Status == OrderStatus.Frozen;
+    
+    /// <summary>
+    /// Checks if the order is in the past.
+    /// </summary>
+    public bool IsPastOrder => OrderDate.Date < DateTime.UtcNow.Date;
+    
+    /// <summary>
+    /// Checks if the order can be cancelled.
+    /// Business rule: Can cancel only active orders for today or future.
+    /// </summary>
+    public bool CanBeCancelled => IsActive && !IsPastOrder;
+    
+    /// <summary>
+    /// Checks if the order can be modified.
+    /// Business rule: Can modify only active orders for today or future.
+    /// </summary>
+    public bool CanBeModified => IsActive && !IsPastOrder;
+    
+    /// <summary>
+    /// Pauses the order.
+    /// </summary>
+    public void Pause()
+    {
+        if (Status != OrderStatus.Active)
+            return;
+            
+        Status = OrderStatus.Paused;
+        UpdatedAt = DateTime.UtcNow;
+    }
+    
+    /// <summary>
+    /// Resumes a paused order.
+    /// </summary>
+    public void Resume()
+    {
+        if (Status != OrderStatus.Paused)
+            return;
+            
+        Status = OrderStatus.Active;
+        UpdatedAt = DateTime.UtcNow;
+    }
+    
+    /// <summary>
+    /// Completes the order.
+    /// </summary>
+    public void Complete()
+    {
+        Status = OrderStatus.Completed;
+        UpdatedAt = DateTime.UtcNow;
+    }
+    
+    /// <summary>
+    /// Cancels the order with business rule validation.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when the order cannot be cancelled.</exception>
+    public void Cancel()
+    {
+        if (!CanBeCancelled)
+        {
+            throw new InvalidOperationException("Невозможно отменить заказ. Заказы можно отменять только на текущий или будущий день.");
+        }
+        
+        Status = OrderStatus.Cancelled;
+        UpdatedAt = DateTime.UtcNow;
+    }
+    
+    /// <summary>
+    /// Checks if the order can be frozen.
+    /// Business rule: Can freeze only active orders for today or future.
+    /// </summary>
+    public bool CanBeFrozen => IsActive && !IsPastOrder;
+    
+    /// <summary>
+    /// Checks if the order can be unfrozen.
+    /// Business rule: Can unfreeze only frozen orders for today or future.
+    /// </summary>
+    public bool CanBeUnfrozen => IsFrozen && !IsPastOrder;
+    
+    /// <summary>
+    /// Freezes the order (отмена обеда с переносом в конец подписки).
+    /// </summary>
+    /// <param name="reason">Причина заморозки</param>
+    /// <exception cref="InvalidOperationException">Thrown when the order cannot be frozen.</exception>
+    public void Freeze(string? reason = null)
+    {
+        if (!CanBeFrozen)
+        {
+            throw new InvalidOperationException("Невозможно заморозить заказ. Заказы можно замораживать только активные на текущий или будущий день.");
+        }
+        
+        Status = OrderStatus.Frozen;
+        FrozenAt = DateTime.UtcNow;
+        FrozenReason = reason;
+        UpdatedAt = DateTime.UtcNow;
+    }
+    
+    /// <summary>
+    /// Unfreezes the order (возврат в активное состояние).
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when the order cannot be unfrozen.</exception>
+    public void Unfreeze()
+    {
+        if (!CanBeUnfrozen)
+        {
+            throw new InvalidOperationException("Невозможно разморозить заказ. Можно разморозить только замороженные заказы на текущий или будущий день.");
+        }
+        
+        Status = OrderStatus.Active;
+        FrozenAt = null;
+        FrozenReason = null;
+        UpdatedAt = DateTime.UtcNow;
+    }
+    
+    /// <summary>
+    /// Changes the combo type with business rule validation.
+    /// </summary>
+    /// <param name="newComboType">The new combo type.</param>
+    /// <exception cref="InvalidOperationException">Thrown when the order cannot be modified.</exception>
+    public void ChangeComboType(string newComboType)
+    {
+        if (!CanBeModified)
+        {
+            throw new InvalidOperationException("Невозможно изменить заказ. Заказы можно изменять только на текущий или будущий день.");
+        }
+        
+        ComboType = newComboType;
+        UpdatedAt = DateTime.UtcNow;
+    }
+    
+    /// <summary>
+    /// Creates a new order for an employee.
+    /// </summary>
+    public static Order CreateForEmployee(
+        Guid companyId,
+        Guid projectId,
+        Guid employeeId,
+        string comboType,
+        decimal price,
+        DateTime orderDate)
+    {
+        return new Order
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = companyId,
+            ProjectId = projectId,
+            EmployeeId = employeeId,
+            ComboType = comboType,
+            Price = price,
+            OrderDate = orderDate,
+            IsGuestOrder = false,
+            Status = OrderStatus.Active,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+    }
+    
+    /// <summary>
+    /// Creates a guest order.
+    /// </summary>
+    public static Order CreateGuestOrder(
+        Guid companyId,
+        Guid projectId,
+        string guestName,
+        string comboType,
+        decimal price,
+        DateTime orderDate,
+        Guid createdByUserId)
+    {
+        return new Order
+        {
+            Id = Guid.NewGuid(),
+            CompanyId = companyId,
+            ProjectId = projectId,
+            GuestName = guestName,
+            ComboType = comboType,
+            Price = price,
+            OrderDate = orderDate,
+            IsGuestOrder = true,
+            CreatedByUserId = createdByUserId,
+            Status = OrderStatus.Active,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+    }
 }

@@ -89,6 +89,19 @@ public class LunchSubscriptionInfo
     public string? EndDate { get; set; }
     public decimal? TotalPrice { get; set; }
     public int? RemainingDays { get; set; }
+    public int? TotalDays { get; set; }
+    
+    /// <summary>Тип графика: EVERY_DAY, EVERY_OTHER_DAY, CUSTOM</summary>
+    public string ScheduleType { get; set; } = "EVERY_DAY";
+    
+    /// <summary>Выбранные даты для CUSTOM графика</summary>
+    public List<string>? CustomDays { get; set; }
+    
+    /// <summary>Количество будущих заказов (включая сегодня)</summary>
+    public int FutureOrdersCount { get; set; }
+    
+    /// <summary>Количество выполненных заказов (Доставлен/Завершен)</summary>
+    public int CompletedOrdersCount { get; set; }
 }
 
 public class CompensationInfo

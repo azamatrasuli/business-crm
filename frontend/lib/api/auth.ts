@@ -1,4 +1,5 @@
 import apiClient from './client'
+import { clearAuthStatusCookie } from '@/stores/utils/cookie-manager'
 
 export interface LoginRequest {
   phone: string
@@ -80,17 +81,13 @@ export const authApi = {
     } catch {
       // Ignore errors on logout
     } finally {
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('token')
-        localStorage.removeItem('refreshToken')
-        localStorage.removeItem('tokenExpiresAt')
-        localStorage.removeItem('user')
-      }
+      clearAuthStatusCookie()
     }
   },
 
-  async refresh(refreshToken: string): Promise<LoginResponse> {
-    const response = await apiClient.post<LoginResponse>('/auth/refresh', { refreshToken })
+  async refresh(): Promise<LoginResponse> {
+    // Server reads refresh token from HttpOnly cookie
+    const response = await apiClient.post<LoginResponse>('/auth/refresh', {})
     return response.data
   },
 

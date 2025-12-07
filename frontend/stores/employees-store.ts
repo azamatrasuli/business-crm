@@ -9,6 +9,7 @@ import {
   type ServiceType,
 } from '@/lib/api/employees'
 import type { ActiveFilter } from '@/components/ui/filter-builder'
+import { getErrorMessage } from './utils'
 
 interface EmployeesFilter {
   status: 'all' | 'active' | 'inactive'
@@ -23,7 +24,7 @@ interface EmployeesFilter {
 interface EmployeesState {
   employees: Employee[]
   selectedEmployee: EmployeeDetail | null
-  loading: boolean
+  isLoading: boolean
   error: string | null
   total: number
   currentPage: number
@@ -45,45 +46,6 @@ interface EmployeesState {
   setSearchQuery: (query: string) => void
   selectEmployee: (employee: EmployeeDetail | null) => void
   resetFilters: () => void
-}
-
-const getErrorMessage = (error: unknown, fallback = 'Произошла ошибка') => {
-  if (typeof error === 'string') return error
-  
-  // Handle Axios errors
-  if (error && typeof error === 'object' && 'response' in error) {
-    const axiosError = error as { response?: { status?: number; data?: { message?: string; error?: { message?: string } } }; message?: string }
-    const status = axiosError.response?.status
-    
-    if (status === 500) {
-      return 'Сервер временно недоступен. Пожалуйста, попробуйте позже.'
-    }
-    if (status === 502 || status === 503 || status === 504) {
-      return 'Сервер перезагружается. Подождите 1-2 минуты и обновите страницу.'
-    }
-    if (status === 401) {
-      return 'Сессия истекла. Пожалуйста, войдите заново.'
-    }
-    if (status === 403) {
-      return 'Доступ запрещён'
-    }
-    if (!axiosError.response) {
-      return 'Нет соединения с сервером. Проверьте интернет.'
-    }
-    
-    // Try to get message from response
-    const message = axiosError.response.data?.message || axiosError.response.data?.error?.message
-    if (message) return message
-  }
-  
-  if (error instanceof Error) {
-    if (error.message.includes('Network Error')) {
-      return 'Нет соединения с сервером. Проверьте интернет.'
-    }
-    return error.message
-  }
-  
-  return fallback
 }
 
 const defaultFilter: EmployeesFilter = {
@@ -158,7 +120,7 @@ const parseActiveFilters = (filters: ActiveFilter[]): Partial<EmployeesFilter> =
 export const useEmployeesStore = create<EmployeesState>((set, get) => ({
   employees: [],
   selectedEmployee: null,
-  loading: false,
+  isLoading: false,
   error: null,
   total: 0,
   currentPage: 1,
@@ -169,7 +131,7 @@ export const useEmployeesStore = create<EmployeesState>((set, get) => ({
   activeFilters: [],
 
   fetchEmployees: async (page = 1) => {
-    set({ loading: true, error: null })
+    set({ isLoading: true, error: null })
 
     try {
       const { pageSize, searchQuery, activeFilters } = get()
@@ -194,42 +156,42 @@ export const useEmployeesStore = create<EmployeesState>((set, get) => ({
         total: response.total,
         currentPage: response.page,
         totalPages: response.totalPages,
-        loading: false,
+        isLoading: false,
       })
     } catch (error) {
-      set({ error: getErrorMessage(error), loading: false })
+      set({ error: getErrorMessage(error), isLoading: false })
     }
   },
 
   fetchEmployee: async (id: string) => {
-    set({ loading: true, error: null })
+    set({ isLoading: true, error: null })
 
     try {
       const employee = await employeesApi.getEmployee(id)
-      set({ selectedEmployee: employee, loading: false })
+      set({ selectedEmployee: employee, isLoading: false })
       return employee
     } catch (error) {
-      set({ error: getErrorMessage(error), loading: false })
+      set({ error: getErrorMessage(error), isLoading: false })
       throw error
     }
   },
 
   createEmployee: async (data: CreateEmployeeRequest) => {
-    set({ loading: true, error: null })
+    set({ isLoading: true, error: null })
 
     try {
       const newEmployee = await employeesApi.createEmployee(data)
       await get().fetchEmployees(get().currentPage)
-      set({ loading: false })
+      set({ isLoading: false })
       return newEmployee
     } catch (error) {
-      set({ error: getErrorMessage(error), loading: false })
+      set({ error: getErrorMessage(error), isLoading: false })
       throw error
     }
   },
 
   updateEmployee: async (id: string, data: UpdateEmployeeRequest) => {
-    set({ loading: true, error: null })
+    set({ isLoading: true, error: null })
 
     try {
       const updated = await employeesApi.updateEmployee(id, data)
@@ -246,36 +208,36 @@ export const useEmployeesStore = create<EmployeesState>((set, get) => ({
         }
       }
       
-      set({ loading: false })
+      set({ isLoading: false })
       return updated
     } catch (error) {
-      set({ error: getErrorMessage(error), loading: false })
+      set({ error: getErrorMessage(error), isLoading: false })
       throw error
     }
   },
 
   toggleEmployeeActive: async (id: string) => {
-    set({ loading: true, error: null })
+    set({ isLoading: true, error: null })
 
     try {
       await employeesApi.toggleActivation(id)
       await get().fetchEmployees(get().currentPage)
-      set({ loading: false })
+      set({ isLoading: false })
     } catch (error) {
-      set({ error: getErrorMessage(error), loading: false })
+      set({ error: getErrorMessage(error), isLoading: false })
       throw error
     }
   },
 
   updateBudget: async (employeeId: string, data: UpdateBudgetRequest) => {
-    set({ loading: true, error: null })
+    set({ isLoading: true, error: null })
 
     try {
       await employeesApi.updateBudget(employeeId, data)
       await get().fetchEmployees(get().currentPage)
-      set({ loading: false })
+      set({ isLoading: false })
     } catch (error) {
-      set({ error: getErrorMessage(error), loading: false })
+      set({ error: getErrorMessage(error), isLoading: false })
       throw error
     }
   },

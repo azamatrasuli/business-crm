@@ -3,10 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "[ -f ../config.json ] && cp ../config.json ./config.json || true",
+    "prebuild": "[ -f ../config.json ] && cp ../config.json ./config.json || echo 'Using local config.json'",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "sync-config": "[ -f ../config.json ] && cp ../config.json ./config.json || echo 'Parent config not found'"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -25,7 +28,9 @@
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "@tanstack/react-query": "^5.90.12",
     "@tanstack/react-table": "^8.21.3",
+    "@tanstack/react-virtual": "^3.13.12",
     "@types/lodash-es": "^4.17.12",
     "axios": "^1.13.2",
     "class-variance-authority": "^0.7.1",
@@ -43,11 +48,13 @@
     "recharts": "^3.4.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0",
+    "web-vitals": "^5.1.0",
     "zod": "^4.1.12",
     "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@tanstack/react-query-devtools": "^5.91.1",
     "@types/node": "^20",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",

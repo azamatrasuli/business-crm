@@ -33,6 +33,7 @@ import { logger } from "@/lib/logger";
 import { DaySelector } from "./day-selector";
 import { servicesApi, type ScheduleType, type ComboType } from "@/lib/api/services";
 import { employeesApi, type Employee, type EmployeeDetail, type DayOfWeek } from "@/lib/api/employees";
+import { COMBO_OPTIONS_EXTENDED } from "@/lib/config";
 
 interface LunchSubscriptionSummary {
   id: string;
@@ -54,10 +55,12 @@ interface ManageLunchDialogProps {
   onSuccess?: () => void;
 }
 
-const COMBO_OPTIONS = [
-  { value: "Комбо 25" as ComboType, price: 25, items: ["Второе", "Салат", "Хлеб", "Приборы"] },
-  { value: "Комбо 35" as ComboType, price: 35, items: ["Первое", "Второе", "Салат", "Хлеб", "Приборы"] },
-];
+// From centralized config
+const COMBO_OPTIONS = COMBO_OPTIONS_EXTENDED.map(opt => ({
+  value: opt.value as ComboType,
+  price: opt.price,
+  items: [...opt.items],
+}));
 
 const STEP_LABELS = ["Комбо", "Период", "График", "Итого"];
 
@@ -473,30 +476,45 @@ export function ManageLunchDialog({
   };
 
   const remainingDays = useMemo(() => {
-    if (!existingSubscription || !startDate || !endDate) return { total: 0, remaining: 0 };
-    const today = startOfDay(new Date());
-    const subStart = new Date(existingSubscription.startDate);
-    const subEnd = new Date(existingSubscription.endDate);
+    if (!startDate || !endDate) return { total: 0, remaining: 0 };
     
-    let total = 0;
+    // Для новой подписки - все дни являются "оставшимися" (calculatedDays)
+    if (!existingSubscription) {
+      return { total: calculatedDays, remaining: calculatedDays };
+    }
+    
+    // Для редактирования - вычисляем оставшиеся дни с учётом прошедших
+    const today = startOfDay(new Date());
+    
+    // Считаем общее количество дней доставки на основе текущих настроек (calculatedDays)
+    const total = calculatedDays;
+    
+    // Считаем оставшиеся дни (будущие) на основе выбранного периода и графика
     let remaining = 0;
-    let current = new Date(subStart);
-    while (current <= subEnd) {
+    let current = new Date(startDate);
+    const end = new Date(endDate);
+    
+    while (current <= end) {
       const dow = current.getDay() as DayOfWeek;
-      const isDeliveryDay = existingSubscription.scheduleType === "EVERY_DAY" 
-        ? workingDays.includes(dow)
-        : existingSubscription.scheduleType === "EVERY_OTHER_DAY"
-          ? [1, 3, 5].includes(dow)
-          : existingSubscription.customDays?.includes(current.toISOString().split('T')[0]);
       
-      if (isDeliveryDay) {
-        total++;
-        if (current >= today) remaining++;
+      let isDeliveryDay = false;
+      if (scheduleType === "EVERY_DAY") {
+        isDeliveryDay = workingDays.includes(dow);
+      } else if (scheduleType === "EVERY_OTHER_DAY") {
+        isDeliveryDay = workingDays.includes(dow) && [1, 3, 5].includes(dow);
+      } else if (scheduleType === "CUSTOM") {
+        const dateStr = format(current, 'yyyy-MM-dd');
+        isDeliveryDay = customDates.some(d => format(d, 'yyyy-MM-dd') === dateStr);
+      }
+      
+      if (isDeliveryDay && current >= today) {
+        remaining++;
       }
       current = addDays(current, 1);
     }
+    
     return { total, remaining };
-  }, [existingSubscription, startDate, endDate, workingDays]);
+  }, [existingSubscription, startDate, endDate, workingDays, calculatedDays, scheduleType, customDates]);
 
   const originalPrice = useMemo(() => {
     if (!existingSubscription) return 0;
@@ -557,7 +575,7 @@ export function ManageLunchDialog({
           </DialogHeader>
 
           {/* Content */}
-          <ScrollArea className="flex-1 min-h-0">
+          <div className="flex-1 min-h-0 overflow-y-auto">
             <div className="px-6 py-5 space-y-6">
               {/* Combo Type */}
               <section className="space-y-3">
@@ -586,8 +604,7 @@ export function ManageLunchDialog({
                           <Check className="h-3 w-3 text-white" />
                         </div>
                       )}
-                      <p className="font-semibold text-base">{opt.value}</p>
-                      <p className="text-xl font-bold text-amber-600 mt-1">{opt.price} TJS</p>
+                      <p className="font-semibold text-lg">{opt.value}</p>
                     </Label>
                   ))}
                 </RadioGroup>
@@ -610,15 +627,15 @@ export function ManageLunchDialog({
                     </div>
                   </div>
                   <div className="mt-3 pt-3 border-t border-border/50 flex items-baseline gap-2">
-                    <span className="text-2xl font-bold text-amber-600">{remainingDays.remaining}</span>
+                    <span className="text-2xl font-bold text-amber-600">{calculatedDays}</span>
                     <span className="text-sm text-muted-foreground">
-                      дней осталось из {remainingDays.total}
+                      дней доставки
                     </span>
                   </div>
                   <div className="mt-2 h-2 rounded-full bg-muted overflow-hidden">
                     <div 
                       className="h-full bg-amber-500 rounded-full transition-all"
-                      style={{ width: `${(remainingDays.remaining / remainingDays.total) * 100}%` }}
+                      style={{ width: `${Math.min(100, (calculatedDays / 20) * 100)}%` }}
                     />
                   </div>
                 </div>
@@ -724,7 +741,7 @@ export function ManageLunchDialog({
                 </div>
               </section>
             </div>
-          </ScrollArea>
+          </div>
 
           {/* Footer */}
           <DialogFooter className="px-6 py-4 border-t bg-muted/30 gap-3 sm:gap-3">
@@ -907,11 +924,8 @@ export function ManageLunchDialog({
                           <Check className="h-3.5 w-3.5 text-white" />
                         </div>
                       )}
-                      <p className="text-base sm:text-lg font-semibold">{opt.value}</p>
-                      <p className="text-2xl sm:text-3xl font-bold text-amber-600 mt-1">
-                        {opt.price} <span className="text-base font-medium text-muted-foreground">TJS/день</span>
-                      </p>
-                      <ul className="mt-4 space-y-1.5">
+                      <p className="text-xl sm:text-2xl font-bold text-amber-600">{opt.value}</p>
+                      <ul className="mt-3 space-y-1.5">
                         {opt.items.map(item => (
                           <li key={item} className="text-sm text-muted-foreground flex items-center gap-2">
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />

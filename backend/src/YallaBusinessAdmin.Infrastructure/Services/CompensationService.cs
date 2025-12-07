@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using YallaBusinessAdmin.Application.Common.Constants;
+using YallaBusinessAdmin.Application.Common.Interfaces;
 using YallaBusinessAdmin.Application.Compensation;
 using YallaBusinessAdmin.Application.Compensation.Dtos;
 using YallaBusinessAdmin.Domain.Entities;
@@ -10,10 +12,17 @@ namespace YallaBusinessAdmin.Infrastructure.Services;
 public class CompensationService : ICompensationService
 {
     private readonly AppDbContext _context;
+    private readonly IBudgetService _budgetService;
+    private readonly IIdempotencyService _idempotencyService;
 
-    public CompensationService(AppDbContext context)
+    public CompensationService(
+        AppDbContext context, 
+        IBudgetService budgetService,
+        IIdempotencyService idempotencyService)
     {
         _context = context;
+        _budgetService = budgetService;
+        _idempotencyService = idempotencyService;
     }
 
     public async Task<CompensationSettingsResponse> GetSettingsAsync(Guid projectId, CancellationToken cancellationToken = default)
@@ -109,91 +118,132 @@ public class CompensationService : ICompensationService
         CreateCompensationTransactionRequest request, 
         CancellationToken cancellationToken = default)
     {
-        var employee = await _context.Employees
-            .Include(e => e.Project)
-            .FirstOrDefaultAsync(e => e.Id == request.EmployeeId, cancellationToken);
+        // ═══════════════════════════════════════════════════════════════
+        // VALIDATION: Amount must be positive
+        // ═══════════════════════════════════════════════════════════════
+        if (request.Amount <= 0)
+            throw new ArgumentException("Сумма транзакции должна быть положительной");
 
-        if (employee == null)
-            throw new KeyNotFoundException("Сотрудник не найден");
+        if (request.Amount > 1_000_000) // Reasonable upper limit
+            throw new ArgumentException("Сумма транзакции превышает допустимый лимит");
 
-        if (employee.Project == null || !employee.Project.ServiceTypes.Contains("COMPENSATION"))
-            throw new InvalidOperationException("Сотрудник не привязан к проекту компенсации");
-
-        var project = employee.Project;
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
-        // Calculate available limit
-        var usedToday = await _context.CompensationTransactions
-            .Where(t => t.EmployeeId == request.EmployeeId && t.TransactionDate == today)
-            .SumAsync(t => t.CompanyPaidAmount, cancellationToken);
-
-        decimal accumulatedBalance = 0;
-        if (project.CompensationRollover)
+        // ═══════════════════════════════════════════════════════════════
+        // IDEMPOTENCY: Prevent duplicate transactions
+        // ═══════════════════════════════════════════════════════════════
+        var idempotencyKey = IdempotencyKeys.CompensationTransaction(
+            request.EmployeeId, 
+            DateTime.UtcNow, 
+            request.Amount, 
+            request.RestaurantName);
+        
+        return await _idempotencyService.ExecuteOnceAsync(idempotencyKey, async () =>
         {
-            var balance = await _context.EmployeeCompensationBalances
-                .FirstOrDefaultAsync(b => b.EmployeeId == request.EmployeeId && b.ProjectId == project.Id, cancellationToken);
-            accumulatedBalance = balance?.AccumulatedBalance ?? 0;
-        }
+            // ═══════════════════════════════════════════════════════════════
+            // VALIDATION: Employee exists, not deleted, is active
+            // ═══════════════════════════════════════════════════════════════
+            var employee = await _context.Employees
+                .Include(e => e.Project)
+                .FirstOrDefaultAsync(e => e.Id == request.EmployeeId, cancellationToken);
 
-        var effectiveLimit = project.CompensationDailyLimit + accumulatedBalance;
-        var availableLimit = Math.Max(0, effectiveLimit - usedToday);
+            if (employee == null)
+                throw new KeyNotFoundException("Сотрудник не найден");
 
-        // Calculate split
-        var companyPays = Math.Min(request.Amount, availableLimit);
-        var employeePays = request.Amount - companyPays;
+            if (employee.DeletedAt.HasValue)
+                throw new InvalidOperationException("Невозможно создать транзакцию для удалённого сотрудника");
 
-        // Check project budget
-        if (companyPays > project.Budget + project.OverdraftLimit)
-            throw new InvalidOperationException("Недостаточно средств на балансе проекта");
+            if (!employee.IsActive)
+                throw new InvalidOperationException("Невозможно создать транзакцию для неактивного сотрудника");
 
-        // Create transaction
-        var transaction = new CompensationTransaction
-        {
-            Id = Guid.NewGuid(),
-            ProjectId = project.Id,
-            EmployeeId = request.EmployeeId,
-            TotalAmount = request.Amount,
-            CompanyPaidAmount = companyPays,
-            EmployeePaidAmount = employeePays,
-            RestaurantName = request.RestaurantName,
-            Description = request.Description,
-            TransactionDate = today,
-            CreatedAt = DateTime.UtcNow
-        };
+            // ═══════════════════════════════════════════════════════════════
+            // VALIDATION: ServiceType must be COMPENSATION
+            // ═══════════════════════════════════════════════════════════════
+            if (employee.ServiceType != ServiceType.Compensation)
+                throw new InvalidOperationException("Тип услуги сотрудника должен быть 'Компенсация'");
 
-        _context.CompensationTransactions.Add(transaction);
+            if (employee.Project == null || !employee.Project.ServiceTypes.Contains("COMPENSATION"))
+                throw new InvalidOperationException("Сотрудник не привязан к проекту компенсации");
 
-        // Deduct from project budget
-        project.Budget -= companyPays;
-        project.UpdatedAt = DateTime.UtcNow;
+            var project = employee.Project;
 
-        // Update accumulated balance if rollover was used
-        if (project.CompensationRollover && accumulatedBalance > 0 && companyPays > project.CompensationDailyLimit)
-        {
-            var usedFromAccumulated = companyPays - project.CompensationDailyLimit;
-            var balance = await _context.EmployeeCompensationBalances
-                .FirstOrDefaultAsync(b => b.EmployeeId == request.EmployeeId && b.ProjectId == project.Id, cancellationToken);
-            
-            if (balance != null)
+            // Calculate available limit
+            var usedToday = await _context.CompensationTransactions
+                .Where(t => t.EmployeeId == request.EmployeeId && t.TransactionDate == today)
+                .SumAsync(t => t.CompanyPaidAmount, cancellationToken);
+
+            decimal accumulatedBalance = 0;
+            if (project.CompensationRollover)
             {
-                balance.AccumulatedBalance = Math.Max(0, balance.AccumulatedBalance - usedFromAccumulated);
-                balance.UpdatedAt = DateTime.UtcNow;
+                var balance = await _context.EmployeeCompensationBalances
+                    .FirstOrDefaultAsync(b => b.EmployeeId == request.EmployeeId && b.ProjectId == project.Id, cancellationToken);
+                accumulatedBalance = balance?.AccumulatedBalance ?? 0;
             }
-        }
 
-        await _context.SaveChangesAsync(cancellationToken);
+            var effectiveLimit = project.CompensationDailyLimit + accumulatedBalance;
+            var availableLimit = Math.Max(0, effectiveLimit - usedToday);
 
-        return new CompensationTransactionResponse(
-            transaction.Id,
-            employee.Id,
-            employee.FullName,
-            transaction.TotalAmount,
-            transaction.CompanyPaidAmount,
-            transaction.EmployeePaidAmount,
-            transaction.RestaurantName,
-            transaction.Description,
-            transaction.CreatedAt
-        );
+            // Calculate split
+            var companyPays = Math.Min(request.Amount, availableLimit);
+            var employeePays = request.Amount - companyPays;
+
+            // ═══════════════════════════════════════════════════════════════
+            // ATOMIC BUDGET DEDUCTION via BudgetService
+            // ═══════════════════════════════════════════════════════════════
+            if (companyPays > 0)
+            {
+                await _budgetService.DeductProjectBudgetAsync(
+                    project.Id, 
+                    companyPays, // Positive = deduction amount
+                    $"Компенсация: {request.RestaurantName ?? "ресторан"}",
+                    cancellationToken: cancellationToken);
+            }
+
+            // Create transaction
+            var transaction = new CompensationTransaction
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = project.Id,
+                EmployeeId = request.EmployeeId,
+                TotalAmount = request.Amount,
+                CompanyPaidAmount = companyPays,
+                EmployeePaidAmount = employeePays,
+                RestaurantName = request.RestaurantName,
+                Description = request.Description,
+                TransactionDate = today,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.CompensationTransactions.Add(transaction);
+
+            // Update accumulated balance if rollover was used
+            if (project.CompensationRollover && accumulatedBalance > 0 && companyPays > project.CompensationDailyLimit)
+            {
+                var usedFromAccumulated = companyPays - project.CompensationDailyLimit;
+                var balance = await _context.EmployeeCompensationBalances
+                    .FirstOrDefaultAsync(b => b.EmployeeId == request.EmployeeId && b.ProjectId == project.Id, cancellationToken);
+                
+                if (balance != null)
+                {
+                    balance.AccumulatedBalance = Math.Max(0, balance.AccumulatedBalance - usedFromAccumulated);
+                    balance.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+
+            return new CompensationTransactionResponse(
+                transaction.Id,
+                employee.Id,
+                employee.FullName,
+                transaction.TotalAmount,
+                transaction.CompanyPaidAmount,
+                transaction.EmployeePaidAmount,
+                transaction.RestaurantName,
+                transaction.Description,
+                transaction.CreatedAt
+            );
+        }, TimeSpan.FromMinutes(5)); // Idempotency window: 5 minutes
     }
 
     public async Task<IEnumerable<CompensationTransactionResponse>> GetTransactionsAsync(

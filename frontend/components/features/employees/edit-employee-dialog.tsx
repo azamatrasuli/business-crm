@@ -8,6 +8,12 @@ import { useEmployeesStore } from '@/stores/employees-store'
 import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import {
+  DAYS_OF_WEEK,
+  WORKING_DAYS_PRESETS,
+  TIME_REGEX,
+  toggleWorkingDay,
+} from '@/lib/constants'
+import {
   Dialog,
   DialogBody,
   DialogContent,
@@ -31,25 +37,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { toast } from 'sonner'
 import { Sun, Moon, Calendar, Clock, UtensilsCrossed, Wallet, AlertTriangle, Info, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { EmployeeDetail, UpdateEmployeeRequest, ShiftType, DayOfWeek, ServiceType } from '@/lib/api/employees'
-
-const DAYS_OF_WEEK: { value: DayOfWeek; label: string; shortLabel: string }[] = [
-  { value: 1, label: 'Понедельник', shortLabel: 'Пн' },
-  { value: 2, label: 'Вторник', shortLabel: 'Вт' },
-  { value: 3, label: 'Среда', shortLabel: 'Ср' },
-  { value: 4, label: 'Четверг', shortLabel: 'Чт' },
-  { value: 5, label: 'Пятница', shortLabel: 'Пт' },
-  { value: 6, label: 'Суббота', shortLabel: 'Сб' },
-  { value: 0, label: 'Воскресенье', shortLabel: 'Вс' },
-]
-
-const QUICK_PRESETS = [
-  { label: '5-дневка', days: [1, 2, 3, 4, 5] as DayOfWeek[] },
-  { label: '6-дневка', days: [1, 2, 3, 4, 5, 6] as DayOfWeek[] },
-  { label: 'Все дни', days: [0, 1, 2, 3, 4, 5, 6] as DayOfWeek[] },
-]
-
-const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/
+import type { EmployeeDetail, UpdateEmployeeRequest, DayOfWeek } from '@/lib/api/employees'
 
 const formSchema = z.object({
   fullName: z.string().min(1, 'Обязательное поле'),
@@ -60,8 +48,8 @@ const formSchema = z.object({
   // Work schedule
   shiftType: z.enum(['DAY', 'NIGHT']).nullable().optional(),
   workingDays: z.array(z.number()).optional(),
-  workStartTime: z.string().regex(timeRegex, 'Формат: ЧЧ:ММ').optional().or(z.literal('')),
-  workEndTime: z.string().regex(timeRegex, 'Формат: ЧЧ:ММ').optional().or(z.literal('')),
+  workStartTime: z.string().regex(TIME_REGEX, 'Формат: ЧЧ:ММ').optional().or(z.literal('')),
+  workEndTime: z.string().regex(TIME_REGEX, 'Формат: ЧЧ:ММ').optional().or(z.literal('')),
 })
 
 type FormValues = z.infer<typeof formSchema>
@@ -114,7 +102,7 @@ export function EditEmployeeDialog({
   const workingDays = form.watch('workingDays') || []
   const shiftType = form.watch('shiftType')
   const serviceType = form.watch('serviceType')
-  
+
   // Business rules for service type switching
   const hasActiveLunch = Boolean(employee.activeLunchSubscriptionId)
   const hasActiveCompensation = Boolean(employee.activeCompensationId)
@@ -122,17 +110,8 @@ export function EditEmployeeDialog({
   const canSwitchToLunch = employee.canSwitchToLunch ?? !hasActiveCompensation
 
   const toggleDay = (day: DayOfWeek) => {
-    const current = form.getValues('workingDays') || []
-    if (current.includes(day)) {
-      form.setValue('workingDays', current.filter(d => d !== day))
-    } else {
-      form.setValue('workingDays', [...current, day].sort((a, b) => {
-        // Sort so Sunday (0) comes after Saturday (6)
-        const aVal = a === 0 ? 7 : a
-        const bVal = b === 0 ? 7 : b
-        return aVal - bVal
-      }))
-    }
+    const current = (form.getValues('workingDays') || []) as DayOfWeek[]
+    form.setValue('workingDays', toggleWorkingDay(current, day))
   }
 
   const applyPreset = (days: DayOfWeek[]) => {
@@ -149,7 +128,7 @@ export function EditEmployeeDialog({
       toast.error('Невозможно переключиться на Обеды: у сотрудника активная компенсация')
       return
     }
-    
+
     setLoading(true)
     try {
       const request: UpdateEmployeeRequest = {
@@ -163,21 +142,21 @@ export function EditEmployeeDialog({
         workStartTime: data.workStartTime || undefined,
         workEndTime: data.workEndTime || undefined,
       }
-      
+
       console.log('[EditEmployee] Sending request:', request)
-      
+
       await updateEmployee(employee.id, request)
       toast.success('Сотрудник успешно обновлен')
       onOpenChange(false)
       onSuccess?.()
     } catch (error) {
       const appError = parseError(error)
-      
+
       logger.error('Failed to update employee', error instanceof Error ? error : new Error(appError.message), {
         errorCode: appError.code,
         employeeId: employee.id,
       })
-      
+
       // Map specific errors to form fields
       switch (appError.code) {
         case ErrorCodes.EMP_SERVICE_TYPE_SWITCH_BLOCKED:
@@ -211,7 +190,7 @@ export function EditEmployeeDialog({
             </DialogHeader>
 
             <DialogBody className="space-y-6">
-              
+
               {/* ═══════════════════════════════════════════════════════════════ */}
               {/* СЕКЦИЯ 1: Личные данные */}
               {/* ═══════════════════════════════════════════════════════════════ */}
@@ -285,8 +264,8 @@ export function EditEmployeeDialog({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Тип смены</FormLabel>
-                        <Select 
-                          value={field.value || 'none'} 
+                        <Select
+                          value={field.value || 'none'}
                           onValueChange={(value) => field.onChange(value === 'none' ? null : value)}
                         >
                           <FormControl>
@@ -357,7 +336,7 @@ export function EditEmployeeDialog({
                   <div className="flex items-center justify-between">
                     <Label>Рабочие дни</Label>
                     <div className="flex gap-1">
-                      {QUICK_PRESETS.map((preset) => (
+                      {WORKING_DAYS_PRESETS.map((preset) => (
                         <Button
                           key={preset.label}
                           type="button"
@@ -371,7 +350,7 @@ export function EditEmployeeDialog({
                       ))}
                     </div>
                   </div>
-                  
+
                   <div className="flex gap-1">
                     {DAYS_OF_WEEK.map((day) => {
                       const isSelected = workingDays.includes(day.value)
@@ -451,7 +430,7 @@ export function EditEmployeeDialog({
                             <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-amber-500" />
                           )}
                         </button>
-                        
+
                         {/* COMPENSATION Card */}
                         <button
                           type="button"
@@ -495,7 +474,7 @@ export function EditEmployeeDialog({
                       </FormItem>
                     )}
                   />
-                  
+
                   {/* Warning about active subscription */}
                   {!canSwitchToCompensation && employee.switchToCompensationBlockedReason && (
                     <Alert className="border-amber-500/50 bg-amber-500/10">

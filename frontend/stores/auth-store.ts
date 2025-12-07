@@ -1,6 +1,15 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { authApi, type LoginResponse, type AdminListItem } from '@/lib/api/auth'
+import {
+  setAuthStatusCookie,
+  clearAuthStatusCookie,
+  hasAuthStatusCookie,
+} from './utils/cookie-manager'
+
+// ============================================================================
+// Types
+// ============================================================================
 
 export interface User {
   id: string
@@ -11,197 +20,137 @@ export interface User {
   status: string
   companyId: string
   companyName?: string | null
-  // Project info
   projectId?: string | null
   projectName?: string | null
   isHeadquarters: boolean
-  projectServiceTypes?: string[] | null  // ['LUNCH'], ['COMPENSATION'], or ['LUNCH', 'COMPENSATION']
+  projectServiceTypes?: string[] | null
   permissions: string[]
 }
 
 interface AuthState {
+  // User data
   user: User | null
-  isLoading: boolean      // For login/logout operations (button loading)
-  isInitializing: boolean // For initial auth check (full-screen loading)
   isAuthenticated: boolean
+
+  // Loading states
+  isLoading: boolean
+  isInitializing: boolean
+
+  // Derived user context
   companyId: string | null
   projectId: string | null
   projectName: string | null
   isHeadquarters: boolean
   projectServiceTypes: string[] | null
-  
-  // Impersonation state
+
+  // Impersonation
   isImpersonating: boolean
   impersonatedBy: string | null
-  originalToken: string | null
   originalUser: User | null
-  
-  // Admin list for impersonation (cached)
+
+  // Admin list for impersonation
   allAdmins: AdminListItem[]
   adminsLoading: boolean
-  
-  // Actions
+}
+
+interface AuthActions {
+  initialize: () => Promise<void>
   login: (phone: string, password: string) => Promise<User>
   logout: () => Promise<void>
   refreshSession: () => Promise<void>
   updateProfile: (data: { fullName: string; phone: string; email: string }) => Promise<User>
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>
   hasPermission: (permission: string) => boolean
-  initialize: () => Promise<void>
-  
-  // Impersonation actions
   impersonate: (userId: string) => Promise<void>
   stopImpersonating: () => Promise<void>
   fetchAllAdmins: (search?: string) => Promise<AdminListItem[]>
 }
 
-export const useAuthStore = create<AuthState>()(
+type AuthStore = AuthState & AuthActions
+
+// ============================================================================
+// Initial State
+// ============================================================================
+
+const initialState: AuthState = {
+  user: null,
+  isAuthenticated: false,
+  isLoading: false,
+  isInitializing: true,
+  companyId: null,
+  projectId: null,
+  projectName: null,
+  isHeadquarters: false,
+  projectServiceTypes: null,
+  isImpersonating: false,
+  impersonatedBy: null,
+  originalUser: null,
+  allAdmins: [],
+  adminsLoading: false,
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+function extractUserContext(user: User) {
+  return {
+    companyId: user.companyId,
+    projectId: user.projectId || null,
+    projectName: user.projectName || null,
+    isHeadquarters: user.isHeadquarters || false,
+    projectServiceTypes: user.projectServiceTypes || null,
+  }
+}
+
+function clearAuthState(): Partial<AuthState> {
+  return {
+    user: null,
+    isAuthenticated: false,
+    companyId: null,
+    projectId: null,
+    projectName: null,
+    isHeadquarters: false,
+    projectServiceTypes: null,
+    isImpersonating: false,
+    impersonatedBy: null,
+    originalUser: null,
+  }
+}
+
+// ============================================================================
+// Store
+// ============================================================================
+
+export const useAuthStore = create<AuthStore>()(
   persist(
     (set, get) => ({
-      user: null,
-      isLoading: false,
-      isInitializing: true,
-      isAuthenticated: false,
-      companyId: null,
-      projectId: null,
-      projectName: null,
-      isHeadquarters: false,
-      projectServiceTypes: null,
-      
-      // Impersonation state
-      isImpersonating: false,
-      impersonatedBy: null,
-      originalToken: null,
-      originalUser: null,
-      
-      // Admin list
-      allAdmins: [],
-      adminsLoading: false,
+      ...initialState,
 
       initialize: async () => {
         try {
-          // Check if we have a token in localStorage
-          if (typeof window !== 'undefined') {
-            const token = localStorage.getItem('token')
-            const userStr = localStorage.getItem('user')
-            const originalTokenStr = localStorage.getItem('originalToken')
-            const originalUserStr = localStorage.getItem('originalUser')
-            
-            if (token && userStr) {
-              try {
-                const user = JSON.parse(userStr) as User
-                const expiresAt = localStorage.getItem('tokenExpiresAt')
-                
-                // Check if token is expired
-                if (expiresAt && parseInt(expiresAt) < Date.now()) {
-                // Token expired, clear everything
-                localStorage.removeItem('token')
-                localStorage.removeItem('user')
-                localStorage.removeItem('tokenExpiresAt')
-                localStorage.removeItem('refreshToken')
-                localStorage.removeItem('originalToken')
-                localStorage.removeItem('originalUser')
-                
-                set({ 
-                  user: null, 
-                  isAuthenticated: false, 
-                  isInitializing: false,
-                  companyId: null,
-                  projectId: null,
-                  projectName: null,
-                  isHeadquarters: false,
-                  projectServiceTypes: null,
-                  isImpersonating: false,
-                  impersonatedBy: null,
-                  originalToken: null,
-                  originalUser: null,
-                })
-                return
-              }
-                
-                // Check if we're in impersonation mode
-                const isImpersonating = !!originalTokenStr
-                let originalUser: User | null = null
-                if (originalUserStr) {
-                  try {
-                    originalUser = JSON.parse(originalUserStr) as User
-                  } catch {
-                    // Ignore parse errors
-                  }
-                }
-                
-                // Token is valid, restore user state
-                // Also set cookie for middleware
-                document.cookie = `token=${token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`
-                
-                set({
-                  user,
-                  isAuthenticated: true,
-                  isInitializing: false,
-                  companyId: user.companyId,
-                  projectId: user.projectId || null,
-                  projectName: user.projectName || null,
-                  isHeadquarters: user.isHeadquarters || false,
-                  projectServiceTypes: user.projectServiceTypes || null,
-                  isImpersonating,
-                  originalToken: originalTokenStr || null,
-                  originalUser,
-                })
-              } catch (error) {
-                console.error('Error parsing user data:', error)
-                localStorage.removeItem('token')
-                localStorage.removeItem('user')
-                localStorage.removeItem('tokenExpiresAt')
-                localStorage.removeItem('refreshToken')
-                localStorage.removeItem('originalToken')
-                localStorage.removeItem('originalUser')
-                
-                set({ 
-                  user: null, 
-                  isAuthenticated: false, 
-                  isInitializing: false,
-                  companyId: null,
-                  projectId: null,
-                  projectName: null,
-                  isHeadquarters: false,
-                  projectServiceTypes: null,
-                  isImpersonating: false,
-                  impersonatedBy: null,
-                  originalToken: null,
-                  originalUser: null,
-                })
-              }
-            } else {
-              set({ 
-                user: null, 
-                isAuthenticated: false, 
-                isInitializing: false,
-                companyId: null,
-                projectId: null,
-                projectName: null,
-                isHeadquarters: false,
-                isImpersonating: false,
-                impersonatedBy: null,
-                originalToken: null,
-                originalUser: null,
-              })
-            }
+          if (typeof window === 'undefined') {
+            set({ isInitializing: false })
+            return
+          }
+
+          const { user } = get()
+          const hasValidCookie = hasAuthStatusCookie()
+
+          if (user && hasValidCookie) {
+            // Zustand restored user from persist, session is valid
+            set({ isInitializing: false, isAuthenticated: true })
+          } else if (user && !hasValidCookie) {
+            // User in state but no valid cookie - session expired
+            clearAuthStatusCookie()
+            set({ ...clearAuthState(), isInitializing: false })
+          } else {
+            // No user data
+            set({ ...clearAuthState(), isInitializing: false })
           }
         } catch (error) {
           console.error('Auth initialization error:', error)
-          set({ 
-            user: null, 
-            isAuthenticated: false, 
-            isInitializing: false,
-            companyId: null,
-            projectId: null,
-            projectName: null,
-            isHeadquarters: false,
-            isImpersonating: false,
-            impersonatedBy: null,
-            originalToken: null,
-            originalUser: null,
-          })
+          set({ ...clearAuthState(), isInitializing: false })
         }
       },
 
@@ -209,10 +158,7 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true })
 
         try {
-          // Ensure phone is in correct format (with + prefix if not present)
           const formattedPhone = phone.startsWith('+') ? phone : `+${phone}`
-          
-          // Sign in with backend API
           const response: LoginResponse = await authApi.login({
             phone: formattedPhone,
             password,
@@ -226,51 +172,21 @@ export const useAuthStore = create<AuthState>()(
             throw new Error('Пользователь заблокирован')
           }
 
-          // Store token and user data
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('token', response.token)
-            if (response.refreshToken) {
-              localStorage.setItem('refreshToken', response.refreshToken)
-            }
-            if (response.expiresAt) {
-              localStorage.setItem('tokenExpiresAt', response.expiresAt.toString())
-            }
-            localStorage.setItem('user', JSON.stringify(response.user))
-            
-            // Set token in cookie for middleware
-            document.cookie = `token=${response.token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`
-          }
+          setAuthStatusCookie()
 
           set({
             user: response.user,
             isAuthenticated: true,
             isLoading: false,
-            companyId: response.user.companyId,
-            projectId: response.user.projectId || null,
-            projectName: response.user.projectName || null,
-            isHeadquarters: response.user.isHeadquarters || false,
-            projectServiceTypes: response.user.projectServiceTypes || null,
+            ...extractUserContext(response.user),
             isImpersonating: false,
             impersonatedBy: null,
-            originalToken: null,
             originalUser: null,
           })
 
           return response.user
         } catch (error) {
-          set({
-            user: null,
-            isAuthenticated: false,
-            isLoading: false,
-            companyId: null,
-            projectId: null,
-            projectName: null,
-            isHeadquarters: false,
-            isImpersonating: false,
-            impersonatedBy: null,
-            originalToken: null,
-            originalUser: null,
-          })
+          set({ ...clearAuthState(), isLoading: false })
           throw error
         }
       },
@@ -281,161 +197,57 @@ export const useAuthStore = create<AuthState>()(
         } catch (error) {
           console.error('Logout error:', error)
         } finally {
-          // Clear local storage and cookie
-          if (typeof window !== 'undefined') {
-            localStorage.removeItem('token')
-            localStorage.removeItem('user')
-            localStorage.removeItem('tokenExpiresAt')
-            localStorage.removeItem('refreshToken')
-            localStorage.removeItem('originalToken')
-            localStorage.removeItem('originalUser')
-            // Remove token cookie
-            document.cookie = 'token=; path=/; max-age=0'
-          }
-          
-          set({
-            user: null,
-            isAuthenticated: false,
-            companyId: null,
-            projectId: null,
-            projectName: null,
-            isHeadquarters: false,
-            isImpersonating: false,
-            impersonatedBy: null,
-            originalToken: null,
-            originalUser: null,
-            allAdmins: [],
-          })
+          clearAuthStatusCookie()
+          set({ ...clearAuthState(), allAdmins: [] })
         }
       },
 
       refreshSession: async () => {
         if (typeof window === 'undefined') return
-        
+
         const { isImpersonating, stopImpersonating } = get()
-        
-        // If impersonating, don't try to refresh - return to original account
-        // Impersonation tokens don't have refresh tokens for security
+
         if (isImpersonating) {
           console.log('Impersonation session expired, returning to original account')
           stopImpersonating()
           return
         }
-        
-        const refreshToken = localStorage.getItem('refreshToken')
-        if (!refreshToken) {
-          // No refresh token, clear auth state
-          localStorage.removeItem('token')
-          localStorage.removeItem('user')
-          localStorage.removeItem('tokenExpiresAt')
-          localStorage.removeItem('originalToken')
-          localStorage.removeItem('originalUser')
-          document.cookie = 'token=; path=/; max-age=0'
-          
-          set({
-            user: null,
-            isAuthenticated: false,
-            companyId: null,
-            projectId: null,
-            projectName: null,
-            isHeadquarters: false,
-            isImpersonating: false,
-            impersonatedBy: null,
-            originalToken: null,
-            originalUser: null,
-          })
-          return
-        }
 
         try {
-          const response = await authApi.refresh(refreshToken)
-          
+          const response = await authApi.refresh()
+
           if (!response.user) {
             throw new Error('No user data returned')
           }
 
-          // Store new tokens
-          localStorage.setItem('token', response.token)
-          if (response.refreshToken) {
-            localStorage.setItem('refreshToken', response.refreshToken)
-          }
-          if (response.expiresAt) {
-            localStorage.setItem('tokenExpiresAt', response.expiresAt.toString())
-          }
-          localStorage.setItem('user', JSON.stringify(response.user))
-          
-          // Update cookie for middleware
-          document.cookie = `token=${response.token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`
+          setAuthStatusCookie()
 
           set({
             user: response.user,
             isAuthenticated: true,
-            companyId: response.user.companyId,
-            projectId: response.user.projectId || null,
-            projectName: response.user.projectName || null,
-            isHeadquarters: response.user.isHeadquarters || false,
-            projectServiceTypes: response.user.projectServiceTypes || null,
+            ...extractUserContext(response.user),
           })
         } catch (error) {
           console.error('Token refresh failed:', error)
-          
-          // Clear all auth data on refresh failure
-          localStorage.removeItem('token')
-          localStorage.removeItem('refreshToken')
-          localStorage.removeItem('tokenExpiresAt')
-          localStorage.removeItem('user')
-          localStorage.removeItem('originalToken')
-          localStorage.removeItem('originalUser')
-          document.cookie = 'token=; path=/; max-age=0'
-          
-          set({
-            user: null,
-            isAuthenticated: false,
-            companyId: null,
-            projectId: null,
-            projectName: null,
-            isHeadquarters: false,
-            isImpersonating: false,
-            impersonatedBy: null,
-            originalToken: null,
-            originalUser: null,
-          })
+          clearAuthStatusCookie()
+          set(clearAuthState())
         }
       },
 
       updateProfile: async (data) => {
         const { user } = get()
-        
         if (!user) throw new Error('Not authenticated')
 
-        try {
-          const updatedUser = await authApi.updateProfile(data)
-          
-          // Update local storage
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('user', JSON.stringify(updatedUser))
-          }
-
-          set({ user: updatedUser })
-          return updatedUser
-        } catch (error) {
-          throw error
-        }
+        const updatedUser = await authApi.updateProfile(data)
+        set({ user: updatedUser })
+        return updatedUser
       },
 
       changePassword: async (currentPassword: string, newPassword: string) => {
         const { user } = get()
-        
         if (!user) throw new Error('Not authenticated')
 
-        try {
-          await authApi.changePassword({
-            currentPassword,
-            newPassword,
-          })
-        } catch (error) {
-          throw error
-        }
+        await authApi.changePassword({ currentPassword, newPassword })
       },
 
       hasPermission: (permission: string): boolean => {
@@ -445,7 +257,6 @@ export const useAuthStore = create<AuthState>()(
         return user.permissions.includes(permission)
       },
 
-      // Impersonation actions
       impersonate: async (userId: string) => {
         const { user } = get()
         if (!user || user.role !== 'SUPER_ADMIN') {
@@ -453,48 +264,22 @@ export const useAuthStore = create<AuthState>()(
         }
 
         try {
-          // Save current token and user before impersonation
-          const currentToken = localStorage.getItem('token')
-          
           const response = await authApi.impersonate(userId)
 
           if (!response.user) {
             throw new Error('No user data returned')
           }
 
-          // Store original token and user for later restoration
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('originalToken', currentToken || '')
-            localStorage.setItem('originalUser', JSON.stringify(user))
-            
-            // Set new token and user
-            localStorage.setItem('token', response.token)
-            if (response.refreshToken) {
-              localStorage.setItem('refreshToken', response.refreshToken)
-            }
-            if (response.expiresAt) {
-              localStorage.setItem('tokenExpiresAt', response.expiresAt.toString())
-            }
-            localStorage.setItem('user', JSON.stringify(response.user))
-            
-            // Update cookie for middleware
-            document.cookie = `token=${response.token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`
-          }
+          setAuthStatusCookie()
 
           set({
             user: response.user,
-            companyId: response.user.companyId,
-            projectId: response.user.projectId || null,
-            projectName: response.user.projectName || null,
-            isHeadquarters: response.user.isHeadquarters || false,
-            projectServiceTypes: response.user.projectServiceTypes || null,
+            ...extractUserContext(response.user),
             isImpersonating: true,
             impersonatedBy: response.impersonatedBy || user.id,
-            originalToken: currentToken,
             originalUser: user,
           })
 
-          // Reload the page to apply new context
           if (typeof window !== 'undefined') {
             window.location.href = '/'
           }
@@ -505,46 +290,29 @@ export const useAuthStore = create<AuthState>()(
       },
 
       stopImpersonating: async () => {
-        const { originalToken, originalUser } = get()
-        
-        if (!originalToken || !originalUser) {
-          console.error('No original token or user to restore')
+        const { originalUser } = get()
+
+        if (!originalUser) {
+          console.error('No original user to restore')
           return
         }
 
-        // Call API to log the end of impersonation (fire and forget - don't block on errors)
         try {
           await authApi.stopImpersonation()
         } catch (error) {
-          console.warn('Failed to log stop impersonation:', error)
-          // Continue anyway - the important thing is to restore the original token
+          console.warn('Failed to stop impersonation:', error)
         }
 
-        if (typeof window !== 'undefined') {
-          // Restore original token and user
-          localStorage.setItem('token', originalToken)
-          localStorage.setItem('user', JSON.stringify(originalUser))
-          localStorage.removeItem('originalToken')
-          localStorage.removeItem('originalUser')
-          
-          // Update cookie for middleware
-          document.cookie = `token=${originalToken}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`
-        }
+        setAuthStatusCookie()
 
         set({
           user: originalUser,
-          companyId: originalUser.companyId,
-          projectId: originalUser.projectId || null,
-          projectName: originalUser.projectName || null,
-          isHeadquarters: originalUser.isHeadquarters || false,
-          projectServiceTypes: originalUser.projectServiceTypes || null,
+          ...extractUserContext(originalUser),
           isImpersonating: false,
           impersonatedBy: null,
-          originalToken: null,
           originalUser: null,
         })
 
-        // Reload the page to apply original context
         if (typeof window !== 'undefined') {
           window.location.href = '/'
         }
@@ -566,9 +334,9 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'auth-storage',
       partialize: (state) => ({
+        // Only persist essential data
         user: state.user,
         isAuthenticated: state.isAuthenticated,
-        // Don't persist loading states - always start fresh
         companyId: state.companyId,
         projectId: state.projectId,
         projectName: state.projectName,
@@ -576,7 +344,6 @@ export const useAuthStore = create<AuthState>()(
         projectServiceTypes: state.projectServiceTypes,
         isImpersonating: state.isImpersonating,
         impersonatedBy: state.impersonatedBy,
-        originalToken: state.originalToken,
         originalUser: state.originalUser,
       }),
     }

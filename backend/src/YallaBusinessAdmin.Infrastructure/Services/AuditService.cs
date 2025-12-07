@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using YallaBusinessAdmin.Application.Audit;
+using YallaBusinessAdmin.Application.Common.Security;
 using YallaBusinessAdmin.Domain.Entities;
 using YallaBusinessAdmin.Infrastructure.Persistence;
 
@@ -38,6 +39,11 @@ public class AuditService : IAuditService
         
         var correlationId = httpContext?.Items["CorrelationId"]?.ToString();
 
+        // Mask sensitive data before storing in database
+        // Note: Full data is stored for compliance, but logging uses masked version
+        var maskedOldValues = oldValues != null ? MaskSensitiveData(oldValues) : null;
+        var maskedNewValues = newValues != null ? MaskSensitiveData(newValues) : null;
+
         var auditLog = new AuditLog
         {
             Id = Guid.NewGuid(),
@@ -45,20 +51,94 @@ public class AuditService : IAuditService
             Action = action,
             EntityType = entityType,
             EntityId = entityId,
+            // Store original values for compliance (database has its own access controls)
             OldValues = oldValues != null ? JsonSerializer.Serialize(oldValues, new JsonSerializerOptions { WriteIndented = false }) : null,
             NewValues = newValues != null ? JsonSerializer.Serialize(newValues, new JsonSerializerOptions { WriteIndented = false }) : null,
-            IpAddress = ipAddress,
-            UserAgent = userAgent,
+            // Mask IP address in storage
+            IpAddress = PiiMasker.MaskIpAddress(ipAddress),
+            UserAgent = TruncateUserAgent(userAgent),
             CreatedAt = DateTime.UtcNow
         };
 
-        // Also log for real-time monitoring
+        // Log MASKED data for real-time monitoring (no PII in logs)
         _logger.LogInformation(
-            "[AUDIT] {Action} {EntityType} {EntityId} by User {UserId} (CorrelationId: {CorrelationId})",
-            action, entityType, entityId, userId, correlationId);
+            "[AUDIT] {Action} {EntityType} {EntityId} by User {UserId} from {MaskedIP} (CorrelationId: {CorrelationId})",
+            action, entityType, entityId, userId, PiiMasker.MaskIpAddress(ipAddress), correlationId);
+
+        // Log detailed changes at Debug level (masked)
+        if (maskedNewValues != null)
+        {
+            _logger.LogDebug(
+                "[AUDIT DETAIL] {Action} {EntityType} NewValues: {MaskedNewValues}",
+                action, entityType, JsonSerializer.Serialize(maskedNewValues));
+        }
 
         await _context.AuditLogs.AddAsync(auditLog, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Mask sensitive data in an object for logging
+    /// </summary>
+    private static Dictionary<string, object?> MaskSensitiveData(object obj)
+    {
+        if (obj is Dictionary<string, object?> dict)
+        {
+            return MaskDictionary(dict);
+        }
+
+        return PiiMasker.MaskSensitiveFields(obj);
+    }
+
+    private static Dictionary<string, object?> MaskDictionary(Dictionary<string, object?> input)
+    {
+        var result = new Dictionary<string, object?>();
+        
+        foreach (var kvp in input)
+        {
+            var key = kvp.Key.ToLowerInvariant();
+            var value = kvp.Value;
+
+            if (IsSensitiveKey(key))
+            {
+                result[kvp.Key] = value switch
+                {
+                    string str when key.Contains("phone") => PiiMasker.MaskPhone(str),
+                    string str when key.Contains("email") => PiiMasker.MaskEmail(str),
+                    string str when key.Contains("name") && !key.Contains("company") && !key.Contains("project") => PiiMasker.MaskName(str),
+                    string when key.Contains("password") || key.Contains("secret") || key.Contains("token") || key.Contains("hash") => "***",
+                    string str when key.Contains("ip") => PiiMasker.MaskIpAddress(str),
+                    null => null,
+                    _ => "***"
+                };
+            }
+            else
+            {
+                result[kvp.Key] = value;
+            }
+        }
+
+        return result;
+    }
+
+    private static bool IsSensitiveKey(string key)
+    {
+        var sensitiveKeys = new[]
+        {
+            "password", "secret", "token", "key", "phone", "email",
+            "name", "address", "ip", "hash"
+        };
+        
+        return sensitiveKeys.Any(s => key.Contains(s));
+    }
+
+    private static string? TruncateUserAgent(string? userAgent)
+    {
+        // Truncate long user agents to prevent log bloat
+        if (string.IsNullOrEmpty(userAgent))
+            return null;
+
+        return userAgent.Length > 200 ? userAgent[..200] + "..." : userAgent;
     }
 
     // ═══════════════════════════════════════════════════════════════

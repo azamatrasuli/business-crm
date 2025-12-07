@@ -15,10 +15,10 @@
 
 ```
 yalla-business-admin/
+├── config.json        # 🔧 Единый конфиг проекта (цены, лимиты, feature flags)
 ├── frontend/          # Next.js 15 + React 19 + TypeScript
 ├── backend/           # ASP.NET Core 8 Web API  
-├── docs/              # Документация (API, деплой)
-└── assets/            # Бизнес-документация
+└── docs/              # Документация (API, деплой)
 ```
 
 ## Возможности
@@ -50,16 +50,18 @@ npm run dev
 ```bash
 cd backend
 dotnet restore
-dotnet run --project src/YallaBusinessAdmin.Api
-# → http://localhost:5000/api
-# → http://localhost:5000/swagger
+dotnet run --project src/YallaBusinessAdmin.Api --launch-profile Development
+# → http://localhost:4000/api
+# → http://localhost:4000/swagger
 ```
+
+Или используйте `./dev.sh` из корня проекта для запуска обоих сервисов.
 
 ### Переменные окружения
 
 **Frontend** (`.env.local`):
 ```env
-NEXT_PUBLIC_API_BASE_URL=http://localhost:5000/api
+NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/api
 NEXT_PUBLIC_APP_ENV=development
 ```
 
@@ -86,23 +88,52 @@ frontend/
 ├── components/
 │   ├── ui/                # UI компоненты (shadcn/ui)
 │   ├── layout/            # Сайдбар, хедер
+│   ├── common/            # DataFetcher, общие компоненты
+│   ├── skeletons/         # Скелетоны загрузки
 │   └── features/          # Бизнес-компоненты
 ├── lib/
 │   ├── api/               # API клиенты (axios)
+│   ├── hooks/             # Кастомные хуки (useAsync, usePagination, useDashboard)
+│   ├── repositories/      # Repository Pattern для работы с данными
+│   ├── queries/           # React Query options (CQRS reads)
+│   ├── commands/          # Мутации с optimistic updates (CQRS writes)
+│   ├── adapters/          # Адаптеры (аналитика и др.)
+│   ├── events/            # Event Bus (Pub/Sub)
+│   ├── validation/        # Zod схемы валидации
+│   ├── constants/         # Общие константы
 │   ├── errors/            # Обработка ошибок
-│   ├── logger/            # Логирование
+│   ├── logger/            # Логирование с correlation ID
 │   └── features.config.ts # Feature flags
 └── stores/                # Zustand stores
+    └── ui/                # UI-стейты (модалки, сайдбар, выбор)
 ```
 
-### Backend
+### Backend (Clean Architecture)
 ```
 backend/src/
-├── YallaBusinessAdmin.Api/           # Controllers, Program.cs
-├── YallaBusinessAdmin.Application/   # DTOs, интерфейсы, ошибки
-├── YallaBusinessAdmin.Domain/        # Entities, Enums
-└── YallaBusinessAdmin.Infrastructure/# EF Core, сервисы
+├── YallaBusinessAdmin.Api/           # Controllers, Middleware, Program.cs
+├── YallaBusinessAdmin.Application/   # DTOs, интерфейсы, валидация, ошибки
+├── YallaBusinessAdmin.Domain/        # Entities с Rich Domain Model, Enums
+└── YallaBusinessAdmin.Infrastructure/# EF Core, Services (Facade Pattern)
+    └── Services/Dashboard/           # Разбитые сервисы (SRP)
 ```
+
+## Паттерны и архитектура
+
+### Backend
+- **Clean Architecture** — разделение на слои (Domain, Application, Infrastructure, API)
+- **Rich Domain Model** — бизнес-логика в сущностях (Employee.IsWorkingToday(), Activate(), Deactivate())
+- **Facade Pattern** — DashboardService делегирует специализированным сервисам
+- **Result Pattern** — обработка ожидаемых ошибок без исключений
+- **Structured Logging** — Serilog + Correlation ID для трассировки
+
+### Frontend  
+- **Repository Pattern** — абстракция доступа к данным
+- **CQRS-lite** — разделение queries (чтение) и commands (запись с optimistic updates)
+- **Event Bus** — Pub/Sub для межкомпонентного взаимодействия
+- **Compound Components** — Wizard для многошаговых форм
+- **Custom Hooks** — извлечение логики из компонентов (useDashboard, useOrderActions и др.)
+- **URL State** — персистентные фильтры в query параметрах
 
 ## Обработка ошибок
 
@@ -142,9 +173,36 @@ backend/src/
 
 | Среда | Frontend | Backend | БД |
 |-------|----------|---------|-----|
-| Development | localhost:3000 | localhost:5000 | Supabase Dev |
+| Development | localhost:3000 | localhost:4000 | Supabase Dev |
 | Staging | Vercel (develop) | Render Staging | Supabase Staging |
 | Production | Vercel (main) | Render Prod | Supabase Prod |
+
+## Централизованный конфиг
+
+Все бизнес-настройки проекта находятся в **`config.json`** в корне:
+
+```json
+{
+  "business": {
+    "orders": { "cutoffTime": "10:00" },      // Время отсечки заказов
+    "freezes": { "maxPerWeek": 2 },           // Лимит заморозок
+    "subscriptions": { "minDays": 5 }         // Минимум дней подписки
+  },
+  "pricing": {
+    "combos": {
+      "COMBO_25": { "price": 25 },            // Цена комбо
+      "COMBO_35": { "price": 35 }
+    }
+  },
+  "features": {                               // Feature flags
+    "lunch": true,
+    "compensation": false,
+    "payments": false
+  }
+}
+```
+
+При изменении конфига — перезапустите `npm run dev` или `npm run build`.
 
 ## Документация
 

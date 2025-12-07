@@ -7,6 +7,7 @@ import * as z from 'zod'
 import { useUsersStore } from '@/stores/users-store'
 import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
+import { PHONE_REGEX, ROUTE_LABELS } from '@/lib/constants'
 import {
   Dialog,
   DialogBody,
@@ -33,8 +34,6 @@ import {
 import { toast } from 'sonner'
 import type { CreateUserRequest } from '@/lib/api/users'
 
-const phoneRegex = /^\+?[0-9]{9,15}$/
-
 const formSchema = z
   .object({
     fullName: z.string().trim().min(1, 'Обязательное поле'),
@@ -42,7 +41,7 @@ const formSchema = z
       .string()
       .trim()
       .min(1, 'Обязательное поле')
-      .regex(phoneRegex, 'Введите корректный номер телефона'),
+      .regex(PHONE_REGEX, 'Введите корректный номер телефона'),
     email: z.string().trim().email('Некорректный email'),
     role: z.string().trim().min(1, 'Обязательное поле'),
     password: z.string().min(6, 'Минимум 6 символов'),
@@ -59,15 +58,6 @@ type FormValues = z.infer<typeof formSchema>
 interface CreateUserDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-}
-
-const routeLabels: Record<string, string> = {
-  home: 'Главная',
-  employees: 'Сотрудники',
-  payments: 'Оплаты',
-  analytics: 'Аналитика',
-  news: 'Новости',
-  partners: 'Партнеры',
 }
 
 const CreateUserDialogComponent = ({ open, onOpenChange }: CreateUserDialogProps) => {
@@ -299,7 +289,7 @@ const CreateUserDialogComponent = ({ open, onOpenChange }: CreateUserDialogProps
                                     htmlFor={`permission-${route}`}
                                     className="text-sm font-normal cursor-pointer"
                                   >
-                                    {routeLabels[route] || route}
+                                    {ROUTE_LABELS[route] || route}
                                   </Label>
                                 </div>
                               )

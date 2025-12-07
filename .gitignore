@@ -52,10 +52,17 @@ obj/
 .vs/
 packages/
 
-# Secrets
-appsettings.*.json
+# Secrets - NEVER commit real secrets!
+appsettings.secrets.json
+appsettings.local.json
+*.secrets.json
+!appsettings.secrets.json.example
+
+# Keep only template/example files
 !appsettings.json
-!appsettings.Development.json.example
+!appsettings.Development.json
+!appsettings.Production.json
+!*.example
 
 # OS
 Thumbs.db

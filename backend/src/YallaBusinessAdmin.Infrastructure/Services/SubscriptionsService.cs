@@ -1,8 +1,11 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using YallaBusinessAdmin.Application.Common.Models;
 using YallaBusinessAdmin.Application.Subscriptions;
 using YallaBusinessAdmin.Application.Subscriptions.Dtos;
 using YallaBusinessAdmin.Domain.Entities;
+using YallaBusinessAdmin.Domain.Enums;
+using YallaBusinessAdmin.Domain.StateMachines;
 using YallaBusinessAdmin.Infrastructure.Persistence;
 
 namespace YallaBusinessAdmin.Infrastructure.Services;
@@ -33,7 +36,7 @@ public class SubscriptionsService : ISubscriptionsService
         if (!string.IsNullOrWhiteSpace(search))
         {
             var searchLower = search.ToLower();
-            query = query.Where(s => 
+            query = query.Where(s =>
                 s.Employee!.FullName.ToLower().Contains(searchLower) ||
                 s.Employee.Phone.Contains(searchLower));
         }
@@ -96,13 +99,65 @@ public class SubscriptionsService : ISubscriptionsService
             throw new KeyNotFoundException("Сотрудник не найден");
         }
 
-        // Check if subscription already exists
+        // ═══════════════════════════════════════════════════════════════
+        // VALIDATION: Employee must not be deleted
+        // ═══════════════════════════════════════════════════════════════
+        if (employee.DeletedAt.HasValue)
+        {
+            throw new InvalidOperationException("Невозможно создать подписку для удалённого сотрудника");
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // VALIDATION: Employee must be active
+        // ═══════════════════════════════════════════════════════════════
+        if (!employee.IsActive)
+        {
+            throw new InvalidOperationException("Невозможно создать подписку для неактивного сотрудника. Сначала активируйте сотрудника.");
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // VALIDATION: ServiceType must be LUNCH (or null)
+        // ═══════════════════════════════════════════════════════════════
+        if (employee.ServiceType == ServiceType.Compensation)
+        {
+            throw new InvalidOperationException("Невозможно создать подписку на обеды для сотрудника с типом услуги 'Компенсация'. Сначала измените тип услуги на 'Обеды'.");
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // VALIDATION: Employee must have a project
+        // ═══════════════════════════════════════════════════════════════
+        if (employee.Project == null)
+        {
+            throw new InvalidOperationException("Невозможно создать подписку: сотрудник не привязан к проекту");
+        }
+
+        // Check if subscription already exists (including soft-deleted)
         var existingSubscription = await _context.LunchSubscriptions
+            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(s => s.EmployeeId == request.EmployeeId, cancellationToken);
 
         if (existingSubscription != null)
         {
-            throw new InvalidOperationException("Сотрудник уже имеет подписку на обеды");
+            if (existingSubscription.IsActive)
+            {
+                throw new InvalidOperationException("Сотрудник уже имеет активную подписку на обеды");
+            }
+            // Reactivate existing subscription instead of creating new
+            existingSubscription.IsActive = true;
+            existingSubscription.ComboType = request.ComboType;
+            existingSubscription.ProjectId = employee.ProjectId;
+            existingSubscription.Status = "Активна";
+            existingSubscription.StartDate = request.StartDate;
+            existingSubscription.EndDate = request.EndDate;
+            existingSubscription.UpdatedAt = DateTime.UtcNow;
+
+            // Create orders for reactivated subscription
+            await CreateOrdersForSubscriptionAsync(
+                existingSubscription, employee, employee.Project!, cancellationToken);
+
+            await _context.SaveChangesAsync(cancellationToken);
+            existingSubscription.Employee = employee;
+            return MapToResponse(existingSubscription);
         }
 
         // NOTE: Address is derived from employee's Project (one project = one address)
@@ -114,11 +169,28 @@ public class SubscriptionsService : ISubscriptionsService
             ProjectId = employee.ProjectId,
             ComboType = request.ComboType,
             IsActive = true,
+            Status = "Активна",
+            StartDate = request.StartDate,
+            EndDate = request.EndDate,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
 
+        // Update employee's ServiceType to LUNCH if not set
+        if (employee.ServiceType == null)
+        {
+            employee.ServiceType = ServiceType.Lunch;
+            employee.UpdatedAt = DateTime.UtcNow;
+        }
+
         await _context.LunchSubscriptions.AddAsync(subscription, cancellationToken);
+
+        // ═══════════════════════════════════════════════════════════════
+        // CREATE ORDERS for subscription period
+        // ═══════════════════════════════════════════════════════════════
+        var ordersCreated = await CreateOrdersForSubscriptionAsync(
+            subscription, employee, employee.Project!, cancellationToken);
+
         await _context.SaveChangesAsync(cancellationToken);
 
         subscription.Employee = employee;
@@ -161,6 +233,7 @@ public class SubscriptionsService : ISubscriptionsService
     public async Task DeleteAsync(Guid id, Guid companyId, CancellationToken cancellationToken = default)
     {
         var subscription = await _context.LunchSubscriptions
+            .Include(s => s.Employee)
             .FirstOrDefaultAsync(s => s.Id == id && s.CompanyId == companyId, cancellationToken);
 
         if (subscription == null)
@@ -168,58 +241,225 @@ public class SubscriptionsService : ISubscriptionsService
             throw new KeyNotFoundException("Подписка не найдена");
         }
 
-        _context.LunchSubscriptions.Remove(subscription);
+        // ═══════════════════════════════════════════════════════════════
+        // SOFT DELETE: Deactivate instead of hard delete
+        // ═══════════════════════════════════════════════════════════════
+        subscription.Deactivate(); // Uses domain method which sets IsActive=false and Status="Завершена"
+
+        // ═══════════════════════════════════════════════════════════════
+        // CANCEL ACTIVE ORDERS: Cancel any pending/active orders
+        // ═══════════════════════════════════════════════════════════════
+        var activeOrders = await _context.Orders
+            .Where(o => o.EmployeeId == subscription.EmployeeId
+                     && o.Status == OrderStatus.Active
+                     && o.OrderDate >= DateTime.UtcNow.Date)
+            .ToListAsync(cancellationToken);
+
+        foreach (var order in activeOrders)
+        {
+            order.Status = OrderStatus.Cancelled;
+            order.UpdatedAt = DateTime.UtcNow;
+        }
+
         await _context.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<object> BulkCreateAsync(BulkCreateSubscriptionRequest request, Guid companyId, CancellationToken cancellationToken = default)
     {
-        var employees = await _context.Employees
-            .Include(e => e.Project)
-            .Where(e => request.EmployeeIds.Contains(e.Id) && e.CompanyId == companyId && e.IsActive)
-            .ToListAsync(cancellationToken);
+        // ═══════════════════════════════════════════════════════════════
+        // Use execution strategy for transaction (required for NpgsqlRetryingExecutionStrategy)
+        // ═══════════════════════════════════════════════════════════════
+        var strategy = _context.Database.CreateExecutionStrategy();
 
-        var existingSubscriptions = await _context.LunchSubscriptions
-            .Where(s => request.EmployeeIds.Contains(s.EmployeeId))
-            .Select(s => s.EmployeeId)
-            .ToListAsync(cancellationToken);
-
-        var created = 0;
-        var skipped = new List<string>();
-
-        foreach (var employee in employees)
+        return await strategy.ExecuteAsync(async () =>
         {
-            if (existingSubscriptions.Contains(employee.Id))
+            using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+            try
             {
-                skipped.Add($"{employee.FullName} (уже имеет подписку)");
+            // ═══════════════════════════════════════════════════════════════
+            // Load employees including deleted to report properly
+            // ═══════════════════════════════════════════════════════════════
+            var employees = await _context.Employees
+                .IgnoreQueryFilters()
+                .Include(e => e.Project)
+                .Where(e => request.EmployeeIds.Contains(e.Id) && e.CompanyId == companyId)
+                .ToListAsync(cancellationToken);
+
+            // Load ALL subscriptions (active and inactive) to handle reactivation
+            var existingSubscriptions = await _context.LunchSubscriptions
+                .Where(s => request.EmployeeIds.Contains(s.EmployeeId))
+                .ToListAsync(cancellationToken);
+
+            var createdSubscriptions = new List<object>();
+            var errors = new List<object>();
+
+            foreach (var employee in employees)
+        {
+            // ═══════════════════════════════════════════════════════════════
+            // VALIDATION: Check deleted
+            // ═══════════════════════════════════════════════════════════════
+            if (employee.DeletedAt.HasValue)
+            {
+                errors.Add(new { employeeId = employee.Id.ToString(), message = $"{employee.FullName} (удалён)" });
                 continue;
             }
 
-            // NOTE: Address is derived from employee's Project
-            var subscription = new LunchSubscription
+            // ═══════════════════════════════════════════════════════════════
+            // VALIDATION: Check active
+            // ═══════════════════════════════════════════════════════════════
+            if (!employee.IsActive)
             {
-                Id = Guid.NewGuid(),
-                EmployeeId = employee.Id,
-                CompanyId = companyId,
-                ProjectId = employee.ProjectId,
-                ComboType = request.ComboType,
-                IsActive = true,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
+                errors.Add(new { employeeId = employee.Id.ToString(), message = $"{employee.FullName} (неактивен)" });
+                continue;
+            }
 
-            await _context.LunchSubscriptions.AddAsync(subscription, cancellationToken);
-            created++;
+            // ═══════════════════════════════════════════════════════════════
+            // VALIDATION: Check ServiceType
+            // ═══════════════════════════════════════════════════════════════
+            if (employee.ServiceType == ServiceType.Compensation)
+            {
+                errors.Add(new { employeeId = employee.Id.ToString(), message = $"{employee.FullName} (тип услуги: Компенсация)" });
+                continue;
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // VALIDATION: Check existing subscription
+            // ═══════════════════════════════════════════════════════════════
+            var existingSub = existingSubscriptions.FirstOrDefault(s => s.EmployeeId == employee.Id);
+            if (existingSub != null && existingSub.IsActive)
+            {
+                errors.Add(new { employeeId = employee.Id.ToString(), message = $"{employee.FullName} (уже имеет активную подписку)" });
+                continue;
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // VALIDATION: Check project
+            // ═══════════════════════════════════════════════════════════════
+            if (employee.Project == null)
+            {
+                errors.Add(new { employeeId = employee.Id.ToString(), message = $"{employee.FullName} (нет проекта)" });
+                continue;
+            }
+
+            // Parse dates from request (ISO format: YYYY-MM-DD)
+            var startDate = !string.IsNullOrEmpty(request.StartDate)
+                ? DateOnly.ParseExact(request.StartDate, "yyyy-MM-dd", CultureInfo.InvariantCulture)
+                : DateOnly.FromDateTime(DateTime.Today);
+            var endDate = !string.IsNullOrEmpty(request.EndDate)
+                ? DateOnly.ParseExact(request.EndDate, "yyyy-MM-dd", CultureInfo.InvariantCulture)
+                : startDate.AddMonths(1);
+
+            // Calculate total days and price
+            var totalDays = endDate.DayNumber - startDate.DayNumber + 1;
+            var price = request.ComboType switch
+            {
+                "Комбо 25" => 25m,
+                "Комбо 35" => 35m,
+                _ => 25m
+            };
+            var totalPrice = price * totalDays;
+
+            LunchSubscription subscription;
+
+            // ═══════════════════════════════════════════════════════════════
+            // REACTIVATE existing inactive subscription OR create new one
+            // ═══════════════════════════════════════════════════════════════
+            if (existingSub != null)
+            {
+                // Reactivate existing subscription with new parameters
+                subscription = existingSub;
+                subscription.ComboType = request.ComboType;
+                subscription.IsActive = true;
+                subscription.Status = "Активна";
+                subscription.StartDate = startDate;
+                subscription.EndDate = endDate;
+                subscription.TotalDays = totalDays;
+                subscription.TotalPrice = totalPrice;
+                subscription.ScheduleType = request.ScheduleType ?? "EVERY_DAY";
+                subscription.UpdatedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                // Create new subscription
+                subscription = new LunchSubscription
+                {
+                    Id = Guid.NewGuid(),
+                    EmployeeId = employee.Id,
+                    CompanyId = companyId,
+                    ProjectId = employee.ProjectId,
+                    ComboType = request.ComboType,
+                    IsActive = true,
+                    Status = "Активна",
+                    StartDate = startDate,
+                    EndDate = endDate,
+                    TotalDays = totalDays,
+                    TotalPrice = totalPrice,
+                    ScheduleType = request.ScheduleType ?? "EVERY_DAY",
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                await _context.LunchSubscriptions.AddAsync(subscription, cancellationToken);
+            }
+
+            // Update employee's ServiceType to LUNCH if not set
+            if (employee.ServiceType == null)
+            {
+                employee.ServiceType = ServiceType.Lunch;
+                employee.UpdatedAt = DateTime.UtcNow;
+            }
+
+            // Create orders for the subscription period
+            int ordersCreated;
+            if (request.ScheduleType == "CUSTOM" && request.CustomDays != null && request.CustomDays.Count > 0)
+            {
+                // Create orders only for custom days
+                ordersCreated = await CreateOrdersForCustomDaysAsync(subscription, employee, employee.Project!, request.CustomDays, cancellationToken);
+            }
+            else
+            {
+                // Create orders for all working days in period
+                ordersCreated = await CreateOrdersForSubscriptionAsync(subscription, employee, employee.Project!, cancellationToken);
+            }
+
+            // CRITICAL: If no orders created, subscription is useless - rollback
+            if (ordersCreated == 0)
+            {
+                _context.LunchSubscriptions.Remove(subscription);
+                errors.Add(new { employeeId = employee.Id.ToString(), message = $"{employee.FullName} (не удалось создать заказы - проверьте рабочие дни)" });
+                continue;
+            }
+
+            createdSubscriptions.Add(MapToResponse(subscription));
         }
 
-        await _context.SaveChangesAsync(cancellationToken);
+            await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
 
-        return new
-        {
-            message = $"Создано {created} подписок",
-            created,
-            skipped
-        };
+            // Final validation: if no subscriptions created, return error
+            if (createdSubscriptions.Count == 0 && errors.Count > 0)
+            {
+                return new
+                {
+                    success = false,
+                    subscriptions = createdSubscriptions,
+                    errors = errors
+                };
+            }
+
+            return new
+            {
+                success = true,
+                subscriptions = createdSubscriptions,
+                errors = errors
+            };
+            }
+            catch (Exception)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
     }
 
     public async Task<object> BulkUpdateAsync(BulkUpdateSubscriptionRequest request, Guid companyId, CancellationToken cancellationToken = default)
@@ -374,7 +614,7 @@ public class SubscriptionsService : ISubscriptionsService
 
         // Count affected active orders
         var affectedOrdersCount = await _context.Orders
-            .CountAsync(o => o.EmployeeId == subscription.EmployeeId 
+            .CountAsync(o => o.EmployeeId == subscription.EmployeeId
                           && o.Status == Domain.Enums.OrderStatus.Active
                           && o.OrderDate >= DateTime.Today, cancellationToken);
 
@@ -416,5 +656,147 @@ public class SubscriptionsService : ISubscriptionsService
             CreatedAt = subscription.CreatedAt,
             UpdatedAt = subscription.UpdatedAt
         };
+    }
+
+    /// <summary>
+    /// Creates orders for all days in subscription period (from start date to end date).
+    /// Respects employee's working days schedule.
+    /// </summary>
+    private async Task<int> CreateOrdersForSubscriptionAsync(
+        LunchSubscription subscription,
+        Employee employee,
+        Project project,
+        CancellationToken cancellationToken)
+    {
+        var startDate = subscription.StartDate ?? DateOnly.FromDateTime(DateTime.Today);
+        var endDate = subscription.EndDate ?? startDate.AddMonths(1);
+        var today = DateOnly.FromDateTime(DateTime.Today);
+
+        // Don't create orders for past dates (except today)
+        if (startDate < today)
+            startDate = today;
+
+        if (endDate < startDate)
+            return 0;
+
+        var price = subscription.ComboType switch
+        {
+            "Комбо 25" => 25m,
+            "Комбо 35" => 35m,
+            _ => 25m
+        };
+
+        var ordersCreated = 0;
+
+        for (var date = startDate; date <= endDate; date = date.AddDays(1))
+        {
+            var dayOfWeek = (int)date.DayOfWeek; // 0 = Sunday
+
+            // Check if it's a working day for this employee
+            if (employee.WorkingDays != null && employee.WorkingDays.Length > 0)
+            {
+                if (!employee.WorkingDays.Contains(dayOfWeek))
+                    continue;
+            }
+
+            // Check if ACTIVE order already exists (exclude cancelled orders)
+            var dayStartUtc = DateTime.SpecifyKind(date.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+            var dayEndUtc = dayStartUtc.AddDays(1);
+            var orderExists = await _context.Orders
+                .AnyAsync(o =>
+                    o.EmployeeId == employee.Id &&
+                    o.OrderDate >= dayStartUtc &&
+                    o.OrderDate < dayEndUtc &&
+                    o.Status != OrderStatus.Cancelled,
+                    cancellationToken);
+
+            if (orderExists)
+                continue;
+
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = project.CompanyId,
+                ProjectId = project.Id,
+                EmployeeId = employee.Id,
+                ComboType = subscription.ComboType,
+                Price = price,
+                CurrencyCode = project.CurrencyCode,
+                Status = OrderStatus.Active,
+                OrderDate = DateTime.SpecifyKind(date.ToDateTime(TimeOnly.Parse("12:00")), DateTimeKind.Utc),
+                IsGuestOrder = false,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            _context.Orders.Add(order);
+            ordersCreated++;
+        }
+
+        return ordersCreated;
+    }
+
+    /// <summary>
+    /// Create orders for specific custom days (CUSTOM schedule type)
+    /// </summary>
+    private async Task<int> CreateOrdersForCustomDaysAsync(
+        LunchSubscription subscription,
+        Employee employee,
+        Project project,
+        List<string> customDays,
+        CancellationToken cancellationToken)
+    {
+        var price = subscription.ComboType switch
+        {
+            "Комбо 25" => 25m,
+            "Комбо 35" => 35m,
+            _ => 25m
+        };
+
+        var ordersCreated = 0;
+
+        foreach (var dayString in customDays)
+        {
+            var date = DateOnly.Parse(dayString);
+
+            // Skip past dates (except today)
+            if (date < DateOnly.FromDateTime(DateTime.Today))
+                continue;
+
+            // Check if ACTIVE order already exists (exclude cancelled orders)
+            var dayStartUtc = DateTime.SpecifyKind(date.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+            var dayEndUtc = dayStartUtc.AddDays(1);
+            var orderExists = await _context.Orders
+                .AnyAsync(o =>
+                    o.EmployeeId == employee.Id &&
+                    o.OrderDate >= dayStartUtc &&
+                    o.OrderDate < dayEndUtc &&
+                    o.Status != OrderStatus.Cancelled,
+                    cancellationToken);
+
+            if (orderExists)
+                continue;
+
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CompanyId = project.CompanyId,
+                ProjectId = project.Id,
+                EmployeeId = employee.Id,
+                ComboType = subscription.ComboType,
+                Price = price,
+                CurrencyCode = project.CurrencyCode,
+                Status = OrderStatus.Active,
+                OrderDate = DateTime.SpecifyKind(date.ToDateTime(TimeOnly.Parse("12:00")), DateTimeKind.Utc),
+                IsGuestOrder = false,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            _context.Orders.Add(order);
+            ordersCreated++;
+        }
+
+        return ordersCreated;
     }
 }

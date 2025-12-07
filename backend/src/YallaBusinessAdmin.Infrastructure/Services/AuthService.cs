@@ -4,7 +4,10 @@ using Microsoft.EntityFrameworkCore;
 using YallaBusinessAdmin.Application.Audit;
 using YallaBusinessAdmin.Application.Auth;
 using YallaBusinessAdmin.Application.Auth.Dtos;
+using YallaBusinessAdmin.Application.Common;
 using YallaBusinessAdmin.Application.Common.Interfaces;
+using YallaBusinessAdmin.Application.Common.Validators;
+using YallaBusinessAdmin.Application.Common.Errors;
 using YallaBusinessAdmin.Domain.Entities;
 using YallaBusinessAdmin.Domain.Enums;
 using YallaBusinessAdmin.Infrastructure.Persistence;
@@ -255,6 +258,18 @@ public class AuthService : IAuthService
 
     public async Task<object> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default)
     {
+        // Validate password complexity
+        var passwordValidation = PasswordValidator.Validate(request.Password);
+        if (!passwordValidation.IsValid)
+        {
+            throw new AppException(
+                ErrorCodes.AUTH_PASSWORD_WEAK,
+                passwordValidation.ErrorMessage,
+                ErrorType.Validation,
+                new Dictionary<string, object> { { "errors", passwordValidation.Errors } }
+            );
+        }
+
         var tokenData = _jwtService.ValidateToken(request.Token);
         if (tokenData == null)
         {
@@ -303,6 +318,18 @@ public class AuthService : IAuthService
         string? ipAddress = null,
         CancellationToken cancellationToken = default)
     {
+        // Validate new password complexity
+        var passwordValidation = PasswordValidator.Validate(request.NewPassword);
+        if (!passwordValidation.IsValid)
+        {
+            throw new AppException(
+                ErrorCodes.AUTH_PASSWORD_WEAK,
+                passwordValidation.ErrorMessage,
+                ErrorType.Validation,
+                new Dictionary<string, object> { { "errors", passwordValidation.Errors } }
+            );
+        }
+
         var user = await _context.AdminUsers
             .Include(u => u.Permissions)
             .Include(u => u.Project)

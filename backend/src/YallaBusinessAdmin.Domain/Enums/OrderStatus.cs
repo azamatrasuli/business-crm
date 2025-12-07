@@ -15,7 +15,9 @@ public enum OrderStatus
     /// <summary>Доставлен - Delivered order</summary>
     Delivered,
     /// <summary>Отменён - Cancelled order</summary>
-    Cancelled
+    Cancelled,
+    /// <summary>Заморожен - Frozen order (обед отменён, день переносится в конец подписки)</summary>
+    Frozen
 }
 
 public static class OrderStatusExtensions
@@ -27,6 +29,7 @@ public static class OrderStatusExtensions
         OrderStatus.Completed => "Завершен",
         OrderStatus.Delivered => "Доставлен",
         OrderStatus.Cancelled => "Отменён",
+        OrderStatus.Frozen => "Заморожен",
         _ => throw new ArgumentOutOfRangeException(nameof(status))
     };
 
@@ -37,7 +40,8 @@ public static class OrderStatusExtensions
         "Завершен" => OrderStatus.Completed,
         "Доставлен" => OrderStatus.Delivered,
         "Отменён" => OrderStatus.Cancelled,
-        _ => throw new ArgumentOutOfRangeException(nameof(value))
+        "Заморожен" => OrderStatus.Frozen,
+        _ => throw new ArgumentOutOfRangeException(nameof(value), $"Неизвестный статус заказа: {value}")
     };
 }
 

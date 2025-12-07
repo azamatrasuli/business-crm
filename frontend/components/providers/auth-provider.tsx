@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, Suspense, type ReactNode } from 'react'
+import { useEffect, Suspense, type ReactNode } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 

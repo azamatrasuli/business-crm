@@ -9,6 +9,14 @@
 | База данных | Supabase | PostgreSQL 15 |
 | Репозиторий | GitHub | `azamatrasuli/business-crm` |
 
+## Централизованный конфиг
+
+Бизнес-настройки (цены, лимиты, feature flags) находятся в `/config.json`.
+
+При деплое на Vercel:
+- Если Root Directory = весь репо → prebuild скрипт копирует `../config.json`
+- Если Root Directory = `frontend` → используется `frontend/config.json` из git
+
 ---
 
 ## Frontend (Vercel)
@@ -54,17 +62,6 @@ ASPNETCORE_ENVIRONMENT=Production
 ConnectionStrings__DefaultConnection=Host=...;Port=5432;Database=postgres;Username=...;Password=...;SSL Mode=Require;Trust Server Certificate=true
 Jwt__Secret=ваш-секретный-ключ-минимум-32-символа
 FrontendUrl=https://yalla-business-crm.vercel.app
-```
-
-### Локальный Docker
-
-```bash
-cd backend
-docker build -t yalla-api .
-docker run -p 5000:8080 \
-  -e ConnectionStrings__DefaultConnection="Host=localhost;Database=yalla;Username=postgres;Password=..." \
-  -e Jwt__Secret="your-secret-key-32-chars-minimum" \
-  yalla-api
 ```
 
 ---
@@ -115,69 +112,14 @@ paused_days_count INTEGER DEFAULT 0
 
 ---
 
-## Docker Compose (локальная разработка)
+## Локальная разработка
 
-```yaml
-version: '3.8'
+Для локальной разработки используйте `./dev.sh` — Docker не требуется.
 
-services:
-  postgres:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_USER: yalla
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: yalla_db
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-
-  api:
-    build: ./backend
-    ports:
-      - "5000:8080"
-    environment:
-      ConnectionStrings__DefaultConnection: Host=postgres;Database=yalla_db;Username=yalla;Password=password
-      Jwt__Secret: development-secret-key-32-chars
-      ASPNETCORE_ENVIRONMENT: Development
-    depends_on:
-      - postgres
-
-volumes:
-  pgdata:
-```
-
-Запуск:
 ```bash
-docker-compose up -d
-```
-
----
-
-## CI/CD
-
-### GitHub Actions (опционально)
-
-```yaml
-# .github/workflows/deploy.yml
-name: Deploy
-
-on:
-  push:
-    branches: [main, develop]
-
-jobs:
-  deploy-frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          working-directory: ./frontend
+./dev.sh              # запустить всё
+./dev.sh stop         # остановить
+./dev.sh wifi         # доступ из сети
 ```
 
 ---

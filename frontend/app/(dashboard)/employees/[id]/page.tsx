@@ -29,7 +29,6 @@ import {
   AlertTriangle,
   Sun,
   Moon,
-  Briefcase,
   ChevronLeft,
   ChevronRight,
   MapPin,
@@ -48,7 +47,6 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
@@ -62,7 +60,7 @@ import { cn } from '@/lib/utils'
 import { format, differenceInDays, parseISO, isAfter, addDays, startOfMonth, startOfWeek, isSameDay, isToday, isSameMonth, getDay, startOfDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { employeesApi, type EmployeeOrder, type DayOfWeek } from '@/lib/api/employees'
-import { getFreezeInfo, freezeAssignment, unfreezeAssignment, getEmployeeAssignments } from '@/lib/api/meal-subscriptions'
+import { getEmployeeFreezeInfo, freezeOrder, unfreezeOrder } from '@/lib/api/orders'
 import { toast } from 'sonner'
 import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
@@ -76,7 +74,7 @@ export default function EmployeeDetailPage() {
   const params = useParams()
   const router = useRouter()
   const id = params.id as string
-  const { selectedEmployee: currentEmployee, loading, error, fetchEmployee } = useEmployeesStore()
+  const { selectedEmployee: currentEmployee, isLoading: loading, error, fetchEmployee } = useEmployeesStore()
   const [editOpen, setEditOpen] = useState(false)
   const [lunchDialogOpen, setLunchDialogOpen] = useState(false)
   const [compensationDialogOpen, setCompensationDialogOpen] = useState(false)
@@ -151,8 +149,8 @@ export default function EmployeeDetailPage() {
   const employeeServiceType = currentEmployee?.serviceType // LUNCH | COMPENSATION | null
   
   // Business rule: can switch to compensation only if no active lunch subscription
-  const canSwitchToCompensation = currentEmployee?.canSwitchToCompensation ?? !hasActiveLunch
-  const canSwitchToLunch = currentEmployee?.canSwitchToLunch ?? !hasActiveCompensation
+  const _canSwitchToCompensation = currentEmployee?.canSwitchToCompensation ?? !hasActiveLunch
+  const _canSwitchToLunch = currentEmployee?.canSwitchToLunch ?? !hasActiveCompensation
   
   // Для ланча: доступно если тип услуги НЕ компенсация
   const canManageLunch = canManageBudget && employeeServiceType !== 'COMPENSATION'
@@ -262,16 +260,16 @@ export default function EmployeeDetailPage() {
     return workingDays.includes(dow)
   }, [workingDays])
 
-  // Action handlers for orders (like main page)
+  // Action handlers for orders (using new Orders API)
   const handleFreezeOrder = useCallback(async (order: EmployeeOrder) => {
     if (!id) {
       toast.error('Невозможно заморозить заказ')
       return
     }
     try {
-      const freezeInfo = await getFreezeInfo(id)
+      const freezeInfo = await getEmployeeFreezeInfo(id)
       if (freezeInfo.remainingFreezes <= 0) {
-        toast.error(`Лимит заморозок исчерпан (${freezeInfo.usedThisWeek}/${freezeInfo.weekLimit} на этой неделе)`)
+        toast.error(`Лимит заморозок исчерпан (${freezeInfo.freezesThisWeek}/${freezeInfo.maxFreezesPerWeek} на этой неделе)`)
         return
       }
       setFreezeDialogOrder(order)
@@ -281,18 +279,13 @@ export default function EmployeeDetailPage() {
   }, [id])
 
   const handleUnfreezeOrder = useCallback(async (order: EmployeeOrder) => {
-    if (!id) return
+    if (!id || !order.id) return
     setActionLoading(true)
     try {
-      const orderDate = order.date || format(new Date(), 'yyyy-MM-dd')
-      const assignments = await getEmployeeAssignments(id, orderDate, orderDate)
-      const frozenAssignment = assignments.find(a => a.status === 'Заморожен')
-      if (!frozenAssignment) {
-        toast.error('Заказ не заморожен')
-        return
-      }
-      await unfreezeAssignment(frozenAssignment.id)
-      toast.success('Заказ разморожен')
+      const result = await unfreezeOrder(order.id)
+      toast.success('Заказ разморожен', {
+        description: `Подписка сокращена до ${result.subscription.endDate}`,
+      })
       loadOrders()
     } catch (error) {
       const appError = parseError(error)
@@ -306,19 +299,13 @@ export default function EmployeeDetailPage() {
   }, [id, loadOrders])
 
   const confirmFreezeOrder = useCallback(async () => {
-    if (!freezeDialogOrder || !id) return
+    if (!freezeDialogOrder || !id || !freezeDialogOrder.id) return
     setActionLoading(true)
     try {
-      const orderDate = freezeDialogOrder.date || format(new Date(), 'yyyy-MM-dd')
-      const assignments = await getEmployeeAssignments(id, orderDate, orderDate)
-      const activeAssignment = assignments.find(a => a.status === 'Активен' || a.status === 'Pending')
-      if (!activeAssignment) {
-        toast.error('Не найден активный заказ для заморозки')
-        setFreezeDialogOrder(null)
-        return
-      }
-      await freezeAssignment(activeAssignment.id, 'Заморозка через админ панель')
-      toast.success('Заказ заморожен на сегодня')
+      const result = await freezeOrder(freezeDialogOrder.id, 'Заморозка через админ панель')
+      toast.success('Заказ заморожен', {
+        description: `Подписка продлена до ${result.subscription.endDate}`,
+      })
       setFreezeDialogOrder(null)
       loadOrders()
     } catch (error) {
@@ -375,59 +362,22 @@ export default function EmployeeDetailPage() {
     }
   }, [cancelDialogOrder, loadOrders])
 
-  // Pause/Resume subscription (not individual orders)
+  // Pause/Resume subscription 
+  // Note: Now using freezePeriod for subscription pause, as Orders is the source of truth
   const handlePauseSubscription = useCallback(async () => {
-    if (!lunchSub?.id) return
-    setActionLoading(true)
-    try {
-      await import('@/lib/api/meal-subscriptions').then(mod => mod.pauseSubscription(lunchSub.id))
-      toast.success('Подписка приостановлена', {
-        description: 'Будущие дни перенесены в конец периода',
-      })
-      setPauseSubscriptionDialog(false)
-      fetchEmployee(id)
-      loadOrders()
-    } catch (error) {
-      const appError = parseError(error)
-      logger.error('Failed to pause subscription', error instanceof Error ? error : new Error(appError.message), {
-        errorCode: appError.code,
-      })
-      
-      if (appError.code === ErrorCodes.SUB_ALREADY_PAUSED) {
-        toast.error('Подписка уже приостановлена')
-      } else {
-        toast.error(appError.message, { description: appError.action })
-      }
-    } finally {
-      setActionLoading(false)
-    }
-  }, [lunchSub?.id, id, fetchEmployee, loadOrders])
+    // Pause is now handled via freeze period API - freeze all future orders
+    toast.info('Для приостановки подписки используйте заморозку будущих заказов', {
+      description: 'Перейдите на главную страницу и выберите период для заморозки',
+    })
+    setPauseSubscriptionDialog(false)
+  }, [])
 
   const handleResumeSubscription = useCallback(async () => {
-    if (!lunchSub?.id) return
-    setActionLoading(true)
-    try {
-      await import('@/lib/api/meal-subscriptions').then(mod => mod.resumeSubscription(lunchSub.id))
-      toast.success('Подписка возобновлена', {
-        description: 'Доставка продолжится с ближайшего рабочего дня',
-      })
-      fetchEmployee(id)
-      loadOrders()
-    } catch (error) {
-      const appError = parseError(error)
-      logger.error('Failed to resume subscription', error instanceof Error ? error : new Error(appError.message), {
-        errorCode: appError.code,
-      })
-      
-      if (appError.code === ErrorCodes.SUB_ALREADY_ACTIVE) {
-        toast.error('Подписка уже активна')
-      } else {
-        toast.error(appError.message, { description: appError.action })
-      }
-    } finally {
-      setActionLoading(false)
-    }
-  }, [lunchSub?.id, id, fetchEmployee, loadOrders])
+    // Resume is now handled via unfreeze API - unfreeze individual orders
+    toast.info('Для возобновления разморозьте заказы по отдельности', {
+      description: 'Или создайте новую подписку',
+    })
+  }, [])
 
   // Sort orders with custom comparators
   const sortedOrders = useMemo(() => {
@@ -530,7 +480,7 @@ export default function EmployeeDetailPage() {
       header: 'Детали',
       cell: ({ row }) => {
         const order = row.original
-        const orderDate = order.date ? new Date(order.date) : null
+        const orderDate = order.date ? startOfDay(new Date(order.date)) : null
         const today = startOfDay(new Date())
         const isPastOrder = orderDate && orderDate < today
         const isTodayOrder = orderDate && orderDate.getTime() === today.getTime()
@@ -671,7 +621,7 @@ export default function EmployeeDetailPage() {
         const order = row.original
         const isCompensation = order.serviceType === 'COMPENSATION'
         
-        const orderDate = order.date ? new Date(order.date) : null
+        const orderDate = order.date ? startOfDay(new Date(order.date)) : null
         const today = startOfDay(new Date())
         const isPastOrder = orderDate && orderDate < today
         const isTodayOrder = orderDate && orderDate.getTime() === today.getTime()
@@ -1244,18 +1194,26 @@ export default function EmployeeDetailPage() {
                           {' — '}
                           {lunchSub.endDate && format(parseISO(lunchSub.endDate), 'd MMM', { locale: ru })}
                         </p>
+                        <p className={cn(
+                          "text-xs mt-0.5",
+                          isLunchExpiringSoon ? "text-amber-600 font-medium" : "text-muted-foreground"
+                        )}>
+                          Осталось: {lunchDaysRemaining !== null ? `${lunchDaysRemaining} дн.` : '—'}
+                        </p>
                       </div>
                       
                       <div className="rounded-xl bg-muted p-2.5">
                         <div className="flex items-center gap-2 text-muted-foreground mb-1">
                           <TrendingUp className="h-3.5 w-3.5" />
-                          <span className="text-xs font-medium">Осталось</span>
+                          <span className="text-xs font-medium">Заказы</span>
                         </div>
-                        <p className={cn(
-                          "text-lg font-bold",
-                          isLunchExpiringSoon && "text-amber-600"
-                        )}>
-                          {lunchDaysRemaining !== null ? `${lunchDaysRemaining} дн.` : '—'}
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-lg font-bold text-emerald-600">{lunchSub.futureOrdersCount ?? 0}</span>
+                          <span className="text-xs text-muted-foreground">/</span>
+                          <span className="text-sm font-medium text-muted-foreground">{lunchSub.completedOrdersCount ?? 0}</span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          будущих / выполнено
                         </p>
                       </div>
                       
@@ -2004,7 +1962,7 @@ export default function EmployeeDetailPage() {
         mode="individual"
         employee={currentEmployee}
         existingSubscription={currentEmployee.lunchSubscription || null}
-        onSuccess={() => fetchEmployee(id)}
+        onSuccess={() => { fetchEmployee(id); loadOrders(); }}
       />
       {/* Creating new lunch (full wizard) */}
       <ManageLunchDialog
@@ -2013,7 +1971,7 @@ export default function EmployeeDetailPage() {
         mode="individual"
         employee={currentEmployee}
         existingSubscription={null}
-        onSuccess={() => fetchEmployee(id)}
+        onSuccess={() => { fetchEmployee(id); loadOrders(); }}
       />
       {/* Editing existing compensation (single screen) */}
       <ManageCompensationDialog

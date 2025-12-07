@@ -27,11 +27,6 @@ public class AppDbContext : DbContext
     public DbSet<SystemNews> SystemNews => Set<SystemNews>();
     public DbSet<NewsReadStatus> NewsReadStatuses => Set<NewsReadStatus>();
     
-    // Subscription entities
-    public DbSet<CompanySubscription> CompanySubscriptions => Set<CompanySubscription>();
-    public DbSet<EmployeeMealAssignment> EmployeeMealAssignments => Set<EmployeeMealAssignment>();
-    public DbSet<EmployeeFreezeHistory> EmployeeFreezeHistory => Set<EmployeeFreezeHistory>();
-    
     // Compensation entities
     public DbSet<CompensationTransaction> CompensationTransactions => Set<CompensationTransaction>();
     public DbSet<EmployeeCompensationBalance> EmployeeCompensationBalances => Set<EmployeeCompensationBalance>();
@@ -260,6 +255,11 @@ public class AppDbContext : DbContext
             entity.Property(e => e.OrderDate).HasColumnName("order_date");
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
+            
+            // Freeze-related fields
+            entity.Property(e => e.FrozenAt).HasColumnName("frozen_at");
+            entity.Property(e => e.FrozenReason).HasColumnName("frozen_reason");
+            entity.Property(e => e.ReplacementOrderId).HasColumnName("replacement_order_id");
 
             entity.HasOne(e => e.Company)
                 .WithMany(c => c.Orders)
@@ -276,6 +276,10 @@ public class AppDbContext : DbContext
             entity.HasOne(e => e.CreatedByUser)
                 .WithMany(u => u.CreatedGuestOrders)
                 .HasForeignKey(e => e.CreatedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(e => e.ReplacementOrder)
+                .WithOne()
+                .HasForeignKey<Order>(e => e.ReplacementOrderId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
 
@@ -300,6 +304,10 @@ public class AppDbContext : DbContext
             entity.Property(e => e.ScheduleType).HasColumnName("schedule_type").HasMaxLength(50).HasDefaultValue("EVERY_DAY");
             entity.Property(e => e.PausedAt).HasColumnName("paused_at");
             entity.Property(e => e.PausedDaysCount).HasColumnName("paused_days_count").HasDefaultValue(0);
+            
+            // Freeze tracking fields
+            entity.Property(e => e.OriginalEndDate).HasColumnName("original_end_date");
+            entity.Property(e => e.FrozenDaysCount).HasColumnName("frozen_days_count").HasDefaultValue(0);
             
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
@@ -489,95 +497,6 @@ public class AppDbContext : DbContext
                 .WithMany(u => u.AuditLogs)
                 .HasForeignKey(e => e.UserId)
                 .OnDelete(DeleteBehavior.SetNull);
-        });
-
-        // CompanySubscription
-        modelBuilder.Entity<CompanySubscription>(entity =>
-        {
-            entity.ToTable("company_subscriptions");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.ProjectId).HasColumnName("project_id");
-            entity.Property(e => e.StartDate).HasColumnName("start_date");
-            entity.Property(e => e.EndDate).HasColumnName("end_date");
-            entity.Property(e => e.TotalDays).HasColumnName("total_days");
-            entity.Property(e => e.TotalAmount).HasColumnName("total_amount").HasPrecision(15, 2);
-            entity.Property(e => e.PaidAmount).HasColumnName("paid_amount").HasPrecision(15, 2);
-            entity.Property(e => e.IsPaid).HasColumnName("is_paid");
-            entity.Property(e => e.Status).HasColumnName("status")
-                .HasConversion(
-                    v => v.ToDatabase(),
-                    v => SubscriptionStatusExtensions.FromDatabase(v));
-            entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id");
-            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
-            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
-            entity.Property(e => e.PausedAt).HasColumnName("paused_at");
-            entity.Property(e => e.PausedDaysCount).HasColumnName("paused_days_count");
-
-            entity.HasOne(e => e.Project)
-                .WithMany()
-                .HasForeignKey(e => e.ProjectId)
-                .OnDelete(DeleteBehavior.Cascade);
-            entity.HasOne(e => e.CreatedByUser)
-                .WithMany()
-                .HasForeignKey(e => e.CreatedByUserId)
-                .OnDelete(DeleteBehavior.SetNull);
-        });
-
-        // EmployeeMealAssignment
-        modelBuilder.Entity<EmployeeMealAssignment>(entity =>
-        {
-            entity.ToTable("employee_meal_assignments");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.SubscriptionId).HasColumnName("subscription_id");
-            entity.Property(e => e.EmployeeId).HasColumnName("employee_id");
-            entity.Property(e => e.AssignmentDate).HasColumnName("assignment_date");
-            entity.Property(e => e.ComboType).HasColumnName("combo_type").IsRequired().HasMaxLength(50);
-            entity.Property(e => e.Price).HasColumnName("price").HasPrecision(10, 2);
-            entity.Property(e => e.Status).HasColumnName("status")
-                .HasConversion(
-                    v => v.ToDatabase(),
-                    v => MealAssignmentStatusExtensions.FromDatabase(v));
-            entity.Property(e => e.FrozenAt).HasColumnName("frozen_at");
-            entity.Property(e => e.FrozenReason).HasColumnName("frozen_reason");
-            entity.Property(e => e.ReplacementDate).HasColumnName("replacement_date");
-            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
-            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
-
-            entity.HasIndex(e => new { e.EmployeeId, e.AssignmentDate }).IsUnique();
-            entity.HasOne(e => e.Subscription)
-                .WithMany(s => s.MealAssignments)
-                .HasForeignKey(e => e.SubscriptionId)
-                .OnDelete(DeleteBehavior.Cascade);
-            entity.HasOne(e => e.Employee)
-                .WithMany()
-                .HasForeignKey(e => e.EmployeeId)
-                .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        // EmployeeFreezeHistory
-        modelBuilder.Entity<EmployeeFreezeHistory>(entity =>
-        {
-            entity.ToTable("employee_freeze_history");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.EmployeeId).HasColumnName("employee_id");
-            entity.Property(e => e.AssignmentId).HasColumnName("assignment_id");
-            entity.Property(e => e.FrozenAt).HasColumnName("frozen_at");
-            entity.Property(e => e.OriginalDate).HasColumnName("original_date");
-            entity.Property(e => e.WeekYear).HasColumnName("week_year");
-            entity.Property(e => e.WeekNumber).HasColumnName("week_number");
-            entity.Property(e => e.CreatedAt).HasColumnName("created_at");
-
-            entity.HasOne(e => e.Employee)
-                .WithMany()
-                .HasForeignKey(e => e.EmployeeId)
-                .OnDelete(DeleteBehavior.Cascade);
-            entity.HasOne(e => e.Assignment)
-                .WithMany()
-                .HasForeignKey(e => e.AssignmentId)
-                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // CompensationTransaction

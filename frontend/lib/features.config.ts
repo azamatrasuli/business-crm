@@ -2,11 +2,11 @@
  * Feature Flags Configuration
  * 
  * Управляет доступностью функционала в зависимости от окружения.
- * В production — только MVP фичи.
+ * В production — только MVP фичи (берутся из /config.json).
  * В staging/development — все фичи включены.
- * 
- * @see RELEASE_PROGRESS.md для деталей релиза
  */
+
+import { FEATURES } from './config'
 
 export type FeatureFlag = 
   // MVP Features (enabled in production)
@@ -25,23 +25,23 @@ export type FeatureFlag =
   | 'partners'          // Партнёры / Рестораны
 
 /**
- * Production features — только MVP
+ * Production features — из config.json
  */
 const PRODUCTION_FEATURES: Record<FeatureFlag, boolean> = {
-  // MVP - включено
+  // MVP - всегда включено
   auth: true,
   projects: true,
   users: true,
   employees: true,
-  lunch: true,
   dashboard: true,
   guestOrders: true,
-  // Phase 2 - заблокировано
-  compensation: false,
-  payments: false,
-  analytics: false,
-  news: false,
-  partners: false,
+  // Из config.json
+  lunch: FEATURES.lunch,
+  compensation: FEATURES.compensation,
+  payments: FEATURES.payments,
+  analytics: FEATURES.analytics,
+  news: FEATURES.news,
+  partners: FEATURES.partners,
 }
 
 /**

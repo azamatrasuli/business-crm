@@ -9,8 +9,9 @@ using YallaBusinessAdmin.Infrastructure.Persistence;
 namespace YallaBusinessAdmin.Infrastructure.BackgroundJobs;
 
 /// <summary>
-/// Background job that generates daily orders from meal assignments.
+/// Background job that generates daily orders from lunch subscriptions.
 /// Runs daily at configured cutoff time for each project.
+/// Creates orders for employees with active subscriptions on their working days.
 /// </summary>
 public class DailyOrderGenerationJob : BackgroundService
 {
@@ -50,9 +51,6 @@ public class DailyOrderGenerationJob : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var now = TimeOnly.FromDateTime(DateTime.UtcNow);
-
         // Get all projects with active subscriptions
         var projects = await context.Projects
             .Where(p => p.DeletedAt == null && p.Status == CompanyStatus.Active)
@@ -67,79 +65,97 @@ public class DailyOrderGenerationJob : BackgroundService
                 var projectNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
                 var projectTimeNow = TimeOnly.FromDateTime(projectNow);
                 var projectToday = DateOnly.FromDateTime(projectNow);
+                var dayOfWeek = (int)projectNow.DayOfWeek; // 0 = Sunday
 
                 // Skip if before cutoff time
                 if (projectTimeNow < project.CutoffTime)
                     continue;
 
-                // Get meal assignments for today that haven't been processed
-                var assignments = await context.EmployeeMealAssignments
-                    .Include(a => a.Employee)
-                    .Include(a => a.Subscription)
-                    .Where(a => 
-                        a.Subscription!.ProjectId == project.Id &&
-                        a.AssignmentDate == projectToday &&
-                        a.Status == MealAssignmentStatus.Scheduled)
+                // ═══════════════════════════════════════════════════════════════
+                // PROCESS LUNCH SUBSCRIPTIONS (individual employee subscriptions)
+                // ═══════════════════════════════════════════════════════════════
+                var lunchSubscriptions = await context.LunchSubscriptions
+                    .Include(ls => ls.Employee)
+                    .Where(ls => 
+                        ls.ProjectId == project.Id &&
+                        ls.IsActive &&
+                        ls.Status == "Активна" &&
+                        ls.Employee != null &&
+                        ls.Employee.IsActive &&
+                        ls.Employee.DeletedAt == null &&
+                        // Check if subscription period is valid
+                        (ls.StartDate == null || ls.StartDate <= projectToday) &&
+                        (ls.EndDate == null || ls.EndDate >= projectToday))
                     .ToListAsync(cancellationToken);
 
-                if (!assignments.Any())
-                    continue;
+                var ordersCreated = 0;
+                var totalCost = 0m;
 
-                _logger.LogInformation(
-                    "Processing {Count} assignments for project {ProjectName} on {Date}",
-                    assignments.Count, project.Name, projectToday);
-
-                foreach (var assignment in assignments)
+                foreach (var subscription in lunchSubscriptions)
                 {
+                    var employee = subscription.Employee!;
+
+                    // Check if today is a working day for this employee
+                    if (employee.WorkingDays != null && employee.WorkingDays.Length > 0)
+                    {
+                        if (!employee.WorkingDays.Contains(dayOfWeek))
+                        {
+                            continue; // Skip non-working days
+                        }
+                    }
+
                     // Check if order already exists for this employee today
                     var existingOrder = await context.Orders
                         .AnyAsync(o => 
-                            o.EmployeeId == assignment.EmployeeId &&
+                            o.EmployeeId == employee.Id &&
                             o.OrderDate.Date == projectToday.ToDateTime(TimeOnly.MinValue).Date,
                             cancellationToken);
 
                     if (existingOrder)
-                    {
-                        assignment.Status = MealAssignmentStatus.Active;
-                        assignment.UpdatedAt = DateTime.UtcNow;
                         continue;
-                    }
 
-                    // Create order from assignment
-                    // NOTE: Address is derived from Project (one project = one address)
+                    // Get combo price
+                    var price = subscription.ComboType switch
+                    {
+                        "Комбо 25" => 25m,
+                        "Комбо 35" => 35m,
+                        _ => 25m
+                    };
+
+                    // Create order from lunch subscription
                     var order = new Order
                     {
                         Id = Guid.NewGuid(),
                         CompanyId = project.CompanyId,
                         ProjectId = project.Id,
-                        EmployeeId = assignment.EmployeeId,
-                        ComboType = assignment.ComboType,
-                        Price = assignment.Price,
+                        EmployeeId = employee.Id,
+                        ComboType = subscription.ComboType,
+                        Price = price,
                         CurrencyCode = project.CurrencyCode,
                         Status = OrderStatus.Active,
-                        OrderDate = projectToday.ToDateTime(TimeOnly.MinValue),
+                        OrderDate = projectToday.ToDateTime(TimeOnly.Parse("12:00")),
                         IsGuestOrder = false,
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow
                     };
 
                     context.Orders.Add(order);
-
-                    // Update assignment status
-                    assignment.Status = MealAssignmentStatus.Active;
-                    assignment.UpdatedAt = DateTime.UtcNow;
+                    ordersCreated++;
+                    totalCost += price;
                 }
 
-                // Deduct from project budget
-                var totalCost = assignments.Sum(a => a.Price);
-                project.Budget -= totalCost;
-                project.UpdatedAt = DateTime.UtcNow;
+                if (ordersCreated > 0)
+                {
+                    // Deduct from project budget
+                    project.Budget -= totalCost;
+                    project.UpdatedAt = DateTime.UtcNow;
 
-                await context.SaveChangesAsync(cancellationToken);
+                    await context.SaveChangesAsync(cancellationToken);
 
-                _logger.LogInformation(
-                    "Generated {Count} orders for project {ProjectName}, deducted {Amount} {Currency}",
-                    assignments.Count, project.Name, totalCost, project.CurrencyCode);
+                    _logger.LogInformation(
+                        "Generated {Count} orders for project {ProjectName}, deducted {Amount} {Currency}",
+                        ordersCreated, project.Name, totalCost, project.CurrencyCode);
+                }
             }
             catch (Exception ex)
             {

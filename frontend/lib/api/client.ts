@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosError } from 'axios'
 import { parseError, type AppError, ErrorCodes } from '@/lib/errors'
+import { getCookie, clearAuthStatusCookie } from '@/stores/utils/cookie-manager'
 
 // Generate unique correlation ID for request tracing
 function generateCorrelationId(): string {
@@ -7,11 +8,13 @@ function generateCorrelationId(): string {
 }
 
 const apiClient: AxiosInstance = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000/api',
+  baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000/api',
   timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
+  // IMPORTANT: Send cookies with requests (for HttpOnly cookie auth)
+  withCredentials: true,
 })
 
 // Track if we're currently refreshing to avoid infinite loops
@@ -32,7 +35,8 @@ const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue = []
 }
 
-// Request interceptor - add auth token and correlation ID
+// Request interceptor - add correlation ID and CSRF token
+// Note: Auth token is now sent via HttpOnly cookie automatically
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     // Add correlation ID for request tracing
@@ -44,13 +48,11 @@ apiClient.interceptors.request.use(
       (window as Window & { __lastCorrelationId?: string }).__lastCorrelationId = correlationId
     }
     
-    // Don't add token for auth endpoints (except refresh which needs it)
-    if (!config.url?.includes('/auth/login') && !config.url?.includes('/auth/forgot')) {
-      if (typeof window !== 'undefined') {
-        const token = localStorage.getItem('token')
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`
-        }
+    // Add CSRF token from cookie to header (double-submit pattern)
+    if (typeof window !== 'undefined') {
+      const csrfToken = getCookie('XSRF-TOKEN')
+      if (csrfToken) {
+        config.headers['X-XSRF-TOKEN'] = csrfToken
       }
     }
     
@@ -106,21 +108,13 @@ apiClient.interceptors.response.use(
         return Promise.reject(error)
       }
 
-      const refreshToken = localStorage.getItem('refreshToken')
-      
-      // No refresh token available, redirect to login
-      if (!refreshToken) {
-        clearAuthAndRedirect()
-        return Promise.reject(error)
-      }
-
       // If already refreshing, queue this request
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject })
         })
-          .then((token) => {
-            originalRequest.headers.Authorization = `Bearer ${token}`
+          .then(() => {
+            // Retry with cookies (no need to manually set token)
             return apiClient(originalRequest)
           })
           .catch((err) => Promise.reject(err))
@@ -130,33 +124,23 @@ apiClient.interceptors.response.use(
       isRefreshing = true
 
       try {
-        // Attempt to refresh the token
+        // Attempt to refresh the token via cookie-based endpoint
+        // The refresh token is in an HttpOnly cookie, so we don't need to send it in body
         const response = await axios.post(
           `${apiClient.defaults.baseURL}/auth/refresh`,
-          { refreshToken },
-          { headers: { 'Content-Type': 'application/json' } }
+          {}, // Empty body - refresh token is in cookie
+          { 
+            headers: { 'Content-Type': 'application/json' },
+            withCredentials: true // Important: send cookies
+          }
         )
 
-        const { token, refreshToken: newRefreshToken, expiresAt, user } = response.data
+        const { token } = response.data
 
-        // Update stored tokens
-        localStorage.setItem('token', token)
-        if (newRefreshToken) {
-          localStorage.setItem('refreshToken', newRefreshToken)
-        }
-        if (expiresAt) {
-          localStorage.setItem('tokenExpiresAt', expiresAt.toString())
-        }
-        if (user) {
-          localStorage.setItem('user', JSON.stringify(user))
-        }
-        document.cookie = `token=${token}; path=/; max-age=${60 * 60 * 24}; SameSite=Lax`
-
-        // Process queued requests
+        // Process queued requests (token comes from HttpOnly cookie)
         processQueue(null, token)
 
-        // Retry original request with new token
-        originalRequest.headers.Authorization = `Bearer ${token}`
+        // Retry original request (cookies will be sent automatically)
         return apiClient(originalRequest)
       } catch (refreshError) {
         processQueue(refreshError, null)
@@ -173,11 +157,8 @@ apiClient.interceptors.response.use(
 
 function clearAuthAndRedirect() {
   if (typeof window !== 'undefined') {
-    localStorage.removeItem('token')
-    localStorage.removeItem('refreshToken')
-    localStorage.removeItem('tokenExpiresAt')
-    localStorage.removeItem('user')
-    document.cookie = 'token=; path=/; max-age=0'
+    clearAuthStatusCookie()
+    
     if (window.location.pathname !== '/login') {
       window.location.href = '/login'
     }

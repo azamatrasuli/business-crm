@@ -18,10 +18,12 @@ namespace YallaBusinessAdmin.Api.Controllers;
 public class SubscriptionsController : BaseApiController
 {
     private readonly ISubscriptionsService _subscriptionsService;
+    private readonly ILogger<SubscriptionsController> _logger;
 
-    public SubscriptionsController(ISubscriptionsService subscriptionsService)
+    public SubscriptionsController(ISubscriptionsService subscriptionsService, ILogger<SubscriptionsController> logger)
     {
         _subscriptionsService = subscriptionsService;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -102,8 +104,26 @@ public class SubscriptionsController : BaseApiController
         if (companyId == null) 
             return Unauthorized(new { success = false, error = new { code = "AUTH_UNAUTHORIZED", message = "Требуется авторизация", type = "Forbidden" } });
 
-        var result = await _subscriptionsService.BulkCreateAsync(request, companyId.Value, cancellationToken);
-        return Ok(result);
+        try
+        {
+            var result = await _subscriptionsService.BulkCreateAsync(request, companyId.Value, cancellationToken);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            var innerMessage = ex.InnerException?.Message ?? "No inner exception";
+            var innerInner = ex.InnerException?.InnerException?.Message ?? "No inner-inner exception";
+            _logger.LogError(ex, "Error in BulkCreate for company {CompanyId}: {Message}. Inner: {Inner}. InnerInner: {InnerInner}", 
+                companyId.Value, ex.Message, innerMessage, innerInner);
+            return StatusCode(500, new { 
+                success = false, 
+                error = new { 
+                    code = "SUBSCRIPTION_CREATE_ERROR", 
+                    message = $"{ex.Message} | Inner: {innerMessage} | InnerInner: {innerInner}",
+                    type = "ServerError" 
+                } 
+            });
+        }
     }
 
     [HttpPut("bulk")]

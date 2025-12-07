@@ -121,7 +121,7 @@ export default function EmployeesPage() {
   const router = useRouter()
   const {
     employees,
-    loading,
+    isLoading: loading,
     error,
     total,
     currentPage,

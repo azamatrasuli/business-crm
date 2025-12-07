@@ -28,8 +28,8 @@ dotnet restore
 dotnet run --project src/YallaBusinessAdmin.Api
 ```
 
-**API:** http://localhost:5000/api  
-**Swagger:** http://localhost:5000/swagger
+**API:** http://localhost:4000/api  
+**Swagger:** http://localhost:4000/swagger
 
 ## Тестовый вход
 
@@ -83,18 +83,9 @@ dotnet run --project src/YallaBusinessAdmin.Api
 }
 ```
 
-## Docker
+## Docker (для Render)
 
-```bash
-# Сборка
-docker build -t yalla-api .
-
-# Запуск
-docker run -p 5000:8080 \
-  -e ConnectionStrings__DefaultConnection="..." \
-  -e Jwt__Secret="..." \
-  yalla-api
-```
+`Dockerfile` используется для деплоя на Render. Локально используйте `./dev.sh`.
 
 ## Архитектура
 
@@ -254,11 +245,11 @@ X-Correlation-ID: 550e8400-e29b-41d4-a716-446655440000
 
 ```bash
 # Логин
-curl -X POST http://localhost:5000/api/auth/login \
+curl -X POST http://localhost:4000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"phone": "+992901234567", "password": "admin123"}'
 
 # Получить сотрудников
-curl http://localhost:5000/api/employees \
+curl http://localhost:4000/api/employees \
   -H "Authorization: Bearer <token>"
 ```

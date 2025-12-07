@@ -37,13 +37,13 @@ import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { ScrollArea } from '@/components/ui/scroll-area'
+// ScrollArea removed - not currently used
 import { Separator } from '@/components/ui/separator'
 import { Progress } from '@/components/ui/progress'
 import { toast } from 'sonner'
 import type { Order, ComboType, BulkActionRequest } from '@/lib/api/home'
 import { COMBO_METADATA, COMBO_TYPES } from '@/lib/combos'
-import { freezeAssignment, getEmployeeAssignments, pauseSubscription, resumeSubscription } from '@/lib/api/meal-subscriptions'
+import { freezeOrder } from '@/lib/api/orders'
 
 type BulkAction = 
   | 'editCombo'      // Изменить комбо
@@ -265,7 +265,7 @@ export function BulkEditDialog({
         }
 
         case 'pause': {
-          // Pause subscriptions - get unique subscriptionIds via assignments
+          // Pause subscriptions via bulk action
           const lunchOrders = selectedOrders.filter(o => 
             o.status === 'Активен' && 
             (o.serviceType === 'LUNCH' || !o.serviceType) &&
@@ -276,26 +276,7 @@ export function BulkEditDialog({
             return
           }
           
-          // Collect unique subscriptionIds from assignments
-          const uniqueEmployeeIds = [...new Set(lunchOrders.map(o => o.employeeId).filter(Boolean))] as string[]
-          const subscriptionIds = new Set<string>()
-          
-          for (const employeeId of uniqueEmployeeIds) {
-            try {
-              const assignments = await getEmployeeAssignments(employeeId, selectedDate, selectedDate)
-              for (const assignment of assignments) {
-                if (assignment.id) {
-                  // Assignment has subscriptionId implicitly - we need to get it
-                  // For now, pause via the subscription API using a workaround
-                  // The subscriptionId is available in the assignment
-                }
-              }
-            } catch {
-              // Skip on error
-            }
-          }
-          
-          // Fallback: use bulk action for backward compatibility
+          // Use bulk action API
           const request: BulkActionRequest = { 
             orderIds: lunchOrders.map(o => o.id), 
             action: 'pause' 
@@ -329,6 +310,7 @@ export function BulkEditDialog({
         }
 
         case 'freeze': {
+          // Freeze orders using new Orders API
           const activeOrders = selectedOrders.filter(o => o.status === 'Активен' && o.employeeId)
           if (activeOrders.length === 0) {
             toast.info('Нет активных заказов для заморозки')
@@ -343,12 +325,9 @@ export function BulkEditDialog({
             setFreezeProgress(Math.round(((i + 1) / activeOrders.length) * 100))
             
             try {
-              const assignments = await getEmployeeAssignments(order.employeeId!, selectedDate, selectedDate)
-              const active = assignments.find(a => a.status === 'Активен' || a.status === 'Pending')
-              if (active) {
-                await freezeAssignment(active.id, 'Массовая заморозка')
-                successCount++
-              }
+              // Use new orders API - freeze by order ID directly
+              await freezeOrder(order.id, 'Массовая заморозка')
+              successCount++
             } catch {
               errorCount++
             }
@@ -356,12 +335,12 @@ export function BulkEditDialog({
           
           if (successCount > 0) {
             toast.success(`Заморожено: ${successCount} заказов`, {
-              description: 'Дни перенесены в конец периода подписки',
+              description: 'Подписки продлены, дни перенесены в конец периода',
             })
           }
           if (errorCount > 0) {
             toast.error(`Не удалось заморозить: ${errorCount}`, {
-              description: 'Возможно превышен лимит заморозок',
+              description: 'Возможно превышен лимит заморозок (2 в неделю)',
             })
           }
           break

@@ -43,6 +43,9 @@ export interface Employee {
     status: string
     totalPrice?: number
     remainingDays?: number
+    totalDays?: number
+    futureOrdersCount?: number
+    completedOrdersCount?: number
   } | null
   compensation?: {
     id: string
@@ -80,6 +83,9 @@ export interface EmployeeDetail extends Employee {
     status: string
     totalPrice?: number
     remainingDays?: number
+    totalDays?: number
+    futureOrdersCount?: number
+    completedOrdersCount?: number
   } | null
   compensation?: {
     id: string

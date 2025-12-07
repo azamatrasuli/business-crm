@@ -1,11 +1,12 @@
 import { create } from 'zustand'
 import { usersApi, type User, type CreateUserRequest, type UpdateUserRequest } from '@/lib/api/users'
+import { getErrorMessage } from './utils'
 
 interface UsersState {
   users: User[]
   selectedUser: User | null
   availableRoutes: string[]
-  loading: boolean
+  isLoading: boolean
   error: string | null
   total: number
   currentPage: number
@@ -22,17 +23,11 @@ interface UsersState {
   fetchAvailableRoutes: () => Promise<void>
 }
 
-const getErrorMessage = (error: unknown, fallback = 'Произошла ошибка') => {
-  if (typeof error === 'string') return error
-  if (error instanceof Error) return error.message
-  return fallback
-}
-
 export const useUsersStore = create<UsersState>((set, get) => ({
   users: [],
   selectedUser: null,
   availableRoutes: [],
-  loading: false,
+  isLoading: false,
   error: null,
   total: 0,
   currentPage: 1,
@@ -40,7 +35,7 @@ export const useUsersStore = create<UsersState>((set, get) => ({
   pageSize: 20,
 
   fetchUsers: async (page = 1) => {
-    set({ loading: true, error: null })
+    set({ isLoading: true, error: null })
     
     try {
       const { pageSize } = get()
@@ -50,63 +45,63 @@ export const useUsersStore = create<UsersState>((set, get) => ({
         total: response.total,
         currentPage: response.page,
         totalPages: response.totalPages,
-        loading: false,
+        isLoading: false,
       })
     } catch (error) {
-      set({ error: getErrorMessage(error), loading: false })
+      set({ error: getErrorMessage(error), isLoading: false })
     }
   },
 
   fetchUser: async (id: string) => {
-    set({ loading: true, error: null })
+    set({ isLoading: true, error: null })
     
     try {
       const user = await usersApi.getUserById(id)
-      set({ selectedUser: user, loading: false })
+      set({ selectedUser: user, isLoading: false })
       return user
     } catch (error) {
-      set({ error: getErrorMessage(error), loading: false })
+      set({ error: getErrorMessage(error), isLoading: false })
       throw error
     }
   },
 
   createUser: async (data: CreateUserRequest) => {
-    set({ loading: true, error: null })
+    set({ isLoading: true, error: null })
     
     try {
       const newUser = await usersApi.createUser(data)
       await get().fetchUsers(get().currentPage)
-      set({ loading: false })
+      set({ isLoading: false })
       return newUser
     } catch (error) {
-      set({ error: getErrorMessage(error), loading: false })
+      set({ error: getErrorMessage(error), isLoading: false })
       throw error
     }
   },
 
   updateUser: async (id: string, data: UpdateUserRequest) => {
-    set({ loading: true, error: null })
+    set({ isLoading: true, error: null })
     
     try {
       const updated = await usersApi.updateUser(id, data)
       await get().fetchUsers(get().currentPage)
-      set({ loading: false })
+      set({ isLoading: false })
       return updated
     } catch (error) {
-      set({ error: getErrorMessage(error), loading: false })
+      set({ error: getErrorMessage(error), isLoading: false })
       throw error
     }
   },
 
   deleteUser: async (id: string) => {
-    set({ loading: true, error: null })
+    set({ isLoading: true, error: null })
     
     try {
       await usersApi.deleteUser(id)
       await get().fetchUsers(get().currentPage)
-      set({ loading: false })
+      set({ isLoading: false })
     } catch (error) {
-      set({ error: getErrorMessage(error), loading: false })
+      set({ error: getErrorMessage(error), isLoading: false })
       throw error
     }
   },

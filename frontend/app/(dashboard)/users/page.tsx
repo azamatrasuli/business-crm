@@ -24,7 +24,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer } from 'recharts'
 
 export default function UsersPage() {
-  const { users, loading, error, total, currentPage, totalPages, fetchUsers, fetchAvailableRoutes } = useUsersStore()
+  const { users, isLoading: loading, error, total, currentPage, totalPages, fetchUsers, fetchAvailableRoutes } = useUsersStore()
   const { user: currentUser } = useAuthStore()
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)

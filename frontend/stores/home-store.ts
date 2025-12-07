@@ -10,6 +10,7 @@ import {
   type Order,
 } from '@/lib/api/home'
 import type { ActiveFilter } from '@/components/ui/filter-builder'
+import { getErrorMessage } from './utils'
 
 type StatusFilter = 'all' | 'Активен' | 'На паузе' | 'Завершен'
 type TypeFilter = 'all' | 'Сотрудник' | 'Гость'
@@ -25,7 +26,7 @@ interface HomeState {
   dashboard: DashboardStats | null
   orders: Order[]
   cutoffTime: string | null
-  loading: boolean
+  isLoading: boolean
   error: string | null
   total: number
   currentPage: number
@@ -50,45 +51,6 @@ interface HomeState {
   bulkAction: (data: BulkActionRequest) => Promise<void>
   updateSubscription: (employeeId: string, data: UpdateSubscriptionRequest) => Promise<void>
   bulkUpdateSubscription: (data: BulkUpdateSubscriptionRequest) => Promise<void>
-}
-
-const getErrorMessage = (error: unknown, fallback = 'Произошла ошибка') => {
-  if (typeof error === 'string') return error
-  
-  // Handle Axios errors
-  if (error && typeof error === 'object' && 'response' in error) {
-    const axiosError = error as { response?: { status?: number; data?: { message?: string; error?: { message?: string } } }; message?: string }
-    const status = axiosError.response?.status
-    
-    if (status === 500) {
-      return 'Сервер временно недоступен. Пожалуйста, попробуйте позже.'
-    }
-    if (status === 502 || status === 503 || status === 504) {
-      return 'Сервер перезагружается. Подождите 1-2 минуты и обновите страницу.'
-    }
-    if (status === 401) {
-      return 'Сессия истекла. Пожалуйста, войдите заново.'
-    }
-    if (status === 403) {
-      return 'Доступ запрещён'
-    }
-    if (!axiosError.response) {
-      return 'Нет соединения с сервером. Проверьте интернет.'
-    }
-    
-    // Try to get message from response
-    const message = axiosError.response.data?.message || axiosError.response.data?.error?.message
-    if (message) return message
-  }
-  
-  if (error instanceof Error) {
-    if (error.message.includes('Network Error')) {
-      return 'Нет соединения с сервером. Проверьте интернет.'
-    }
-    return error.message
-  }
-  
-  return fallback
 }
 
 const normalizeProjectFilter = (value: string) => {
@@ -134,7 +96,7 @@ export const useHomeStore = create<HomeState>((set, get) => ({
   dashboard: null,
   orders: [],
   cutoffTime: null,
-  loading: false,
+  isLoading: false,
   error: null,
   total: 0,
   currentPage: 1,
@@ -156,7 +118,7 @@ export const useHomeStore = create<HomeState>((set, get) => ({
   },
 
   fetchOrders: async (page = 1) => {
-    set({ loading: true, error: null })
+    set({ isLoading: true, error: null })
     try {
       const { pageSize, search, activeFilters } = get()
       const parsedFilters = parseActiveFilters(activeFilters)
@@ -184,10 +146,10 @@ export const useHomeStore = create<HomeState>((set, get) => ({
         total: response.total,
         currentPage: response.page,
         totalPages: response.totalPages,
-        loading: false,
+        isLoading: false,
       })
     } catch (error) {
-      set({ error: getErrorMessage(error), loading: false })
+      set({ error: getErrorMessage(error), isLoading: false })
     }
   },
 

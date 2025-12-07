@@ -3,27 +3,17 @@ using YallaBusinessAdmin.Application.Dashboard.Dtos;
 
 namespace YallaBusinessAdmin.Application.Dashboard;
 
-public interface IDashboardService
+/// <summary>
+/// Facade service for dashboard operations.
+/// Composes IDashboardMetricsService, IOrderManagementService, ISubscriptionManagementService, and ICutoffTimeService.
+/// This interface is kept for backwards compatibility - prefer using the specialized interfaces for new code.
+/// </summary>
+public interface IDashboardService :
+    IDashboardMetricsService,
+    IOrderManagementService,
+    ISubscriptionManagementService,
+    ICutoffTimeService
 {
-    Task<DashboardResponse> GetDashboardAsync(Guid companyId, Guid? projectId = null, CancellationToken cancellationToken = default);
-    
-    Task<PagedResult<OrderResponse>> GetOrdersAsync(
-        Guid companyId,
-        int page,
-        int pageSize,
-        string? search,
-        string? statusFilter,
-        string? dateFilter,
-        string? addressFilter,
-        string? typeFilter, // "employee" or "guest"
-        Guid? projectId = null,
-        CancellationToken cancellationToken = default);
-    
-    Task<CreateGuestOrderResponse> CreateGuestOrderAsync(CreateGuestOrderRequest request, Guid companyId, Guid? projectId = null, CancellationToken cancellationToken = default);
-    Task<object> AssignMealsAsync(AssignMealsRequest request, Guid companyId, CancellationToken cancellationToken = default);
-    Task<object> BulkActionAsync(BulkActionRequest request, Guid companyId, CancellationToken cancellationToken = default);
-    Task<object> UpdateSubscriptionAsync(Guid employeeId, UpdateSubscriptionRequest request, Guid companyId, CancellationToken cancellationToken = default);
-    Task<object> BulkUpdateSubscriptionAsync(BulkUpdateSubscriptionRequest request, Guid companyId, CancellationToken cancellationToken = default);
-    Task<object> GetCutoffTimeAsync(Guid companyId, CancellationToken cancellationToken = default);
-    Task<object> UpdateCutoffTimeAsync(Guid companyId, string time, CancellationToken cancellationToken = default);
+    // All methods are inherited from composed interfaces.
+    // This pattern follows Interface Segregation Principle (ISP) while maintaining backwards compatibility.
 }

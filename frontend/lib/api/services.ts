@@ -102,31 +102,32 @@ export const servicesApi = {
   // ----- Lunch Subscriptions -----
   
   async createLunchSubscriptions(data: CreateLunchSubscriptionRequest): Promise<LunchSubscriptionResponse> {
-    const response = await apiClient.post<LunchSubscriptionResponse>('/lunch-subscriptions', data)
+    // Используем bulk endpoint потому что фронтенд отправляет employeeIds как массив
+    const response = await apiClient.post<LunchSubscriptionResponse>('/subscriptions/bulk', data)
     return response.data
   },
 
   async updateLunchSubscription(id: string, data: UpdateLunchSubscriptionRequest): Promise<LunchSubscription> {
-    const response = await apiClient.put<LunchSubscription>(`/lunch-subscriptions/${id}`, data)
+    const response = await apiClient.put<LunchSubscription>(`/subscriptions/${id}`, data)
     return response.data
   },
 
   async getLunchSubscription(id: string): Promise<LunchSubscription> {
-    const response = await apiClient.get<LunchSubscription>(`/lunch-subscriptions/${id}`)
+    const response = await apiClient.get<LunchSubscription>(`/subscriptions/${id}`)
     return response.data
   },
 
   async cancelLunchSubscription(id: string): Promise<void> {
-    await apiClient.delete(`/lunch-subscriptions/${id}`)
+    await apiClient.delete(`/subscriptions/${id}`)
   },
 
   async pauseLunchSubscription(id: string, dates?: string[]): Promise<LunchSubscription> {
-    const response = await apiClient.post<LunchSubscription>(`/lunch-subscriptions/${id}/pause`, { dates })
+    const response = await apiClient.post<LunchSubscription>(`/subscriptions/${id}/pause`, { dates })
     return response.data
   },
 
   async resumeLunchSubscription(id: string): Promise<LunchSubscription> {
-    const response = await apiClient.post<LunchSubscription>(`/lunch-subscriptions/${id}/resume`)
+    const response = await apiClient.post<LunchSubscription>(`/subscriptions/${id}/resume`)
     return response.data
   },
 
@@ -170,11 +171,11 @@ export const servicesApi = {
   // ----- Bulk Operations -----
 
   async bulkPauseLunch(subscriptionIds: string[], dates?: string[]): Promise<void> {
-    await apiClient.post('/lunch-subscriptions/bulk/pause', { subscriptionIds, dates })
+    await apiClient.post('/subscriptions/bulk/pause', { subscriptionIds, dates })
   },
 
   async bulkResumeLunch(subscriptionIds: string[]): Promise<void> {
-    await apiClient.post('/lunch-subscriptions/bulk/resume', { subscriptionIds })
+    await apiClient.post('/subscriptions/bulk/resume', { subscriptionIds })
   },
 
   async bulkCancelServices(employeeIds: string[], serviceType: ServiceType): Promise<void> {

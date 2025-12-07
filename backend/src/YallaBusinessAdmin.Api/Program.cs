@@ -1,13 +1,49 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
 using Serilog.Context;
 using YallaBusinessAdmin.Application;
 using YallaBusinessAdmin.Infrastructure;
+using YallaBusinessAdmin.Api.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Load secrets from appsettings.secrets.json if exists (for local development)
+var secretsPath = Path.Combine(builder.Environment.ContentRootPath, "appsettings.secrets.json");
+if (File.Exists(secretsPath))
+{
+    builder.Configuration.AddJsonFile(secretsPath, optional: true, reloadOnChange: true);
+}
+
+// Environment variables override all other sources (for production)
+builder.Configuration.AddEnvironmentVariables();
+
+// Map common environment variable names to configuration
+var envMappings = new Dictionary<string, string>
+{
+    { "DATABASE_URL", "ConnectionStrings:DefaultConnection" },
+    { "JWT_SECRET", "Jwt:Secret" },
+    { "JWT_ISSUER", "Jwt:Issuer" },
+    { "JWT_AUDIENCE", "Jwt:Audience" },
+    { "JWT_EXPIRATION_HOURS", "Jwt:ExpirationHours" },
+    { "SUPABASE_URL", "Supabase:Url" },
+    { "SUPABASE_ANON_KEY", "Supabase:AnonKey" },
+    { "SUPABASE_SERVICE_ROLE_KEY", "Supabase:ServiceRoleKey" },
+    { "FRONTEND_URL", "FrontendUrl" }
+};
+
+foreach (var mapping in envMappings)
+{
+    var envValue = Environment.GetEnvironmentVariable(mapping.Key);
+    if (!string.IsNullOrEmpty(envValue))
+    {
+        builder.Configuration[mapping.Value] = envValue;
+    }
+}
 
 // Configure Serilog with structured logging
 Log.Logger = new LoggerConfiguration()
@@ -48,9 +84,132 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
         ClockSkew = TimeSpan.Zero
     };
+    
+    // Read JWT from HttpOnly cookie if not in Authorization header
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            // First check Authorization header (for backwards compatibility)
+            if (context.Request.Headers.ContainsKey("Authorization"))
+            {
+                return Task.CompletedTask;
+            }
+            
+            // Then check HttpOnly cookie
+            var accessToken = context.Request.Cookies["X-Access-Token"];
+            if (!string.IsNullOrEmpty(accessToken))
+            {
+                context.Token = accessToken;
+            }
+            
+            return Task.CompletedTask;
+        },
+        OnAuthenticationFailed = context =>
+        {
+            // Log authentication failures for security monitoring
+            var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+            logger.LogWarning("JWT authentication failed: {Error}", context.Exception?.Message);
+            return Task.CompletedTask;
+        }
+    };
 });
 
 builder.Services.AddAuthorization();
+
+// Configure Rate Limiting for brute-force protection
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    
+    // Global rate limit - 100 requests per minute per IP
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+    {
+        var ipAddress = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(ipAddress, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 100,
+            Window = TimeSpan.FromMinutes(1),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 5
+        });
+    });
+    
+    // Strict rate limit for login endpoint - 5 attempts per minute per IP
+    options.AddPolicy("login", context =>
+    {
+        var ipAddress = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetSlidingWindowLimiter(ipAddress, _ => new SlidingWindowRateLimiterOptions
+        {
+            PermitLimit = 5,
+            Window = TimeSpan.FromMinutes(1),
+            SegmentsPerWindow = 2,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0
+        });
+    });
+    
+    // Rate limit for password reset - 3 attempts per hour per IP
+    options.AddPolicy("password-reset", context =>
+    {
+        var ipAddress = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(ipAddress, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 3,
+            Window = TimeSpan.FromHours(1),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0
+        });
+    });
+    
+    // Rate limit for API endpoints - 30 requests per minute per user
+    options.AddPolicy("api", context =>
+    {
+        var userId = context.User?.FindFirst("sub")?.Value ?? 
+                     context.Connection.RemoteIpAddress?.ToString() ?? 
+                     "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(userId, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 30,
+            Window = TimeSpan.FromMinutes(1),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 2
+        });
+    });
+    
+    // Custom response for rate limit exceeded
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        context.HttpContext.Response.ContentType = "application/json";
+        
+        var retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfterValue)
+            ? retryAfterValue.TotalSeconds
+            : 60;
+        
+        context.HttpContext.Response.Headers.RetryAfter = ((int)retryAfter).ToString();
+        
+        var response = new
+        {
+            success = false,
+            error = new
+            {
+                code = "RATE_LIMIT_EXCEEDED",
+                message = "Слишком много запросов. Попробуйте позже",
+                type = "RateLimit",
+                retryAfterSeconds = (int)retryAfter
+            },
+            path = context.HttpContext.Request.Path.Value,
+            timestamp = DateTime.UtcNow
+        };
+        
+        Log.Warning("Rate limit exceeded for {IP} on {Path}", 
+            context.HttpContext.Connection.RemoteIpAddress, 
+            context.HttpContext.Request.Path);
+        
+        await context.HttpContext.Response.WriteAsJsonAsync(response, cancellationToken);
+    };
+});
 
 // Add Controllers with custom validation error response
 builder.Services.AddControllers()
@@ -85,39 +244,84 @@ builder.Services.AddControllers()
         };
     });
 
-// Configure CORS - allow all origins in development for mobile testing
+// Configure CORS - strict policy for security
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
         if (builder.Environment.IsDevelopment())
         {
-            // В development разрешаем все origins для тестирования с мобильных устройств
-            policy.SetIsOriginAllowed(_ => true)
+            // В development разрешаем localhost и локальные IP
+            policy.SetIsOriginAllowed(origin =>
+                {
+                    var uri = new Uri(origin);
+                    return uri.Host == "localhost" || 
+                           uri.Host == "127.0.0.1" ||
+                           uri.Host.StartsWith("192.168.") ||
+                           uri.Host.StartsWith("10.") ||
+                           uri.Host.EndsWith(".local");
+                })
                 .AllowAnyMethod()
                 .AllowAnyHeader()
-                .AllowCredentials();
+                .AllowCredentials()
+                .SetPreflightMaxAge(TimeSpan.FromMinutes(10)); // Cache preflight
         }
         else
         {
-            var frontendUrl = builder.Configuration["FrontendUrl"] ?? "http://localhost:3000";
-            policy.WithOrigins(frontendUrl)
-                .AllowAnyMethod()
-                .AllowAnyHeader()
-                .AllowCredentials();
+            // Production: strict origin whitelist
+            var frontendUrl = builder.Configuration["FrontendUrl"];
+            var allowedOrigins = new List<string>();
+            
+            if (!string.IsNullOrEmpty(frontendUrl))
+            {
+                allowedOrigins.Add(frontendUrl);
+            }
+            
+            // Add Vercel preview URLs if configured
+            var vercelUrls = builder.Configuration["AllowedVercelUrls"]?.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            if (vercelUrls != null)
+            {
+                allowedOrigins.AddRange(vercelUrls);
+            }
+            
+            // Fallback for local development
+            if (allowedOrigins.Count == 0)
+            {
+                allowedOrigins.Add("http://localhost:3000");
+            }
+            
+            policy.WithOrigins(allowedOrigins.ToArray())
+                .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+                .WithHeaders(
+                    "Content-Type",
+                    "Authorization",
+                    "X-Correlation-ID",
+                    "X-XSRF-TOKEN"
+                )
+                .AllowCredentials()
+                .SetPreflightMaxAge(TimeSpan.FromHours(1)); // Cache preflight longer in prod
         }
     });
 });
 
-// Configure Swagger
+// Configure Swagger with API versioning
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v1", new OpenApiInfo
     {
         Title = "Yalla Business Admin API",
-        Version = "v1",
-        Description = "REST API for Yalla Business Admin portal"
+        Version = "v1.0",
+        Description = "REST API for Yalla Business Admin portal\n\n" +
+                      "**API Versioning:**\n" +
+                      "- URL: `/api/v1/...`\n" +
+                      "- Header: `X-Api-Version: 1.0`\n" +
+                      "- Query: `?api-version=1.0`",
+        Contact = new OpenApiContact
+        {
+            Name = "Yalla Team",
+            Email = "support@yalla.tj"
+        }
     });
 
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -127,7 +331,7 @@ builder.Services.AddSwaggerGen(options =>
         Scheme = "Bearer",
         BearerFormat = "JWT",
         In = ParameterLocation.Header,
-        Description = "Enter your JWT token"
+        Description = "Enter your JWT token (or use HttpOnly cookies)"
     });
 
     options.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -144,15 +348,37 @@ builder.Services.AddSwaggerGen(options =>
             Array.Empty<string>()
         }
     });
+    
 });
 
 // Add HttpContextAccessor for CurrentUserService
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<YallaBusinessAdmin.Application.Common.Interfaces.ICurrentUserService, YallaBusinessAdmin.Api.Services.CurrentUserService>();
 
+// API Versioning - supports URL, header, and query string versioning
+builder.Services.AddApiVersioning(options =>
+{
+    options.DefaultApiVersion = new Asp.Versioning.ApiVersion(1, 0);
+    options.AssumeDefaultVersionWhenUnspecified = true;
+    options.ReportApiVersions = true;
+    options.ApiVersionReader = Asp.Versioning.ApiVersionReader.Combine(
+        new Asp.Versioning.UrlSegmentApiVersionReader(),
+        new Asp.Versioning.HeaderApiVersionReader("X-Api-Version"),
+        new Asp.Versioning.QueryStringApiVersionReader("api-version")
+    );
+})
+.AddApiExplorer(options =>
+{
+    options.GroupNameFormat = "'v'VVV";
+    options.SubstituteApiVersionInUrl = true;
+});
+
 var app = builder.Build();
 
 // Configure middleware pipeline
+
+// Security headers (first, to ensure all responses have them)
+app.UseSecurityHeaders();
 
 // Global exception handler with structured error responses
 app.UseExceptionHandler(errorApp =>
@@ -270,8 +496,14 @@ app.UseSerilogRequestLogging(options =>
 
 app.UseCors("AllowFrontend");
 
+// Apply rate limiting before authentication
+app.UseRateLimiter();
+
 app.UseAuthentication();
 app.UseAuthorization();
+
+// CSRF protection for state-changing operations
+app.UseCsrfProtection();
 
 app.MapControllers();
 

@@ -1,0 +1,138 @@
+{
+  "$schema": "./config.schema.json",
+  "_comment": "Единый конфиг проекта. Изменения здесь влияют на весь проект (backend + frontend)",
+  "_updated": "2025-12-07",
+
+  "business": {
+    "_comment": "Бизнес-правила и лимиты",
+    
+    "orders": {
+      "cutoffTime": "10:00",
+      "cutoffTimezone": "Asia/Dushanbe",
+      "_comment_cutoff": "Время до которого можно заказать на сегодня (UTC+5)"
+    },
+
+    "freezes": {
+      "maxPerWeek": 2,
+      "_comment": "Максимум заморозок в неделю на сотрудника"
+    },
+
+    "subscriptions": {
+      "minDays": 5,
+      "_comment": "Минимальное количество дней в подписке"
+    }
+  },
+
+  "pricing": {
+    "_comment": "Цены и тарифы (в сомони TJS)",
+    
+    "combos": {
+      "COMBO_25": {
+        "name": "Комбо 25",
+        "price": 25,
+        "description": "Стандартный обед"
+      },
+      "COMBO_35": {
+        "name": "Комбо 35", 
+        "price": 35,
+        "description": "Расширенный обед"
+      }
+    },
+
+    "delivery": {
+      "free": true,
+      "minOrderForFreeDelivery": 0,
+      "_comment": "Доставка бесплатная"
+    }
+  },
+
+  "budgets": {
+    "_comment": "Настройки бюджетов",
+    
+    "defaults": {
+      "employeeDailyLimit": 50,
+      "projectOverdraftLimit": 1000,
+      "companyOverdraftLimit": 5000
+    },
+
+    "periods": {
+      "DAY": "в День",
+      "WEEK": "в Неделю", 
+      "MONTH": "в Месяц"
+    }
+  },
+
+  "workSchedule": {
+    "_comment": "Рабочий график по умолчанию",
+    
+    "defaults": {
+      "workingDays": [1, 2, 3, 4, 5],
+      "workStartTime": "09:00",
+      "workEndTime": "18:00",
+      "shiftType": "DAY"
+    },
+
+    "presets": {
+      "fiveDays": {
+        "label": "5-дневка",
+        "days": [1, 2, 3, 4, 5]
+      },
+      "sixDays": {
+        "label": "6-дневка",
+        "days": [1, 2, 3, 4, 5, 6]
+      },
+      "allDays": {
+        "label": "Все дни",
+        "days": [0, 1, 2, 3, 4, 5, 6]
+      }
+    }
+  },
+
+  "ui": {
+    "_comment": "Настройки интерфейса",
+    
+    "pagination": {
+      "defaultPageSize": 20,
+      "pageSizeOptions": [10, 20, 50, 100]
+    },
+
+    "dateFormats": {
+      "display": "dd.MM.yyyy",
+      "api": "yyyy-MM-dd",
+      "time": "HH:mm",
+      "datetime": "dd.MM.yyyy HH:mm"
+    },
+
+    "locale": {
+      "default": "ru",
+      "timezone": "Asia/Dushanbe"
+    }
+  },
+
+  "contacts": {
+    "_comment": "Контактные данные для поддержки",
+    
+    "support": {
+      "phone": "+992 XXX XX XX XX",
+      "email": "support@yalla.tj",
+      "telegram": "@yalla_support"
+    },
+
+    "office": {
+      "address": "г. Душанбе, ул. ...",
+      "workingHours": "Пн-Пт 09:00-18:00"
+    }
+  },
+
+  "features": {
+    "_comment": "Feature flags - какие модули включены",
+    
+    "lunch": true,
+    "compensation": false,
+    "payments": false,
+    "analytics": false,
+    "news": false,
+    "partners": false
+  }
+}
+

@@ -24,15 +24,12 @@ import {
   UserPlus,
   PauseCircle,
   PlayCircle,
-  Plus,
   ChevronLeft,
   ChevronRight,
   Calendar,
   X,
   Snowflake,
   Trash2,
-  MoreHorizontal,
-  Pencil,
   AlertTriangle,
   RefreshCw,
 } from 'lucide-react'
@@ -45,7 +42,7 @@ import { ManageLunchDialog } from '@/components/features/meals/manage-lunch-dial
 import { ManageCompensationDialog } from '@/components/features/meals/manage-compensation-dialog'
 import { DatePicker } from '@/components/ui/date-picker'
 import { useEmployeesStore } from '@/stores/employees-store'
-import { getFreezeInfo, freezeAssignment, unfreezeAssignment, getEmployeeAssignments } from '@/lib/api/meal-subscriptions'
+import { getEmployeeFreezeInfo, freezeOrder, unfreezeOrder } from '@/lib/api/orders'
 import { debounce } from 'lodash-es'
 import { format, startOfDay } from 'date-fns'
 import {
@@ -98,7 +95,7 @@ function HomePageContent() {
     dashboard,
     orders,
     cutoffTime,
-    loading,
+    isLoading: loading,
     error,
     total,
     currentPage,
@@ -382,35 +379,28 @@ function HomePageContent() {
     
     try {
       // Получаем информацию о доступных заморозках
-      const freezeInfo = await getFreezeInfo(order.employeeId)
+      const freezeInfo = await getEmployeeFreezeInfo(order.employeeId)
       if (freezeInfo.remainingFreezes <= 0) {
-        toast.error(`Лимит заморозок исчерпан (${freezeInfo.usedThisWeek}/${freezeInfo.weekLimit} на этой неделе)`)
+        toast.error(`Лимит заморозок исчерпан (${freezeInfo.freezesThisWeek}/${freezeInfo.maxFreezesPerWeek} на этой неделе)`)
         return
       }
       setFreezeDialogOrder(order)
-    } catch (error) {
+    } catch (_error) {
       toast.error('Не удалось проверить лимит заморозок')
     }
   }, [])
 
   // Handler: Разморозить заказ
   const handleUnfreezeOrder = useCallback(async (order: Order) => {
-    if (!order.employeeId) return
+    if (!order.id) return
     
     setActionLoading(true)
     try {
-      // Найти assignment по employeeId и дате
-      const today = formatISODate(new Date())
-      const assignments = await getEmployeeAssignments(order.employeeId, today, today)
-      const frozenAssignment = assignments.find(a => a.status === 'Заморожен')
-      
-      if (!frozenAssignment) {
-        toast.error('Заказ не заморожен')
-        return
-      }
-      
-      await unfreezeAssignment(frozenAssignment.id)
-      toast.success(`Заказ для ${order.employeeName} разморожен`)
+      // Используем новый API который работает с Order напрямую
+      const result = await unfreezeOrder(order.id)
+      toast.success(`Заказ для ${order.employeeName} разморожен`, {
+        description: `Подписка сокращена до ${result.subscription.endDate}`,
+      })
       fetchOrders(1)
     } catch (error) {
       const appError = parseError(error)
@@ -452,24 +442,15 @@ function HomePageContent() {
     }
   }, [cancelDialogOrder, bulkAction])
 
-  // Confirm freeze order
+  // Confirm freeze order - использует новый API который работает с Order напрямую
   const confirmFreezeOrder = useCallback(async () => {
-    if (!freezeDialogOrder || !freezeDialogOrder.employeeId) return
+    if (!freezeDialogOrder?.id) return
     setActionLoading(true)
     try {
-      // Найти assignment по employeeId и дате
-      const orderDate = freezeDialogOrder.date
-      const assignments = await getEmployeeAssignments(freezeDialogOrder.employeeId, orderDate, orderDate)
-      const activeAssignment = assignments.find(a => a.status === 'Активен' || a.status === 'Pending')
-      
-      if (!activeAssignment) {
-        toast.error('Не найден активный заказ для заморозки')
-        setFreezeDialogOrder(null)
-        return
-      }
-      
-      await freezeAssignment(activeAssignment.id, 'Заморозка через админ панель')
-      toast.success(`Заказ для ${freezeDialogOrder.employeeName} заморожен на сегодня`)
+      const result = await freezeOrder(freezeDialogOrder.id, 'Заморозка через админ панель')
+      toast.success(`Заказ для ${freezeDialogOrder.employeeName} заморожен`, {
+        description: `Подписка продлена до ${result.subscription.endDate}`,
+      })
       setFreezeDialogOrder(null)
       fetchOrders(1)
     } catch (error) {
@@ -671,7 +652,7 @@ function HomePageContent() {
         const today = startOfDay(new Date())
         const isPastOrder = orderDate && orderDate < today
         const isTodayOrder = orderDate && orderDate.getTime() === today.getTime()
-        const isFutureOrder = orderDate && orderDate > today
+        // Note: future orders handled by default case below
         
         // LUNCH: показываем комбо и цену
         if (order.serviceType === 'LUNCH' || !order.serviceType) {

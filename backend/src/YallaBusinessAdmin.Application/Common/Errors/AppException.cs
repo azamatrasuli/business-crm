@@ -81,3 +81,4 @@ public class BusinessRuleException : AppException
         : base(code, message, ErrorType.Validation, details) { }
 }
 
+
