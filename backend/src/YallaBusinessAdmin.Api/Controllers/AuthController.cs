@@ -23,7 +23,7 @@ public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
     private readonly IConfiguration _configuration;
-    
+
     // Cookie names - must match frontend expectations
     private const string AccessTokenCookieName = "X-Access-Token";
     private const string RefreshTokenCookieName = "X-Refresh-Token";
@@ -47,10 +47,10 @@ public class AuthController : ControllerBase
         var ipAddress = GetClientIpAddress();
         var userAgent = GetUserAgent();
         var result = await _authService.LoginAsync(request, ipAddress, userAgent, cancellationToken);
-        
+
         // Set secure HttpOnly cookies
         SetTokenCookies(result.Token, result.RefreshToken, result.ExpiresAt);
-        
+
         // Return response without exposing tokens in body (they're in cookies)
         // But keep them for backwards compatibility during migration
         return Ok(result);
@@ -67,26 +67,26 @@ public class AuthController : ControllerBase
     {
         // Try to get refresh token from cookie first, then from body
         var refreshToken = Request.Cookies[RefreshTokenCookieName] ?? request?.RefreshToken;
-        
+
         if (string.IsNullOrEmpty(refreshToken))
         {
-            return BadRequest(new { 
-                success = false, 
-                error = new { 
-                    code = "AUTH_REFRESH_TOKEN_MISSING", 
-                    message = "Refresh token не найден", 
-                    type = "Validation" 
-                } 
+            return BadRequest(new {
+                success = false,
+                error = new {
+                    code = "AUTH_REFRESH_TOKEN_MISSING",
+                    message = "Refresh token не найден",
+                    type = "Validation"
+                }
             });
         }
 
         var ipAddress = GetClientIpAddress();
         var refreshRequest = new RefreshTokenRequest { RefreshToken = refreshToken };
         var result = await _authService.RefreshTokenAsync(refreshRequest, ipAddress, cancellationToken);
-        
+
         // Update cookies with new tokens
         SetTokenCookies(result.Token, result.RefreshToken, result.ExpiresAt);
-        
+
         return Ok(result);
     }
 
@@ -107,12 +107,12 @@ public class AuthController : ControllerBase
 
         // Get refresh token from cookie or body
         var refreshToken = Request.Cookies[RefreshTokenCookieName] ?? request?.RefreshToken;
-        
+
         await _authService.LogoutAsync(userId.Value, refreshToken, cancellationToken);
-        
+
         // Clear all auth cookies
         ClearTokenCookies();
-        
+
         return Ok(new { success = true, message = "Выход выполнен успешно" });
     }
 
@@ -157,10 +157,10 @@ public class AuthController : ControllerBase
 
         var ipAddress = GetClientIpAddress();
         var result = await _authService.ChangePasswordAsync(userId.Value, request, ipAddress, cancellationToken);
-        
+
         // Clear cookies after password change (user should re-login)
         ClearTokenCookies();
-        
+
         return Ok(result);
     }
 
@@ -225,10 +225,10 @@ public class AuthController : ControllerBase
         var ipAddress = GetClientIpAddress();
         var userAgent = GetUserAgent();
         var result = await _authService.ImpersonateAsync(userId, currentUserId.Value, ipAddress, userAgent, cancellationToken);
-        
+
         // Set new cookies for impersonated session
         SetTokenCookies(result.Token, result.RefreshToken, result.ExpiresAt);
-        
+
         return Ok(result);
     }
 
@@ -254,13 +254,13 @@ public class AuthController : ControllerBase
         var ipAddress = GetClientIpAddress();
         var userAgent = GetUserAgent();
         await _authService.StopImpersonatingAsync(impersonatorId.Value, impersonatedUserId.Value, ipAddress, userAgent, cancellationToken);
-        
+
         // Clear impersonation cookies - frontend will restore original token
         ClearTokenCookies();
-        
+
         return Ok(new { success = true, message = "Режим имперсонации завершён" });
     }
-    
+
     /// <summary>
     /// Check if user is authenticated (via cookie)
     /// Useful for frontend to verify auth status without exposing tokens
@@ -270,8 +270,8 @@ public class AuthController : ControllerBase
     {
         var hasAccessToken = Request.Cookies.ContainsKey(AccessTokenCookieName);
         var hasRefreshToken = Request.Cookies.ContainsKey(RefreshTokenCookieName);
-        
-        return Ok(new { 
+
+        return Ok(new {
             isAuthenticated = hasAccessToken || hasRefreshToken,
             hasAccessToken,
             hasRefreshToken
@@ -288,7 +288,7 @@ public class AuthController : ControllerBase
     {
         var result = PasswordValidator.Validate(request.Password);
         var strength = PasswordValidator.CalculateStrength(request.Password);
-        
+
         return Ok(new {
             isValid = result.IsValid,
             errors = result.Errors,
@@ -316,24 +316,29 @@ public class AuthController : ControllerBase
     private void SetTokenCookies(string accessToken, string? refreshToken, long? expiresAt)
     {
         var isProduction = !string.Equals(
-            _configuration["ASPNETCORE_ENVIRONMENT"] ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"), 
-            "Development", 
+            _configuration["ASPNETCORE_ENVIRONMENT"] ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
+            "Development",
             StringComparison.OrdinalIgnoreCase);
-        
+
+        // For cross-origin requests (frontend on Vercel, backend on Render),
+        // we need SameSite=None with Secure=true
+        // SameSite=Lax/Strict would prevent cookies from being sent in cross-site requests
+        var sameSiteMode = isProduction ? SameSiteMode.None : SameSiteMode.Lax;
+
         // Access token cookie options
         var accessTokenOptions = new CookieOptions
         {
             HttpOnly = true,                          // Prevent XSS access
-            Secure = isProduction,                    // HTTPS only in production
-            SameSite = SameSiteMode.Lax,             // CSRF protection (Lax allows top-level navigations)
+            Secure = isProduction,                    // HTTPS only in production (required for SameSite=None)
+            SameSite = sameSiteMode,                  // None for cross-site, Lax for same-site dev
             Path = "/",
-            Expires = expiresAt.HasValue 
-                ? DateTimeOffset.FromUnixTimeMilliseconds(expiresAt.Value) 
+            Expires = expiresAt.HasValue
+                ? DateTimeOffset.FromUnixTimeMilliseconds(expiresAt.Value)
                 : DateTimeOffset.UtcNow.AddHours(24)
         };
-        
+
         Response.Cookies.Append(AccessTokenCookieName, accessToken, accessTokenOptions);
-        
+
         // Refresh token cookie options (longer expiry)
         if (!string.IsNullOrEmpty(refreshToken))
         {
@@ -341,37 +346,45 @@ public class AuthController : ControllerBase
             {
                 HttpOnly = true,
                 Secure = isProduction,
-                SameSite = SameSiteMode.Strict,       // Stricter for refresh token
+                SameSite = sameSiteMode,              // Same as access token for cross-site support
                 Path = "/api/auth",                    // Only sent to auth endpoints
                 Expires = DateTimeOffset.UtcNow.AddDays(7)
             };
-            
+
             Response.Cookies.Append(RefreshTokenCookieName, refreshToken, refreshTokenOptions);
         }
     }
 
     private void ClearTokenCookies()
     {
+        var isProduction = !string.Equals(
+            _configuration["ASPNETCORE_ENVIRONMENT"] ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
+            "Development",
+            StringComparison.OrdinalIgnoreCase);
+
+        // Must match the SameSite mode used when setting cookies for proper deletion
+        var sameSiteMode = isProduction ? SameSiteMode.None : SameSiteMode.Lax;
+
         var cookieOptions = new CookieOptions
         {
             HttpOnly = true,
-            Secure = true,
-            SameSite = SameSiteMode.Lax,
+            Secure = isProduction,
+            SameSite = sameSiteMode,
             Path = "/",
             Expires = DateTimeOffset.UtcNow.AddDays(-1)
         };
-        
+
         Response.Cookies.Delete(AccessTokenCookieName, cookieOptions);
-        
+
         var refreshCookieOptions = new CookieOptions
         {
             HttpOnly = true,
-            Secure = true,
-            SameSite = SameSiteMode.Strict,
+            Secure = isProduction,
+            SameSite = sameSiteMode,
             Path = "/api/auth",
             Expires = DateTimeOffset.UtcNow.AddDays(-1)
         };
-        
+
         Response.Cookies.Delete(RefreshTokenCookieName, refreshCookieOptions);
     }
 
@@ -406,7 +419,7 @@ public class AuthController : ControllerBase
         {
             return forwardedFor.Split(',').First().Trim();
         }
-        
+
         return HttpContext.Connection.RemoteIpAddress?.ToString();
     }
 
