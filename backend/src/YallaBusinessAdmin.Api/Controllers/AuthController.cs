@@ -315,22 +315,26 @@ public class AuthController : ControllerBase
 
     private void SetTokenCookies(string accessToken, string? refreshToken, long? expiresAt)
     {
-        var isProduction = !string.Equals(
+        // Check if running locally (localhost) - only then use Lax mode
+        // For any deployed environment (staging, production) we need SameSite=None for cross-origin
+        var isLocalDevelopment = string.Equals(
             _configuration["ASPNETCORE_ENVIRONMENT"] ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
             "Development",
-            StringComparison.OrdinalIgnoreCase);
+            StringComparison.OrdinalIgnoreCase) && 
+            (Request.Host.Host == "localhost" || Request.Host.Host == "127.0.0.1");
 
         // For cross-origin requests (frontend on Vercel, backend on Render),
         // we need SameSite=None with Secure=true
         // SameSite=Lax/Strict would prevent cookies from being sent in cross-site requests
-        var sameSiteMode = isProduction ? SameSiteMode.None : SameSiteMode.Lax;
+        var sameSiteMode = isLocalDevelopment ? SameSiteMode.Lax : SameSiteMode.None;
+        var isSecure = !isLocalDevelopment;
 
         // Access token cookie options
         var accessTokenOptions = new CookieOptions
         {
             HttpOnly = true,                          // Prevent XSS access
-            Secure = isProduction,                    // HTTPS only in production (required for SameSite=None)
-            SameSite = sameSiteMode,                  // None for cross-site, Lax for same-site dev
+            Secure = isSecure,                        // HTTPS required for SameSite=None
+            SameSite = sameSiteMode,                  // None for cross-site, Lax for localhost dev
             Path = "/",
             Expires = expiresAt.HasValue
                 ? DateTimeOffset.FromUnixTimeMilliseconds(expiresAt.Value)
@@ -345,7 +349,7 @@ public class AuthController : ControllerBase
             var refreshTokenOptions = new CookieOptions
             {
                 HttpOnly = true,
-                Secure = isProduction,
+                Secure = isSecure,
                 SameSite = sameSiteMode,              // Same as access token for cross-site support
                 Path = "/api/auth",                    // Only sent to auth endpoints
                 Expires = DateTimeOffset.UtcNow.AddDays(7)
@@ -357,18 +361,21 @@ public class AuthController : ControllerBase
 
     private void ClearTokenCookies()
     {
-        var isProduction = !string.Equals(
+        // Check if running locally (localhost) - only then use Lax mode
+        var isLocalDevelopment = string.Equals(
             _configuration["ASPNETCORE_ENVIRONMENT"] ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
             "Development",
-            StringComparison.OrdinalIgnoreCase);
+            StringComparison.OrdinalIgnoreCase) && 
+            (Request.Host.Host == "localhost" || Request.Host.Host == "127.0.0.1");
 
         // Must match the SameSite mode used when setting cookies for proper deletion
-        var sameSiteMode = isProduction ? SameSiteMode.None : SameSiteMode.Lax;
+        var sameSiteMode = isLocalDevelopment ? SameSiteMode.Lax : SameSiteMode.None;
+        var isSecure = !isLocalDevelopment;
 
         var cookieOptions = new CookieOptions
         {
             HttpOnly = true,
-            Secure = isProduction,
+            Secure = isSecure,
             SameSite = sameSiteMode,
             Path = "/",
             Expires = DateTimeOffset.UtcNow.AddDays(-1)
@@ -379,7 +386,7 @@ public class AuthController : ControllerBase
         var refreshCookieOptions = new CookieOptions
         {
             HttpOnly = true,
-            Secure = isProduction,
+            Secure = isSecure,
             SameSite = sameSiteMode,
             Path = "/api/auth",
             Expires = DateTimeOffset.UtcNow.AddDays(-1)
