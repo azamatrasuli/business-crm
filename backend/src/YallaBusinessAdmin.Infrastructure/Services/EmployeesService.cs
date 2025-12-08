@@ -172,11 +172,11 @@ public class EmployeesService : IEmployeesService
     public async Task<EmployeeResponse> CreateAsync(CreateEmployeeRequest request, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
     {
         var errors = new List<FieldError>();
-        
+
         // ═══════════════════════════════════════════════════════════════
         // Step 1: Validate required fields and formats (sync validation)
         // ═══════════════════════════════════════════════════════════════
-        
+
         if (string.IsNullOrWhiteSpace(request.FullName))
         {
             errors.Add(new FieldError("fullName", ErrorCodes.EMP_REQUIRED_FIELD_MISSING, "ФИО обязательно для заполнения"));
@@ -190,34 +190,34 @@ public class EmployeesService : IEmployeesService
         {
             errors.Add(new FieldError("phone", ErrorCodes.EMP_INVALID_PHONE_FORMAT, ErrorMessages.GetMessage(ErrorCodes.EMP_INVALID_PHONE_FORMAT)));
         }
-        
+
         // Validate email format
         var emailValidation = EmployeeValidator.ValidateEmail(request.Email);
         if (!emailValidation.IsValid)
         {
             errors.Add(new FieldError("email", ErrorCodes.EMP_INVALID_EMAIL_FORMAT, emailValidation.ErrorMessage ?? "Неверный формат email"));
         }
-        
+
         // Validate working days
         var workingDaysValidation = EmployeeValidator.ValidateWorkingDays(request.WorkingDays);
         if (!workingDaysValidation.IsValid)
         {
             errors.Add(new FieldError("workingDays", ErrorCodes.VALIDATION_ERROR, workingDaysValidation.ErrorMessage ?? "Ошибка валидации рабочих дней"));
         }
-        
+
         // Validate work time
         var startTimeValidation = EmployeeValidator.ValidateAndParseTime(request.WorkStartTime, "Время начала работы");
         if (!startTimeValidation.IsValid)
         {
             errors.Add(new FieldError("workStartTime", ErrorCodes.VALIDATION_ERROR, startTimeValidation.ErrorMessage ?? "Неверный формат времени"));
         }
-        
+
         var endTimeValidation = EmployeeValidator.ValidateAndParseTime(request.WorkEndTime, "Время окончания работы");
         if (!endTimeValidation.IsValid)
         {
             errors.Add(new FieldError("workEndTime", ErrorCodes.VALIDATION_ERROR, endTimeValidation.ErrorMessage ?? "Неверный формат времени"));
         }
-        
+
         // Only validate time range if both times are valid
         if (startTimeValidation.IsValid && endTimeValidation.IsValid)
         {
@@ -254,18 +254,30 @@ public class EmployeesService : IEmployeesService
                 errors.Add(new FieldError("phone", code, ErrorMessages.GetMessage(code)));
             }
         }
-        
+
         // Check for duplicate email across all employees (only if email format is valid)
         if (!string.IsNullOrWhiteSpace(request.Email) && emailValidation.IsValid)
         {
-            var existingByEmail = await _context.Employees
+            var existingEmployeeByEmail = await _context.Employees
                 .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(e => e.Email == request.Email, cancellationToken);
 
-            if (existingByEmail != null)
+            if (existingEmployeeByEmail != null)
             {
-                var code = existingByEmail.DeletedAt != null ? ErrorCodes.EMP_EMAIL_DELETED : ErrorCodes.EMP_EMAIL_EXISTS;
+                var code = existingEmployeeByEmail.DeletedAt != null ? ErrorCodes.EMP_EMAIL_DELETED : ErrorCodes.EMP_EMAIL_EXISTS;
                 errors.Add(new FieldError("email", code, ErrorMessages.GetMessage(code)));
+            }
+            else
+            {
+                // Also check if email exists among admin users
+                var existingAdminByEmail = await _context.AdminUsers
+                    .IgnoreQueryFilters()
+                    .AnyAsync(a => a.Email == request.Email, cancellationToken);
+
+                if (existingAdminByEmail)
+                {
+                    errors.Add(new FieldError("email", ErrorCodes.EMP_EMAIL_EXISTS, "Эта почта уже используется в системе"));
+                }
             }
         }
 
