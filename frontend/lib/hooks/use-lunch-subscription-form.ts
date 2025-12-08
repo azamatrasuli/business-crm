@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { addDays, differenceInDays } from 'date-fns'
+import { addDays, differenceInDays, format } from 'date-fns'
 import type { DateRange } from 'react-day-picker'
 import { employeesApi, type Employee, type EmployeeDetail, type DayOfWeek } from '@/lib/api/employees'
 import { servicesApi, type ScheduleType, type ComboType } from '@/lib/api/services'
@@ -13,6 +13,7 @@ import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import { toast } from 'sonner'
 import { COMBO_OPTIONS_EXTENDED } from '@/lib/config'
+import { DEFAULT_WORKING_DAYS, getEffectiveWorkingDays, countWorkingDaysInRange } from '@/lib/constants/employee'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -161,28 +162,73 @@ export function useLunchSubscriptionForm({
 
   const workingDays = useMemo((): DayOfWeek[] => {
     if (mode === 'individual' && employee) {
-      return ((employee as EmployeeDetail).workingDays || [1, 2, 3, 4, 5]) as DayOfWeek[]
+      return getEffectiveWorkingDays((employee as EmployeeDetail).workingDays)
     }
-    return [1, 2, 3, 4, 5] as DayOfWeek[]
+    return DEFAULT_WORKING_DAYS
   }, [mode, employee])
 
+  // Calculate days for individual mode or as default estimate
   const calculatedDays = useMemo(() => {
     if (!startDate || !endDate) return 0
     if (scheduleType === 'CUSTOM') return customDates.length
 
+    // Use centralized function for accurate calculation
+    if (scheduleType === 'EVERY_DAY') {
+      return countWorkingDaysInRange(workingDays, startDate, endDate)
+    }
+
+    // EVERY_OTHER_DAY: Пн, Ср, Пт
     let count = 0
     let current = new Date(startDate)
     while (current <= endDate) {
       const dow = current.getDay() as DayOfWeek
-      if (scheduleType === 'EVERY_DAY' && workingDays.includes(dow)) count++
-      if (scheduleType === 'EVERY_OTHER_DAY' && [1, 3, 5].includes(dow)) count++
+      if ([1, 3, 5].includes(dow) && workingDays.includes(dow)) count++
       current = addDays(current, 1)
     }
     return count
   }, [startDate, endDate, scheduleType, customDates, workingDays])
 
-  const totalPrice =
-    calculatedDays * selectedCombo.price * (mode === 'bulk' ? selectedEmployeeIds.length : 1)
+  // For bulk mode: calculate total price based on each employee's individual working days
+  const bulkCalculatedData = useMemo(() => {
+    if (mode !== 'bulk' || !startDate || !endDate || selectedEmployeeIds.length === 0) {
+      return { totalDays: 0, totalPrice: 0 }
+    }
+
+    let totalDays = 0
+    let totalPrice = 0
+
+    for (const empId of selectedEmployeeIds) {
+      const emp = employees.find(e => e.id === empId)
+      if (!emp) continue
+
+      const empWorkDays = getEffectiveWorkingDays(emp.workingDays)
+      let days = 0
+
+      if (scheduleType === 'CUSTOM') {
+        days = customDates.length
+      } else if (scheduleType === 'EVERY_DAY') {
+        days = countWorkingDaysInRange(empWorkDays, startDate, endDate)
+      } else {
+        // EVERY_OTHER_DAY
+        let current = new Date(startDate)
+        while (current <= endDate) {
+          const dow = current.getDay() as DayOfWeek
+          if ([1, 3, 5].includes(dow) && empWorkDays.includes(dow)) days++
+          current = addDays(current, 1)
+        }
+      }
+
+      totalDays += days
+      totalPrice += days * selectedCombo.price
+    }
+
+    return { totalDays, totalPrice }
+  }, [mode, startDate, endDate, selectedEmployeeIds, employees, scheduleType, customDates, selectedCombo.price])
+
+  // Total price: use bulk calculation for bulk mode, simple calculation for individual
+  const totalPrice = mode === 'bulk' 
+    ? bulkCalculatedData.totalPrice 
+    : calculatedDays * selectedCombo.price
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Validation
@@ -212,7 +258,7 @@ export function useLunchSubscriptionForm({
       }
     }
 
-    const workDays = employee.workingDays || [1, 2, 3, 4, 5]
+    const workDays = getEffectiveWorkingDays(employee.workingDays)
     const hasWeekdays = workDays.some((d: number) => d >= 1 && d <= 5)
     if (!hasWeekdays) {
       return {
@@ -260,7 +306,7 @@ export function useLunchSubscriptionForm({
         if (e.activeLunchSubscriptionId) return false
         if (e.serviceType !== 'LUNCH') return false
 
-        const workDays = e.workingDays || [1, 2, 3, 4, 5]
+        const workDays = getEffectiveWorkingDays(e.workingDays)
         const hasWeekdays = workDays.some((d) => d >= 1 && d <= 5)
         if (!hasWeekdays) return false
 
@@ -318,23 +364,26 @@ export function useLunchSubscriptionForm({
     try {
       const employeeIds = mode === 'individual' && employee ? [employee.id] : selectedEmployeeIds
 
+      // IMPORTANT: Use local date formatting to avoid timezone shift
+      const formatDateLocal = (d: Date) => format(d, 'yyyy-MM-dd')
+      
       if (isEditing && existingSubscription) {
         await servicesApi.updateLunchSubscription(existingSubscription.id, {
           comboType,
           scheduleType,
           customDays:
-            scheduleType === 'CUSTOM' ? customDates.map((d) => d.toISOString().split('T')[0]) : undefined,
+            scheduleType === 'CUSTOM' ? customDates.map((d) => formatDateLocal(d)) : undefined,
         })
         toast.success('Подписка обновлена')
       } else {
         await servicesApi.createLunchSubscriptions({
           employeeIds,
           comboType,
-          startDate: startDate.toISOString().split('T')[0],
-          endDate: endDate.toISOString().split('T')[0],
+          startDate: formatDateLocal(startDate),
+          endDate: formatDateLocal(endDate),
           scheduleType,
           customDays:
-            scheduleType === 'CUSTOM' ? customDates.map((d) => d.toISOString().split('T')[0]) : undefined,
+            scheduleType === 'CUSTOM' ? customDates.map((d) => formatDateLocal(d)) : undefined,
         })
         toast.success(
           employeeIds.length === 1

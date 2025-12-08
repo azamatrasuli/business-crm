@@ -1,8 +1,62 @@
+import { addDays } from 'date-fns'
 import type { DayOfWeek } from '@/lib/api/employees'
 
 // =============================================================================
-// WORKING DAYS
+// WORKING DAYS - ЕДИНЫЙ СТАНДАРТ (зеркало бэкенда WorkingDaysHelper.cs)
 // =============================================================================
+
+/**
+ * Default working days: Monday to Friday (1-5)
+ * ВАЖНО: Это единственный источник правды для дефолтных рабочих дней!
+ * Соответствует бэкенду: WorkingDaysHelper.GetDefaultWorkingDays()
+ */
+export const DEFAULT_WORKING_DAYS: DayOfWeek[] = [1, 2, 3, 4, 5]
+
+/**
+ * Get effective working days for an employee.
+ * If employee has no working days set, returns default (Mon-Fri).
+ * Mirrors backend: WorkingDaysHelper.IsWorkingDay()
+ */
+export function getEffectiveWorkingDays(employeeWorkingDays?: DayOfWeek[] | number[] | null): DayOfWeek[] {
+  if (employeeWorkingDays && employeeWorkingDays.length > 0) {
+    return employeeWorkingDays as DayOfWeek[]
+  }
+  return DEFAULT_WORKING_DAYS
+}
+
+/**
+ * Check if a date is a working day for the employee.
+ * Mirrors backend: WorkingDaysHelper.IsWorkingDay()
+ */
+export function isWorkingDay(employeeWorkingDays: DayOfWeek[] | number[] | null | undefined, date: Date): boolean {
+  const effectiveWorkingDays = getEffectiveWorkingDays(employeeWorkingDays as DayOfWeek[])
+  const dayOfWeek = date.getDay() as DayOfWeek // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  return effectiveWorkingDays.includes(dayOfWeek)
+}
+
+/**
+ * Count working days in a date range for an employee.
+ * Mirrors backend: WorkingDaysHelper.CountWorkingDays()
+ */
+export function countWorkingDaysInRange(
+  employeeWorkingDays: DayOfWeek[] | number[] | null | undefined,
+  startDate: Date,
+  endDate: Date
+): number {
+  if (startDate > endDate) return 0
+  
+  let count = 0
+  let current = new Date(startDate)
+  
+  while (current <= endDate) {
+    if (isWorkingDay(employeeWorkingDays as DayOfWeek[], current)) {
+      count++
+    }
+    current = addDays(current, 1)
+  }
+  
+  return count
+}
 
 export const DAYS_OF_WEEK: { value: DayOfWeek; label: string; shortLabel: string }[] = [
   { value: 1, label: 'Понедельник', shortLabel: 'Пн' },
@@ -15,7 +69,7 @@ export const DAYS_OF_WEEK: { value: DayOfWeek; label: string; shortLabel: string
 ]
 
 export const WORKING_DAYS_PRESETS = [
-  { label: '5-дневка', days: [1, 2, 3, 4, 5] as DayOfWeek[] },
+  { label: '5-дневка', days: DEFAULT_WORKING_DAYS },
   { label: '6-дневка', days: [1, 2, 3, 4, 5, 6] as DayOfWeek[] },
   { label: 'Все дни', days: [0, 1, 2, 3, 4, 5, 6] as DayOfWeek[] },
 ]

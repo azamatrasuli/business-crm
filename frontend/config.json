@@ -129,6 +129,7 @@
     
     "lunch": true,
     "compensation": false,
+    "passwordReset": false,
     "payments": false,
     "analytics": false,
     "news": false,

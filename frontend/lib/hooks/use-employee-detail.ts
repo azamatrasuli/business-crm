@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useEmployeesStore } from '@/stores/employees-store'
 import { employeesApi, type EmployeeOrder, type DayOfWeek, type EmployeeDetail } from '@/lib/api/employees'
 import { differenceInDays, parseISO, isAfter, getDay } from 'date-fns'
+import { getEffectiveWorkingDays } from '@/lib/constants/employee'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -214,7 +215,7 @@ export function useEmployeeDetail(employeeId: string): UseEmployeeDetailReturn {
   // ─────────────────────────────────────────────────────────────────────────────
 
   const workingDays = useMemo(() => {
-    return (employee?.workingDays || [1, 2, 3, 4, 5]) as DayOfWeek[]
+    return getEffectiveWorkingDays(employee?.workingDays)
   }, [employee?.workingDays])
 
   const workingDaysText = useMemo(() => {

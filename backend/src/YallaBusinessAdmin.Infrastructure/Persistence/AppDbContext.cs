@@ -18,7 +18,7 @@ public class AppDbContext : DbContext
     public DbSet<Employee> Employees => Set<Employee>();
     public DbSet<EmployeeBudget> EmployeeBudgets => Set<EmployeeBudget>();
     public DbSet<Order> Orders => Set<Order>();
-    
+
     // New entities
     public DbSet<LunchSubscription> LunchSubscriptions => Set<LunchSubscription>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
@@ -26,11 +26,11 @@ public class AppDbContext : DbContext
     public DbSet<CompanyDocument> CompanyDocuments => Set<CompanyDocument>();
     public DbSet<SystemNews> SystemNews => Set<SystemNews>();
     public DbSet<NewsReadStatus> NewsReadStatuses => Set<NewsReadStatus>();
-    
+
     // Compensation entities
     public DbSet<CompensationTransaction> CompensationTransactions => Set<CompensationTransaction>();
     public DbSet<EmployeeCompensationBalance> EmployeeCompensationBalances => Set<EmployeeCompensationBalance>();
-    
+
     // Auth and audit entities
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
@@ -58,7 +58,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
             entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
-            
+
             // Soft delete query filter
             entity.HasQueryFilter(e => e.DeletedAt == null);
         });
@@ -71,13 +71,13 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.CompanyId).HasColumnName("company_id");
             entity.Property(e => e.Name).HasColumnName("name").IsRequired();
-            
+
             // Address fields (immutable after creation)
             entity.Property(e => e.AddressName).HasColumnName("address_name").HasMaxLength(255);
             entity.Property(e => e.AddressFullAddress).HasColumnName("address_full_address");
             entity.Property(e => e.AddressLatitude).HasColumnName("address_latitude");
             entity.Property(e => e.AddressLongitude).HasColumnName("address_longitude");
-            
+
             entity.Property(e => e.Budget).HasColumnName("budget").HasPrecision(15, 2);
             entity.Property(e => e.OverdraftLimit).HasColumnName("overdraft_limit").HasPrecision(15, 2);
             entity.Property(e => e.CurrencyCode).HasColumnName("currency_code").HasMaxLength(3);
@@ -94,12 +94,12 @@ public class AppDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
             entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
-            
+
             entity.HasOne(e => e.Company)
                 .WithMany(c => c.Projects)
                 .HasForeignKey(e => e.CompanyId)
                 .OnDelete(DeleteBehavior.Cascade);
-                
+
             // Soft delete query filter
             entity.HasQueryFilter(e => e.DeletedAt == null);
         });
@@ -135,7 +135,7 @@ public class AppDbContext : DbContext
                 .WithMany(p => p.AdminUsers)
                 .HasForeignKey(e => e.ProjectId)
                 .OnDelete(DeleteBehavior.SetNull);
-                
+
             // Soft delete query filter
             entity.HasQueryFilter(e => e.DeletedAt == null);
         });
@@ -176,13 +176,13 @@ public class AppDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
             entity.Property(e => e.DeletedAt).HasColumnName("deleted_at");
-            
+
             // Service Type (attached to employee)
             entity.Property(e => e.ServiceType).HasColumnName("service_type")
                 .HasConversion(
                     v => v.HasValue ? v.Value.ToDatabase() : null,
                     v => v != null ? ServiceTypeExtensions.FromDatabase(v) : null);
-            
+
             // Work Schedule
             entity.Property(e => e.ShiftType).HasColumnName("shift_type")
                 .HasConversion(
@@ -202,7 +202,7 @@ public class AppDbContext : DbContext
                 .WithMany(p => p.Employees)
                 .HasForeignKey(e => e.ProjectId)
                 .OnDelete(DeleteBehavior.Cascade);
-                
+
             // Soft delete query filter
             entity.HasQueryFilter(e => e.DeletedAt == null);
         });
@@ -256,7 +256,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.OrderDate).HasColumnName("order_date");
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
-            
+
             // Freeze-related fields
             entity.Property(e => e.FrozenAt).HasColumnName("frozen_at");
             entity.Property(e => e.FrozenReason).HasColumnName("frozen_reason");
@@ -295,7 +295,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.ProjectId).HasColumnName("project_id").IsRequired();
             entity.Property(e => e.ComboType).HasColumnName("combo_type").IsRequired().HasMaxLength(50);
             entity.Property(e => e.IsActive).HasColumnName("is_active");
-            
+
             // Subscription period & pricing (new fields)
             entity.Property(e => e.StartDate).HasColumnName("start_date");
             entity.Property(e => e.EndDate).HasColumnName("end_date");
@@ -305,11 +305,11 @@ public class AppDbContext : DbContext
             entity.Property(e => e.ScheduleType).HasColumnName("schedule_type").HasMaxLength(50).HasDefaultValue("EVERY_DAY");
             entity.Property(e => e.PausedAt).HasColumnName("paused_at");
             entity.Property(e => e.PausedDaysCount).HasColumnName("paused_days_count").HasDefaultValue(0);
-            
+
             // Freeze tracking fields
             entity.Property(e => e.OriginalEndDate).HasColumnName("original_end_date");
             entity.Property(e => e.FrozenDaysCount).HasColumnName("frozen_days_count").HasDefaultValue(0);
-            
+
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
 

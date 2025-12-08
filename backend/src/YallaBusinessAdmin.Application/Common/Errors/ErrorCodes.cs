@@ -184,7 +184,7 @@ public static class ErrorMessages
         [ErrorCodes.CONFLICT] = "Конфликт данных"
     };
 
-    public static string GetMessage(string code) => 
+    public static string GetMessage(string code) =>
         Messages.TryGetValue(code, out var message) ? message : "Произошла ошибка";
 }
 
@@ -204,7 +204,7 @@ public static class ErrorActions
         [ErrorCodes.EMP_SERVICE_TYPE_SWITCH_BLOCKED] = "Дождитесь окончания текущей подписки или отмените её"
     };
 
-    public static string? GetAction(string code) => 
+    public static string? GetAction(string code) =>
         Actions.TryGetValue(code, out var action) ? action : null;
 }
 

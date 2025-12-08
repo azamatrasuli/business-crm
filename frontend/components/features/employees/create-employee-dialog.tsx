@@ -14,6 +14,7 @@ import {
   PHONE_REGEX,
   TIME_REGEX,
   toggleWorkingDay,
+  DEFAULT_WORKING_DAYS,
 } from '@/lib/constants'
 import {
   Dialog,
@@ -91,7 +92,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
       shiftType: 'DAY',
       workStartTime: '09:00',
       workEndTime: '18:00',
-      workingDays: [1, 2, 3, 4, 5],
+      workingDays: DEFAULT_WORKING_DAYS,
       serviceType: null,
     },
   })

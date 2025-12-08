@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { DayOfWeek } from "@/lib/api/employees";
+import { DEFAULT_WORKING_DAYS } from "@/lib/constants/employee";
 
 interface DaySelectorProps {
   startDate: Date;
@@ -28,7 +29,7 @@ interface DaySelectorProps {
 }
 
 const QUICK_PRESETS = [
-  { label: "Пн—Пт", getDays: (d: DayOfWeek) => [1, 2, 3, 4, 5].includes(d) },
+  { label: "Пн—Пт", getDays: (d: DayOfWeek) => DEFAULT_WORKING_DAYS.includes(d) },
   { label: "Пн—Сб", getDays: (d: DayOfWeek) => [1, 2, 3, 4, 5, 6].includes(d) },
   { label: "Пн, Ср, Пт", getDays: (d: DayOfWeek) => [1, 3, 5].includes(d) },
 ];
@@ -41,7 +42,7 @@ export function DaySelector({
   endDate,
   selectedDates,
   onDatesChange,
-  employeeWorkingDays = [1, 2, 3, 4, 5],
+  employeeWorkingDays = DEFAULT_WORKING_DAYS,
   className,
 }: DaySelectorProps) {
   const today = startOfDay(new Date());

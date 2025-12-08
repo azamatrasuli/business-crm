@@ -9,6 +9,7 @@ import {
   Search, Loader2, Users, Calculator, AlertTriangle, Trash2,
   Clock, Sun, Moon, Info
 } from "lucide-react";
+import { DEFAULT_WORKING_DAYS, getEffectiveWorkingDays, countWorkingDaysInRange, isWorkingDay as isWorkingDayCheck } from "@/lib/constants/employee";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -168,7 +169,7 @@ export function ManageLunchDialog({
     }
     
     // Рабочие дни должны включать будни
-    const workDays = employee.workingDays || [1, 2, 3, 4, 5];
+    const workDays = getEffectiveWorkingDays(employee.workingDays);
     const hasWeekdays = workDays.some((d: number) => d >= 1 && d <= 5);
     if (!hasWeekdays) {
       return { 
@@ -225,27 +226,73 @@ export function ManageLunchDialog({
   
   const workingDays = useMemo((): DayOfWeek[] => {
     if (mode === "individual" && employee) {
-      return ((employee as EmployeeDetail).workingDays || [1, 2, 3, 4, 5]) as DayOfWeek[];
+      return getEffectiveWorkingDays((employee as EmployeeDetail).workingDays);
     }
-    return [1, 2, 3, 4, 5] as DayOfWeek[];
+    return DEFAULT_WORKING_DAYS;
   }, [mode, employee]);
 
+  // Calculate days for individual mode or as default estimate
   const calculatedDays = useMemo(() => {
     if (!startDate || !endDate) return 0;
     if (scheduleType === "CUSTOM") return customDates.length;
     
+    // Use centralized function for accurate calculation
+    if (scheduleType === "EVERY_DAY") {
+      return countWorkingDaysInRange(workingDays, startDate, endDate);
+    }
+    
+    // EVERY_OTHER_DAY: Пн, Ср, Пт
     let count = 0;
     let current = new Date(startDate);
     while (current <= endDate) {
       const dow = current.getDay() as DayOfWeek;
-      if (scheduleType === "EVERY_DAY" && workingDays.includes(dow)) count++;
-      if (scheduleType === "EVERY_OTHER_DAY" && [1, 3, 5].includes(dow)) count++;
+      if ([1, 3, 5].includes(dow) && workingDays.includes(dow)) count++;
       current = addDays(current, 1);
     }
     return count;
   }, [startDate, endDate, scheduleType, customDates, workingDays]);
 
-  const totalPrice = calculatedDays * selectedCombo.price * (mode === "bulk" ? selectedEmployeeIds.length : 1);
+  // For bulk mode: calculate total price based on each employee's individual working days
+  const bulkCalculatedData = useMemo(() => {
+    if (mode !== "bulk" || !startDate || !endDate || selectedEmployeeIds.length === 0) {
+      return { totalDays: 0, totalPrice: 0 };
+    }
+    
+    let totalDays = 0;
+    let totalPrice = 0;
+    
+    for (const empId of selectedEmployeeIds) {
+      const emp = employees.find(e => e.id === empId);
+      if (!emp) continue;
+      
+      const empWorkDays = getEffectiveWorkingDays(emp.workingDays);
+      let days = 0;
+      
+      if (scheduleType === "CUSTOM") {
+        days = customDates.length;
+      } else if (scheduleType === "EVERY_DAY") {
+        days = countWorkingDaysInRange(empWorkDays, startDate, endDate);
+      } else {
+        // EVERY_OTHER_DAY
+        let current = new Date(startDate);
+        while (current <= endDate) {
+          const dow = current.getDay() as DayOfWeek;
+          if ([1, 3, 5].includes(dow) && empWorkDays.includes(dow)) days++;
+          current = addDays(current, 1);
+        }
+      }
+      
+      totalDays += days;
+      totalPrice += days * selectedCombo.price;
+    }
+    
+    return { totalDays, totalPrice };
+  }, [mode, startDate, endDate, selectedEmployeeIds, employees, scheduleType, customDates, selectedCombo.price]);
+
+  // Total price: use bulk calculation for bulk mode, simple calculation for individual
+  const totalPrice = mode === "bulk" 
+    ? bulkCalculatedData.totalPrice 
+    : calculatedDays * selectedCombo.price;
 
   // В individual mode блокируем весь процесс если сотрудник не подходит
   const canProceedStep1 = Boolean(comboType) && (mode !== "individual" || individualValidation.isValid);
@@ -269,7 +316,7 @@ export function ManageLunchDialog({
     if (e.serviceType !== "LUNCH") return false;
     
     // Рабочие дни должны включать хотя бы один будний день (1-5 = Пн-Пт)
-    const workDays = e.workingDays || [1, 2, 3, 4, 5];
+    const workDays = getEffectiveWorkingDays(e.workingDays);
     const hasWeekdays = workDays.some(d => d >= 1 && d <= 5);
     if (!hasWeekdays) return false;
     
@@ -280,11 +327,11 @@ export function ManageLunchDialog({
   // Проверяем совместимость рабочих дней сотрудника с выбранным графиком
   const scheduleTypeFilteredEmployees = useMemo(() => {
     return availableEmployees.filter(e => {
-      const empWorkDays = e.workingDays || [1, 2, 3, 4, 5];
+      const empWorkDays = getEffectiveWorkingDays(e.workingDays);
       
       if (scheduleType === "EVERY_DAY") {
         // Рабочие дни должны включать все будни (Пн-Пт)
-        return ([1, 2, 3, 4, 5] as DayOfWeek[]).every(d => (empWorkDays as DayOfWeek[]).includes(d));
+        return DEFAULT_WORKING_DAYS.every(d => empWorkDays.includes(d));
       }
       
       if (scheduleType === "EVERY_OTHER_DAY") {
@@ -321,18 +368,18 @@ export function ManageLunchDialog({
   const scheduleTypeCounts = useMemo(() => {
     // Считаем сколько сотрудников подходят под каждый тип графика
     const everyDayCount = availableEmployees.filter(e => {
-      const empWorkDays = (e.workingDays || [1, 2, 3, 4, 5]) as DayOfWeek[];
-      return ([1, 2, 3, 4, 5] as DayOfWeek[]).every(d => empWorkDays.includes(d));
+      const empWorkDays = getEffectiveWorkingDays(e.workingDays);
+      return DEFAULT_WORKING_DAYS.every(d => empWorkDays.includes(d));
     }).length;
     
     const everyOtherDayCount = availableEmployees.filter(e => {
-      const empWorkDays = (e.workingDays || [1, 2, 3, 4, 5]) as DayOfWeek[];
+      const empWorkDays = getEffectiveWorkingDays(e.workingDays);
       return ([1, 3, 5] as DayOfWeek[]).every(d => empWorkDays.includes(d));
     }).length;
     
     const customCount = customDates.length > 0 
       ? availableEmployees.filter(e => {
-          const empWorkDays = (e.workingDays || [1, 2, 3, 4, 5]) as DayOfWeek[];
+          const empWorkDays = getEffectiveWorkingDays(e.workingDays);
           const selectedDays = customDates.map(d => d.getDay() as DayOfWeek);
           return selectedDays.some(d => empWorkDays.includes(d));
         }).length
@@ -348,7 +395,7 @@ export function ManageLunchDialog({
       return {
         mode: "individual" as const,
         shiftType: emp.shiftType || "DAY",
-        workingDays: (emp.workingDays || [1, 2, 3, 4, 5]) as DayOfWeek[],
+        workingDays: getEffectiveWorkingDays(emp.workingDays),
         workStartTime: emp.workStartTime || null,
         workEndTime: emp.workEndTime || null,
         employeeName: emp.fullName,
@@ -421,7 +468,9 @@ export function ManageLunchDialog({
     
     setIsSubmitting(true);
     try {
-      const formatDate = (d: Date) => d.toISOString().split('T')[0];
+      // IMPORTANT: Use local date formatting to avoid timezone shift
+      // toISOString() would convert to UTC and potentially shift the date by -1 day
+      const formatDate = (d: Date) => format(d, 'yyyy-MM-dd');
       
       if (isEditing && existingSubscription) {
         await servicesApi.updateLunchSubscription(existingSubscription.id, {

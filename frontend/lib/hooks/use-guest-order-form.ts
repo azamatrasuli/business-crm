@@ -5,6 +5,7 @@
  */
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
+import { format } from 'date-fns'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -133,8 +134,8 @@ export function useGuestOrderForm({
     const data = form.getValues()
     setIsSubmitting(true)
 
-    // Get today's date in ISO format
-    const today = new Date().toISOString().split('T')[0]
+    // Get today's date in local format (avoid timezone shift)
+    const today = format(new Date(), 'yyyy-MM-dd')
 
     try {
       await createGuestOrder({

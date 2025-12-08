@@ -60,6 +60,8 @@ import { cn } from '@/lib/utils'
 import { format, differenceInDays, parseISO, isAfter, addDays, startOfMonth, startOfWeek, isSameDay, isToday, isSameMonth, getDay, startOfDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { employeesApi, type EmployeeOrder, type DayOfWeek } from '@/lib/api/employees'
+import { getEffectiveWorkingDays } from '@/lib/constants/employee'
+import { isFeatureEnabled } from '@/lib/features.config'
 import { getEmployeeFreezeInfo, freezeOrder, unfreezeOrder } from '@/lib/api/orders'
 import { toast } from 'sonner'
 import { parseError, ErrorCodes } from '@/lib/errors'
@@ -156,25 +158,30 @@ export default function EmployeeDetailPage() {
   const canManageLunch = canManageBudget && employeeServiceType !== 'COMPENSATION'
   
   // Для компенсации: доступно если тип услуги НЕ ланч и НЕТ активной подписки на ланч
-  const canManageCompensation = canManageBudget && employeeServiceType !== 'LUNCH' && !hasActiveLunch
+  // + проверка feature flag
+  const compensationFeatureEnabled = isFeatureEnabled('compensation')
+  const canManageCompensation = compensationFeatureEnabled && canManageBudget && employeeServiceType !== 'LUNCH' && !hasActiveLunch
 
   // Determine default service tab based on employee's service type
   const defaultServiceTab = useMemo(() => {
     if (hasActiveLunch || employeeServiceType === 'LUNCH') return 'lunch'
-    if (hasActiveCompensation || employeeServiceType === 'COMPENSATION') return 'compensation'
+    // Only show compensation tab if feature is enabled
+    if (compensationFeatureEnabled && (hasActiveCompensation || employeeServiceType === 'COMPENSATION')) return 'compensation'
     return 'lunch'
-  }, [hasActiveLunch, hasActiveCompensation, employeeServiceType])
+  }, [hasActiveLunch, hasActiveCompensation, employeeServiceType, compensationFeatureEnabled])
 
-  // Lunch progress calculation
+  // Lunch progress calculation - using actual working days from backend
   const lunchProgress = useMemo(() => {
-    if (!lunchSub?.startDate || !lunchSub?.endDate) return { total: 0, used: 0, percent: 0 }
-    const start = parseISO(lunchSub.startDate)
-    const end = parseISO(lunchSub.endDate)
-    const today = new Date()
-    const total = differenceInDays(end, start) + 1
-    const used = Math.max(0, differenceInDays(today, start) + 1)
+    if (!lunchSub) return { total: 0, used: 0, percent: 0 }
+    
+    // Use totalDays from backend (calculated by WORKING days, not calendar days)
+    const total = lunchSub.totalDays ?? 0
+    
+    // Used = completed orders count (actual delivered/completed orders)
+    const used = lunchSub.completedOrdersCount ?? 0
+    
     const percent = total > 0 ? Math.min((used / total) * 100, 100) : 0
-    return { total, used: Math.min(used, total), percent }
+    return { total, used, percent }
   }, [lunchSub])
 
   // Compensation progress calculation
@@ -214,7 +221,7 @@ export default function EmployeeDetailPage() {
 
   // Working days
   const workingDays = useMemo(() => {
-    return (currentEmployee?.workingDays || [1, 2, 3, 4, 5]) as DayOfWeek[]
+    return getEffectiveWorkingDays(currentEmployee?.workingDays) as DayOfWeek[]
   }, [currentEmployee?.workingDays])
 
   const workingDaysText = useMemo(() => {
@@ -1149,7 +1156,7 @@ export default function EmployeeDetailPage() {
           
           <CardContent className="pt-0">
             <Tabs defaultValue={defaultServiceTab} className="space-y-3">
-              <TabsList className="grid w-full grid-cols-2">
+              <TabsList className={`grid w-full ${compensationFeatureEnabled ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 <TabsTrigger value="lunch" className="gap-2">
                   <UtensilsCrossed className="h-4 w-4" />
                   Комплексные обеды
@@ -1159,15 +1166,17 @@ export default function EmployeeDetailPage() {
                     </Badge>
                   )}
                 </TabsTrigger>
-                <TabsTrigger value="compensation" className="gap-2">
-                  <Wallet className="h-4 w-4" />
-                  Компенсация
-                  {hasActiveCompensation && (
-                    <Badge variant="secondary" className="ml-2 h-5 px-1.5 text-xs bg-emerald-500/20 text-emerald-600">
-                      Активен
-                    </Badge>
-                  )}
-                </TabsTrigger>
+                {compensationFeatureEnabled && (
+                  <TabsTrigger value="compensation" className="gap-2">
+                    <Wallet className="h-4 w-4" />
+                    Компенсация
+                    {hasActiveCompensation && (
+                      <Badge variant="secondary" className="ml-2 h-5 px-1.5 text-xs bg-emerald-500/20 text-emerald-600">
+                        Активен
+                      </Badge>
+                    )}
+                  </TabsTrigger>
+                )}
               </TabsList>
 
               {/* LUNCH TAB */}
@@ -1324,6 +1333,7 @@ export default function EmployeeDetailPage() {
               </TabsContent>
 
               {/* COMPENSATION TAB */}
+              {compensationFeatureEnabled && (
               <TabsContent value="compensation" className="space-y-3 mt-0">
                 {hasActiveCompensation && compensation ? (
                   <div className="space-y-3">
@@ -1455,6 +1465,7 @@ export default function EmployeeDetailPage() {
                   </div>
                 )}
               </TabsContent>
+              )}
             </Tabs>
           </CardContent>
         </Card>
@@ -1974,23 +1985,27 @@ export default function EmployeeDetailPage() {
         onSuccess={() => { fetchEmployee(id); loadOrders(); }}
       />
       {/* Editing existing compensation (single screen) */}
-      <ManageCompensationDialog
-        open={compensationDialogOpen}
-        onOpenChange={setCompensationDialogOpen}
-        mode="individual"
-        employee={currentEmployee}
-        existingCompensation={currentEmployee.compensation || null}
-        onSuccess={() => fetchEmployee(id)}
-      />
+      {compensationFeatureEnabled && (
+        <ManageCompensationDialog
+          open={compensationDialogOpen}
+          onOpenChange={setCompensationDialogOpen}
+          mode="individual"
+          employee={currentEmployee}
+          existingCompensation={currentEmployee.compensation || null}
+          onSuccess={() => fetchEmployee(id)}
+        />
+      )}
       {/* Creating new compensation (full wizard) */}
-      <ManageCompensationDialog
-        open={compensationCreateOpen}
-        onOpenChange={setCompensationCreateOpen}
-        mode="individual"
-        employee={currentEmployee}
-        existingCompensation={null}
-        onSuccess={() => fetchEmployee(id)}
-      />
+      {compensationFeatureEnabled && (
+        <ManageCompensationDialog
+          open={compensationCreateOpen}
+          onOpenChange={setCompensationCreateOpen}
+          mode="individual"
+          employee={currentEmployee}
+          existingCompensation={null}
+          onSuccess={() => fetchEmployee(id)}
+        />
+      )}
 
       {/* Dialog: Отменить заказ */}
       <AlertDialog open={cancelDialogOrder !== null} onOpenChange={(open) => !open && setCancelDialogOrder(null)}>

@@ -40,6 +40,7 @@ import { format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
+import { formatISODate } from '@/lib/utils/date'
 import {
   Form,
   FormControl,
@@ -63,7 +64,7 @@ interface GuestOrderDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-const todayIso = new Date().toISOString().split('T')[0]
+const todayIso = formatISODate(new Date())
 
 const hasCutoffPassed = (cutoffTime: string | null) => {
   if (!cutoffTime) return false

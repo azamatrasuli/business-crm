@@ -10,14 +10,20 @@ public static class OrderStateMachine
 {
     private static readonly Dictionary<OrderStatus, HashSet<OrderStatus>> AllowedTransitions = new()
     {
-        // Active -> Paused, Completed, Cancelled
-        [OrderStatus.Active] = new() { OrderStatus.Paused, OrderStatus.Completed, OrderStatus.Cancelled },
+        // Active -> Paused, Completed, Cancelled, Frozen, Delivered
+        [OrderStatus.Active] = new() { OrderStatus.Paused, OrderStatus.Completed, OrderStatus.Cancelled, OrderStatus.Frozen, OrderStatus.Delivered },
         
         // Paused -> Active, Cancelled (can resume or cancel)
         [OrderStatus.Paused] = new() { OrderStatus.Active, OrderStatus.Cancelled },
         
-        // Completed -> None (terminal state - order was delivered)
+        // Frozen -> Active, Cancelled (can unfreeze or cancel)
+        [OrderStatus.Frozen] = new() { OrderStatus.Active, OrderStatus.Cancelled },
+        
+        // Completed -> None (terminal state - order was completed)
         [OrderStatus.Completed] = new(),
+        
+        // Delivered -> None (terminal state - order was delivered)
+        [OrderStatus.Delivered] = new(),
         
         // Cancelled -> None (terminal state - order was cancelled)
         [OrderStatus.Cancelled] = new()
@@ -62,7 +68,7 @@ public static class OrderStateMachine
     /// </summary>
     public static bool IsTerminal(OrderStatus status)
     {
-        return status == OrderStatus.Cancelled || status == OrderStatus.Completed;
+        return status == OrderStatus.Cancelled || status == OrderStatus.Completed || status == OrderStatus.Delivered;
     }
 
     /// <summary>

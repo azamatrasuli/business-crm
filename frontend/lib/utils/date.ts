@@ -1,7 +1,32 @@
 /**
- * @fileoverview Date utility functions
- * Centralized date formatting and manipulation utilities.
- * Based on Code Quality Audit Framework - DRY principle.
+ * @fileoverview Date utility functions - ЕДИНЫЙ СТАНДАРТ РАБОТЫ С ДАТАМИ
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * СТАНДАРТ РАБОТЫ С ДАТАМИ В ПРОЕКТЕ:
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * 
+ * 1. ФОРМАТ ДАТ ДЛЯ API:
+ *    - Используй formatISODate() для отправки дат на бэкенд
+ *    - НИКОГДА не используй toISOString().split('T')[0] — это вызывает сдвиг на 1 день!
+ *    - Формат: "YYYY-MM-DD" (локальная дата, без timezone)
+ * 
+ * 2. ПАРСИНГ СТРОКИ В DATE:
+ *    - Используй parseLocalDate() для парсинга строки "YYYY-MM-DD"
+ *    - Для отображения (format() из date-fns) можно использовать new Date(string)
+ * 
+ * 3. СРАВНЕНИЕ ДАТ:
+ *    - Используй isPastDate(), isToday(), isFutureDate() для сравнений
+ *    - Или startOfDay() из date-fns для сравнения только дат без времени
+ * 
+ * 4. ОТОБРАЖЕНИЕ ДАТ:
+ *    - Используй formatDisplayDate() для формата "dd.MM.yyyy"
+ *    - Или format() из date-fns для других форматов
+ * 
+ * 5. БЭКЕНД:
+ *    - Бэкенд хранит даты как DateTime в UTC или DateOnly
+ *    - При получении строки "YYYY-MM-DD" бэкенд парсит как DateOnly
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import { format, startOfDay, isBefore, isEqual, isAfter } from 'date-fns'

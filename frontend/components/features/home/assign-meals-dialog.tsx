@@ -8,6 +8,7 @@ import { useHomeStore } from '@/stores/home-store'
 import { useEmployeesStore } from '@/stores/employees-store'
 import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
+import { getEffectiveWorkingDays } from '@/lib/constants/employee'
 import {
   Dialog,
   DialogBody,
@@ -73,7 +74,7 @@ export function AssignMealsDialog({ open, onOpenChange }: AssignMealsDialogProps
 
   const nextWorkingDay = useMemo(() => getNextWorkingDay(new Date()), [])
   const nextWorkingDayIso = useMemo(
-    () => nextWorkingDay.toISOString().split('T')[0],
+    () => format(nextWorkingDay, 'yyyy-MM-dd'),
     [nextWorkingDay]
   )
   const nextWorkingDayLabel = useMemo(
@@ -103,7 +104,7 @@ export function AssignMealsDialog({ open, onOpenChange }: AssignMealsDialogProps
       if (employee.shiftType === 'NIGHT') return false
       
       // Must have at least one weekday in working days (Mon-Fri)
-      const workDays = employee.workingDays || [1, 2, 3, 4, 5]
+      const workDays = getEffectiveWorkingDays(employee.workingDays)
       const hasWeekdays = workDays.some(d => d >= 1 && d <= 5)
       if (!hasWeekdays) return false
       

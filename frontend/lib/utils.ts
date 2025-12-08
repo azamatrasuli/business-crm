@@ -129,9 +129,14 @@ export function formatDateTime(date: Date | string, locale = 'ru-RU'): string {
 
 /**
  * Format date for API (ISO format, date only).
+ * IMPORTANT: Uses local date to avoid timezone shift!
+ * @deprecated Use formatISODate from lib/utils/date.ts instead
  */
 export function toApiDate(date: Date): string {
-  return date.toISOString().split('T')[0] ?? ''
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 /**

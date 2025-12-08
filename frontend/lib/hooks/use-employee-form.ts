@@ -14,6 +14,7 @@ import type { Employee, EmployeeDetail, DayOfWeek, ShiftType, ServiceType } from
 import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import { toast } from 'sonner'
+import { DEFAULT_WORKING_DAYS, getEffectiveWorkingDays } from '@/lib/constants/employee'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Schema
@@ -75,7 +76,6 @@ export interface UseEmployeeFormReturn {
 // Default Values
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const DEFAULT_WORKING_DAYS: DayOfWeek[] = [1, 2, 3, 4, 5]
 const DEFAULT_SHIFT_TYPE: ShiftType = 'DAY'
 const DEFAULT_WORK_START = '09:00'
 const DEFAULT_WORK_END = '18:00'
@@ -90,7 +90,7 @@ function getDefaultValues(employee?: Employee | EmployeeDetail | null): Employee
       projectId: employee.projectId || undefined,
       serviceType: employee.serviceType || null,
       shiftType: employee.shiftType || DEFAULT_SHIFT_TYPE,
-      workingDays: employee.workingDays || DEFAULT_WORKING_DAYS,
+      workingDays: getEffectiveWorkingDays(employee.workingDays),
       workStartTime: employee.workStartTime || DEFAULT_WORK_START,
       workEndTime: employee.workEndTime || DEFAULT_WORK_END,
       totalBudget: employee.totalBudget || 0,

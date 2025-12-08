@@ -5,6 +5,7 @@ using YallaBusinessAdmin.Application.Subscriptions;
 using YallaBusinessAdmin.Application.Subscriptions.Dtos;
 using YallaBusinessAdmin.Domain.Entities;
 using YallaBusinessAdmin.Domain.Enums;
+using YallaBusinessAdmin.Domain.Helpers;
 using YallaBusinessAdmin.Domain.StateMachines;
 using YallaBusinessAdmin.Infrastructure.Persistence;
 
@@ -142,13 +143,27 @@ public class SubscriptionsService : ISubscriptionsService
             {
                 throw new InvalidOperationException("Сотрудник уже имеет активную подписку на обеды");
             }
+            
+            // Calculate total WORKING days and price for reactivation
+            var reactivateStartDate = request.StartDate ?? DateOnly.FromDateTime(DateTime.Today);
+            var reactivateEndDate = request.EndDate ?? reactivateStartDate.AddMonths(1);
+            var reactivateTotalDays = WorkingDaysHelper.CountWorkingDays(employee.WorkingDays, reactivateStartDate, reactivateEndDate);
+            var reactivatePrice = request.ComboType switch
+            {
+                "Комбо 25" => 25m,
+                "Комбо 35" => 35m,
+                _ => 25m
+            };
+            
             // Reactivate existing subscription instead of creating new
             existingSubscription.IsActive = true;
             existingSubscription.ComboType = request.ComboType;
             existingSubscription.ProjectId = employee.ProjectId;
             existingSubscription.Status = "Активна";
-            existingSubscription.StartDate = request.StartDate;
-            existingSubscription.EndDate = request.EndDate;
+            existingSubscription.StartDate = reactivateStartDate;
+            existingSubscription.EndDate = reactivateEndDate;
+            existingSubscription.TotalDays = reactivateTotalDays;
+            existingSubscription.TotalPrice = reactivatePrice * reactivateTotalDays;
             existingSubscription.UpdatedAt = DateTime.UtcNow;
 
             // Create orders for reactivated subscription
@@ -160,6 +175,18 @@ public class SubscriptionsService : ISubscriptionsService
             return MapToResponse(existingSubscription);
         }
 
+        // Calculate total WORKING days and price
+        var startDate = request.StartDate ?? DateOnly.FromDateTime(DateTime.Today);
+        var endDate = request.EndDate ?? startDate.AddMonths(1);
+        var totalDays = WorkingDaysHelper.CountWorkingDays(employee.WorkingDays, startDate, endDate);
+        var price = request.ComboType switch
+        {
+            "Комбо 25" => 25m,
+            "Комбо 35" => 35m,
+            _ => 25m
+        };
+        var totalPrice = price * totalDays;
+
         // NOTE: Address is derived from employee's Project (one project = one address)
         var subscription = new LunchSubscription
         {
@@ -170,8 +197,10 @@ public class SubscriptionsService : ISubscriptionsService
             ComboType = request.ComboType,
             IsActive = true,
             Status = "Активна",
-            StartDate = request.StartDate,
-            EndDate = request.EndDate,
+            StartDate = startDate,
+            EndDate = endDate,
+            TotalDays = totalDays,
+            TotalPrice = totalPrice,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -247,15 +276,17 @@ public class SubscriptionsService : ISubscriptionsService
         subscription.Deactivate(); // Uses domain method which sets IsActive=false and Status="Завершена"
 
         // ═══════════════════════════════════════════════════════════════
-        // CANCEL ACTIVE ORDERS: Cancel any pending/active orders
+        // CANCEL FUTURE ORDERS: Cancel only future orders (Active or Frozen)
+        // Keep today's orders and all past orders as history
         // ═══════════════════════════════════════════════════════════════
-        var activeOrders = await _context.Orders
+        var tomorrow = DateTime.UtcNow.Date.AddDays(1);
+        var futureOrders = await _context.Orders
             .Where(o => o.EmployeeId == subscription.EmployeeId
-                     && o.Status == OrderStatus.Active
-                     && o.OrderDate >= DateTime.UtcNow.Date)
+                     && (o.Status == OrderStatus.Active || o.Status == OrderStatus.Frozen)
+                     && o.OrderDate >= tomorrow)
             .ToListAsync(cancellationToken);
 
-        foreach (var order in activeOrders)
+        foreach (var order in futureOrders)
         {
             order.Status = OrderStatus.Cancelled;
             order.UpdatedAt = DateTime.UtcNow;
@@ -350,8 +381,8 @@ public class SubscriptionsService : ISubscriptionsService
                 ? DateOnly.ParseExact(request.EndDate, "yyyy-MM-dd", CultureInfo.InvariantCulture)
                 : startDate.AddMonths(1);
 
-            // Calculate total days and price
-            var totalDays = endDate.DayNumber - startDate.DayNumber + 1;
+            // Calculate total WORKING days and price (not calendar days!)
+            var totalDays = WorkingDaysHelper.CountWorkingDays(employee.WorkingDays, startDate, endDate);
             var price = request.ComboType switch
             {
                 "Комбо 25" => 25m,
@@ -653,6 +684,19 @@ public class SubscriptionsService : ISubscriptionsService
             DeliveryAddressId = subscription.Employee?.ProjectId,
             DeliveryAddressName = subscription.Employee?.Project?.AddressName,
             IsActive = subscription.IsActive,
+            
+            // Subscription period & pricing
+            StartDate = subscription.StartDate?.ToString("yyyy-MM-dd"),
+            EndDate = subscription.EndDate?.ToString("yyyy-MM-dd"),
+            TotalDays = subscription.TotalDays,
+            TotalPrice = subscription.TotalPrice,
+            Status = subscription.Status,
+            ScheduleType = subscription.ScheduleType,
+            
+            // Freeze info
+            FrozenDaysCount = subscription.FrozenDaysCount,
+            OriginalEndDate = subscription.OriginalEndDate?.ToString("yyyy-MM-dd"),
+            
             CreatedAt = subscription.CreatedAt,
             UpdatedAt = subscription.UpdatedAt
         };
@@ -690,14 +734,9 @@ public class SubscriptionsService : ISubscriptionsService
 
         for (var date = startDate; date <= endDate; date = date.AddDays(1))
         {
-            var dayOfWeek = (int)date.DayOfWeek; // 0 = Sunday
-
-            // Check if it's a working day for this employee
-            if (employee.WorkingDays != null && employee.WorkingDays.Length > 0)
-            {
-                if (!employee.WorkingDays.Contains(dayOfWeek))
-                    continue;
-            }
+            // Check if it's a working day for this employee (uses default Mon-Fri if not set)
+            if (!WorkingDaysHelper.IsWorkingDay(employee.WorkingDays, date))
+                continue;
 
             // Check if ACTIVE order already exists (exclude cancelled orders)
             var dayStartUtc = DateTime.SpecifyKind(date.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);

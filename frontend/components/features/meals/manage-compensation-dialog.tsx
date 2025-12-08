@@ -218,7 +218,8 @@ export function ManageCompensationDialog({
     
     setIsSubmitting(true);
     try {
-      const formatDate = (d: Date) => d.toISOString().split('T')[0];
+      // IMPORTANT: Use local date formatting to avoid timezone shift
+      const formatDate = (d: Date) => format(d, 'yyyy-MM-dd');
       
       if (isEditing && existingCompensation) {
         await servicesApi.updateCompensation(existingCompensation.id, {

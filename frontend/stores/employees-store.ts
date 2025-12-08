@@ -151,8 +151,9 @@ export const useEmployeesStore = create<EmployeesState>((set, get) => ({
         parsedFilters.serviceType ?? undefined
       )
 
+      // Force new array reference to trigger React re-render
       set({
-        employees: response.items,
+        employees: [...response.items],
         total: response.total,
         currentPage: response.page,
         totalPages: response.totalPages,

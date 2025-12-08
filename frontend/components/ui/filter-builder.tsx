@@ -20,6 +20,7 @@ import {
 import { Filter, Plus, X, ChevronDown, Trash2 } from 'lucide-react'
 import { DatePicker } from '@/components/ui/date-picker'
 import { cn } from '@/lib/utils'
+import { formatISODate } from '@/lib/utils/date'
 
 // Filter types
 export type FilterOperator = 
@@ -297,7 +298,7 @@ export function FilterBuilder({
       return (
         <DatePicker
           value={dateValue}
-          onChange={(date) => handleValueChange(date ? date.toISOString().split('T')[0] : null)}
+          onChange={(date) => handleValueChange(date ? formatISODate(date) : null)}
           className="w-full"
         />
       )

@@ -12,6 +12,7 @@ import {
   WORKING_DAYS_PRESETS,
   TIME_REGEX,
   toggleWorkingDay,
+  getEffectiveWorkingDays,
 } from '@/lib/constants'
 import {
   Dialog,
@@ -79,7 +80,7 @@ export function EditEmployeeDialog({
       position: employee.position || '',
       serviceType: employee.serviceType || null,
       shiftType: employee.shiftType || null,
-      workingDays: employee.workingDays || [1, 2, 3, 4, 5],
+      workingDays: getEffectiveWorkingDays(employee.workingDays),
       workStartTime: employee.workStartTime || '',
       workEndTime: employee.workEndTime || '',
     },
@@ -93,7 +94,7 @@ export function EditEmployeeDialog({
         position: employee.position || '',
         serviceType: employee.serviceType || null,
         shiftType: employee.shiftType || null,
-        workingDays: employee.workingDays || [1, 2, 3, 4, 5],
+        workingDays: getEffectiveWorkingDays(employee.workingDays),
         workStartTime: employee.workStartTime || '',
         workEndTime: employee.workEndTime || '',
       })

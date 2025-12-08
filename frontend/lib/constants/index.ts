@@ -15,6 +15,11 @@ export {
   ROUTE_LABELS,
   sortWorkingDays,
   toggleWorkingDay,
+  // Working days helpers (mirrors backend WorkingDaysHelper.cs)
+  DEFAULT_WORKING_DAYS,
+  getEffectiveWorkingDays,
+  isWorkingDay,
+  countWorkingDaysInRange,
 } from './employee'
 
 // Re-export from centralized config
@@ -37,8 +42,7 @@ export {
   COMBO_OPTIONS,
   COMBO_OPTIONS_EXTENDED,
   BUDGET_PERIODS,
-  // Defaults
-  DEFAULT_WORKING_DAYS,
+  // Defaults (DEFAULT_WORKING_DAYS now in employee.ts with helpers)
   DEFAULT_WORK_START_TIME,
   DEFAULT_WORK_END_TIME,
   // Feature flags

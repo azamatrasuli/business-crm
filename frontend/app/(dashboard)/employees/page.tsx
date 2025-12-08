@@ -779,11 +779,17 @@ export default function EmployeesPage() {
       {selectedEmployee && (
         <ManageLunchDialog
           open={lunchDialogOpen}
-          onOpenChange={setLunchDialogOpen}
+          onOpenChange={(open) => {
+            setLunchDialogOpen(open)
+            if (!open) setSelectedEmployee(null) // Reset to force fresh data
+          }}
           mode="individual"
           employee={selectedEmployee}
           existingSubscription={selectedEmployee.lunchSubscription || null}
-          onSuccess={() => fetchEmployees(currentPage)}
+          onSuccess={() => {
+            fetchEmployees(currentPage)
+            setSelectedEmployee(null) // Reset selected employee to avoid stale data
+          }}
         />
       )}
 
@@ -791,11 +797,17 @@ export default function EmployeesPage() {
       {isFeatureEnabled('compensation') && selectedEmployee && (
         <ManageCompensationDialog
           open={compensationDialogOpen}
-          onOpenChange={setCompensationDialogOpen}
+          onOpenChange={(open) => {
+            setCompensationDialogOpen(open)
+            if (!open) setSelectedEmployee(null) // Reset to force fresh data
+          }}
           mode="individual"
           employee={selectedEmployee}
           existingCompensation={selectedEmployee.compensation || null}
-          onSuccess={() => fetchEmployees(currentPage)}
+          onSuccess={() => {
+            fetchEmployees(currentPage)
+            setSelectedEmployee(null) // Reset selected employee to avoid stale data
+          }}
         />
       )}
 

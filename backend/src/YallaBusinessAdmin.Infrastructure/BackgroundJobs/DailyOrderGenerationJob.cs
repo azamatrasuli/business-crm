@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using YallaBusinessAdmin.Domain.Entities;
 using YallaBusinessAdmin.Domain.Enums;
+using YallaBusinessAdmin.Domain.Helpers;
 using YallaBusinessAdmin.Infrastructure.Persistence;
 
 namespace YallaBusinessAdmin.Infrastructure.BackgroundJobs;
@@ -65,7 +66,6 @@ public class DailyOrderGenerationJob : BackgroundService
                 var projectNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
                 var projectTimeNow = TimeOnly.FromDateTime(projectNow);
                 var projectToday = DateOnly.FromDateTime(projectNow);
-                var dayOfWeek = (int)projectNow.DayOfWeek; // 0 = Sunday
 
                 // Skip if before cutoff time
                 if (projectTimeNow < project.CutoffTime)
@@ -95,13 +95,10 @@ public class DailyOrderGenerationJob : BackgroundService
                 {
                     var employee = subscription.Employee!;
 
-                    // Check if today is a working day for this employee
-                    if (employee.WorkingDays != null && employee.WorkingDays.Length > 0)
+                    // Check if today is a working day for this employee (uses default Mon-Fri if not set)
+                    if (!WorkingDaysHelper.IsWorkingDay(employee.WorkingDays, projectToday))
                     {
-                        if (!employee.WorkingDays.Contains(dayOfWeek))
-                        {
-                            continue; // Skip non-working days
-                        }
+                        continue; // Skip non-working days
                     }
 
                     // Check if order already exists for this employee today

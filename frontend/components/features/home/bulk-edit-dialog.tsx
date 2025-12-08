@@ -6,6 +6,7 @@ import { ru } from 'date-fns/locale'
 import { useHomeStore } from '@/stores/home-store'
 import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
+import { formatISODate } from '@/lib/utils/date'
 import {
   Users,
   UtensilsCrossed,
@@ -142,7 +143,7 @@ export function BulkEditDialog({
   // Проверяем сегодняшняя ли это дата
   const isToday = useMemo(() => {
     if (!selectedDate) return false
-    const today = new Date().toISOString().split('T')[0]
+    const today = formatISODate(new Date())
     return selectedDate === today
   }, [selectedDate])
 

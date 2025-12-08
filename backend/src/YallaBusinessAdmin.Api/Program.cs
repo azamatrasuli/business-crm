@@ -51,7 +51,7 @@ Log.Logger = new LoggerConfiguration()
     .Enrich.FromLogContext()
     .Enrich.WithProperty("Application", "YallaBusinessAdmin")
     .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName)
-    .WriteTo.Console(outputTemplate: 
+    .WriteTo.Console(outputTemplate:
         "[{Timestamp:HH:mm:ss} {Level:u3}] [{CorrelationId}] {Message:lj}{NewLine}{Exception}")
     .CreateLogger();
 
@@ -84,7 +84,7 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
         ClockSkew = TimeSpan.Zero
     };
-    
+
     // Read JWT from HttpOnly cookie if not in Authorization header
     options.Events = new JwtBearerEvents
     {
@@ -95,14 +95,14 @@ builder.Services.AddAuthentication(options =>
             {
                 return Task.CompletedTask;
             }
-            
+
             // Then check HttpOnly cookie
             var accessToken = context.Request.Cookies["X-Access-Token"];
             if (!string.IsNullOrEmpty(accessToken))
             {
                 context.Token = accessToken;
             }
-            
+
             return Task.CompletedTask;
         },
         OnAuthenticationFailed = context =>
@@ -121,7 +121,7 @@ builder.Services.AddAuthorization();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    
+
     // Global rate limit - 100 requests per minute per IP
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
     {
@@ -134,7 +134,7 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 5
         });
     });
-    
+
     // Strict rate limit for login endpoint - 5 attempts per minute per IP
     options.AddPolicy("login", context =>
     {
@@ -148,7 +148,7 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0
         });
     });
-    
+
     // Rate limit for password reset - 3 attempts per hour per IP
     options.AddPolicy("password-reset", context =>
     {
@@ -161,12 +161,12 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0
         });
     });
-    
+
     // Rate limit for API endpoints - 30 requests per minute per user
     options.AddPolicy("api", context =>
     {
-        var userId = context.User?.FindFirst("sub")?.Value ?? 
-                     context.Connection.RemoteIpAddress?.ToString() ?? 
+        var userId = context.User?.FindFirst("sub")?.Value ??
+                     context.Connection.RemoteIpAddress?.ToString() ??
                      "unknown";
         return RateLimitPartition.GetFixedWindowLimiter(userId, _ => new FixedWindowRateLimiterOptions
         {
@@ -176,19 +176,19 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 2
         });
     });
-    
+
     // Custom response for rate limit exceeded
     options.OnRejected = async (context, cancellationToken) =>
     {
         context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
         context.HttpContext.Response.ContentType = "application/json";
-        
+
         var retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfterValue)
             ? retryAfterValue.TotalSeconds
             : 60;
-        
+
         context.HttpContext.Response.Headers.RetryAfter = ((int)retryAfter).ToString();
-        
+
         var response = new
         {
             success = false,
@@ -202,11 +202,11 @@ builder.Services.AddRateLimiter(options =>
             path = context.HttpContext.Request.Path.Value,
             timestamp = DateTime.UtcNow
         };
-        
-        Log.Warning("Rate limit exceeded for {IP} on {Path}", 
-            context.HttpContext.Connection.RemoteIpAddress, 
+
+        Log.Warning("Rate limit exceeded for {IP} on {Path}",
+            context.HttpContext.Connection.RemoteIpAddress,
             context.HttpContext.Request.Path);
-        
+
         await context.HttpContext.Response.WriteAsJsonAsync(response, cancellationToken);
     };
 });
@@ -224,7 +224,7 @@ builder.Services.AddControllers()
                     e => e.Key,
                     e => e.Value!.Errors.Select(err => err.ErrorMessage).ToArray()
                 );
-            
+
             var response = new
             {
                 success = false,
@@ -239,7 +239,7 @@ builder.Services.AddControllers()
                 path = context.HttpContext.Request.Path.Value,
                 timestamp = DateTime.UtcNow
             };
-            
+
             return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(response);
         };
     });
@@ -255,7 +255,7 @@ builder.Services.AddCors(options =>
             policy.SetIsOriginAllowed(origin =>
                 {
                     var uri = new Uri(origin);
-                    return uri.Host == "localhost" || 
+                    return uri.Host == "localhost" ||
                            uri.Host == "127.0.0.1" ||
                            uri.Host.StartsWith("192.168.") ||
                            uri.Host.StartsWith("10.") ||
@@ -271,25 +271,25 @@ builder.Services.AddCors(options =>
             // Production: strict origin whitelist
             var frontendUrl = builder.Configuration["FrontendUrl"];
             var allowedOrigins = new List<string>();
-            
+
             if (!string.IsNullOrEmpty(frontendUrl))
             {
                 allowedOrigins.Add(frontendUrl);
             }
-            
+
             // Add Vercel preview URLs if configured
             var vercelUrls = builder.Configuration["AllowedVercelUrls"]?.Split(',', StringSplitOptions.RemoveEmptyEntries);
             if (vercelUrls != null)
             {
                 allowedOrigins.AddRange(vercelUrls);
             }
-            
+
             // Fallback for local development
             if (allowedOrigins.Count == 0)
             {
                 allowedOrigins.Add("http://localhost:3000");
             }
-            
+
             policy.WithOrigins(allowedOrigins.ToArray())
                 .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .WithHeaders(
@@ -348,7 +348,7 @@ builder.Services.AddSwaggerGen(options =>
             Array.Empty<string>()
         }
     });
-    
+
 });
 
 // Add HttpContextAccessor for CurrentUserService
@@ -386,18 +386,18 @@ app.UseExceptionHandler(errorApp =>
     errorApp.Run(async context =>
     {
         context.Response.ContentType = "application/json";
-        
+
         var exceptionHandlerPathFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerPathFeature>();
         var exception = exceptionHandlerPathFeature?.Error;
-        
+
         // Special handling for MultiValidationException - return all field errors
         if (exception is YallaBusinessAdmin.Application.Common.Errors.MultiValidationException multiEx)
         {
             context.Response.StatusCode = 400;
-            
-            Log.Warning("Multiple validation errors at {Path}: {ErrorCount} errors", 
+
+            Log.Warning("Multiple validation errors at {Path}: {ErrorCount} errors",
                 context.Request.Path, multiEx.FieldErrors.Count);
-            
+
             var multiResponse = new
             {
                 success = false,
@@ -412,41 +412,41 @@ app.UseExceptionHandler(errorApp =>
                 path = context.Request.Path.Value,
                 timestamp = DateTime.UtcNow
             };
-            
+
             await context.Response.WriteAsJsonAsync(multiResponse);
             return;
         }
-        
+
         // Determine error type and status code
         var (statusCode, errorCode, errorType, message, details) = exception switch
         {
-            YallaBusinessAdmin.Application.Common.Errors.AppException appEx => 
+            YallaBusinessAdmin.Application.Common.Errors.AppException appEx =>
                 (GetStatusCode(appEx.Type), appEx.Code, appEx.Type.ToString(), appEx.Message, appEx.Details),
-            
-            KeyNotFoundException keyNotFound => 
+
+            KeyNotFoundException keyNotFound =>
                 (404, "NOT_FOUND", "NotFound", keyNotFound.Message, null as Dictionary<string, object>),
-            
-            InvalidOperationException invalidOp => 
+
+            InvalidOperationException invalidOp =>
                 (400, "VALIDATION_ERROR", "Validation", invalidOp.Message, null as Dictionary<string, object>),
-            
-            UnauthorizedAccessException unauthEx => 
+
+            UnauthorizedAccessException unauthEx =>
                 (401, "AUTH_INVALID_CREDENTIALS", "Forbidden", unauthEx.Message, null as Dictionary<string, object>),
-            
-            ArgumentException argEx => 
+
+            ArgumentException argEx =>
                 (400, "VALIDATION_ERROR", "Validation", argEx.Message, null as Dictionary<string, object>),
-            
-            _ => (500, "INTERNAL_ERROR", "Internal", 
+
+            _ => (500, "INTERNAL_ERROR", "Internal",
                 app.Environment.IsDevelopment() ? exception?.Message ?? "Внутренняя ошибка" : "Произошла внутренняя ошибка. Попробуйте позже",
                 null as Dictionary<string, object>)
         };
-        
+
         context.Response.StatusCode = statusCode;
-        
+
         // Log the error with structured data
-        Log.Error(exception, 
-            "Exception occurred: {ErrorCode} - {ErrorMessage} at {Path} (Status: {StatusCode})", 
+        Log.Error(exception,
+            "Exception occurred: {ErrorCode} - {ErrorMessage} at {Path} (Status: {StatusCode})",
             errorCode, message, context.Request.Path, statusCode);
-        
+
         // Return structured error response
         var response = new
         {
@@ -462,7 +462,7 @@ app.UseExceptionHandler(errorApp =>
             path = context.Request.Path.Value,
             timestamp = DateTime.UtcNow
         };
-        
+
         await context.Response.WriteAsJsonAsync(response);
     });
 });
@@ -490,12 +490,12 @@ if (app.Environment.IsDevelopment())
 // Correlation ID middleware for request tracing
 app.Use(async (context, next) =>
 {
-    var correlationId = context.Request.Headers["X-Correlation-ID"].FirstOrDefault() 
+    var correlationId = context.Request.Headers["X-Correlation-ID"].FirstOrDefault()
         ?? Guid.NewGuid().ToString("N")[..12];
-    
+
     context.Items["CorrelationId"] = correlationId;
     context.Response.Headers["X-Correlation-ID"] = correlationId;
-    
+
     using (LogContext.PushProperty("CorrelationId", correlationId))
     using (LogContext.PushProperty("UserId", context.User.FindFirst("sub")?.Value ?? "anonymous"))
     using (LogContext.PushProperty("CompanyId", context.User.FindFirst("company_id")?.Value ?? "none"))
@@ -513,7 +513,7 @@ app.UseSerilogRequestLogging(options =>
         diagnosticContext.Set("RequestScheme", httpContext.Request.Scheme);
         diagnosticContext.Set("UserAgent", httpContext.Request.Headers["User-Agent"].FirstOrDefault() ?? "unknown");
         diagnosticContext.Set("ClientIP", httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown");
-        
+
         if (httpContext.Items.TryGetValue("CorrelationId", out var correlationId))
         {
             diagnosticContext.Set("CorrelationId", correlationId);

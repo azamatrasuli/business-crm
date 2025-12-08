@@ -143,31 +143,31 @@ const ERROR_MESSAGES: Record<string, string> = {
   [ErrorCodes.AUTH_TOKEN_EXPIRED]: 'Сессия истекла. Пожалуйста, войдите заново',
   [ErrorCodes.AUTH_UNAUTHORIZED]: 'Требуется авторизация',
   [ErrorCodes.AUTH_FORBIDDEN]: 'Доступ запрещён',
-  
+
   [ErrorCodes.USER_PHONE_EXISTS]: 'Пользователь с таким телефоном уже существует',
   [ErrorCodes.USER_CANNOT_DELETE_SELF]: 'Нельзя удалить самого себя',
   [ErrorCodes.USER_CANNOT_DELETE_LAST_ADMIN]: 'Нельзя удалить последнего администратора',
   [ErrorCodes.USER_INVALID_PHONE_FORMAT]: 'Неверный формат телефона',
-  
+
   [ErrorCodes.EMP_PHONE_EXISTS]: 'Сотрудник с таким телефоном уже существует',
   [ErrorCodes.EMP_PHONE_DELETED]: 'Этот телефон был удалён. Обратитесь к администратору',
   [ErrorCodes.EMP_EMAIL_EXISTS]: 'Сотрудник с такой почтой уже существует',
   [ErrorCodes.EMP_EMAIL_DELETED]: 'Эта почта была удалена. Обратитесь к администратору',
   [ErrorCodes.EMP_INVALID_EMAIL_FORMAT]: 'Неверный формат email',
   [ErrorCodes.EMP_SERVICE_TYPE_SWITCH_BLOCKED]: 'Нельзя сменить тип услуги при активной подписке',
-  
+
   [ErrorCodes.FREEZE_LIMIT_EXCEEDED]: 'Вы уже использовали 2 заморозки на этой неделе',
   [ErrorCodes.FREEZE_ALREADY_FROZEN]: 'Этот заказ уже заморожен',
   [ErrorCodes.FREEZE_NOT_FROZEN]: 'Этот заказ не заморожен',
-  
+
   [ErrorCodes.ORDER_CUTOFF_PASSED]: 'Время для изменения заказов истекло',
   [ErrorCodes.ORDER_GUEST_CANNOT_FREEZE]: 'Гостевые заказы нельзя замораживать',
-  
+
   [ErrorCodes.BUDGET_INSUFFICIENT]: 'Недостаточно бюджета',
-  
+
   [ErrorCodes.SUB_MIN_DAYS_REQUIRED]: 'Минимальный период подписки — 5 дней',
   [ErrorCodes.SUB_PAST_DATE_NOT_ALLOWED]: 'Нельзя создать подписку на прошедшие даты',
-  
+
   [ErrorCodes.INTERNAL_ERROR]: 'Произошла внутренняя ошибка. Попробуйте позже',
   [ErrorCodes.NETWORK_ERROR]: 'Ошибка сети. Проверьте подключение к интернету',
   [ErrorCodes.VALIDATION_ERROR]: 'Ошибка валидации данных',
@@ -209,7 +209,7 @@ export function parseError(error: unknown): AppError {
   // Axios error with response
   if (isAxiosError(error) && error.response) {
     const data = error.response.data as ApiErrorResponse | MultiValidationErrorResponse | { message?: string }
-    
+
     // Structured error response from backend
     if ('success' in data && data.success === false && 'error' in data) {
       // Check for multi-validation error
@@ -228,7 +228,7 @@ export function parseError(error: unknown): AppError {
           isMultiValidationError: true,
         }
       }
-      
+
       const apiError = data as ApiErrorResponse
       return {
         code: apiError.error.code,
@@ -247,7 +247,7 @@ export function parseError(error: unknown): AppError {
     // Legacy error response (just message)
     const message = (data as { message?: string }).message ?? 'Произошла ошибка'
     const statusCode = error.response.status
-    
+
     return {
       code: statusCode >= 500 ? ErrorCodes.INTERNAL_ERROR : ErrorCodes.VALIDATION_ERROR,
       message,

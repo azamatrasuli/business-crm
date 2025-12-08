@@ -9,7 +9,7 @@ public class AppException : Exception
     public ErrorType Type { get; }
     public Dictionary<string, object>? Details { get; }
 
-    public AppException(string code, string message, ErrorType type, Dictionary<string, object>? details = null) 
+    public AppException(string code, string message, ErrorType type, Dictionary<string, object>? details = null)
         : base(message)
     {
         Code = code;
@@ -25,11 +25,11 @@ public class AppException : Exception
 /// </summary>
 public class ValidationException : AppException
 {
-    public ValidationException(string code, string message, Dictionary<string, object>? details = null) 
+    public ValidationException(string code, string message, Dictionary<string, object>? details = null)
         : base(code, message, ErrorType.Validation, details) { }
 
     public static ValidationException RequiredField(string fieldName) =>
-        new(ErrorCodes.VALIDATION_ERROR, $"Поле '{fieldName}' обязательно для заполнения", 
+        new(ErrorCodes.VALIDATION_ERROR, $"Поле '{fieldName}' обязательно для заполнения",
             new Dictionary<string, object> { ["field"] = fieldName });
 
     public static ValidationException InvalidFormat(string fieldName, string expectedFormat) =>
@@ -42,7 +42,7 @@ public class ValidationException : AppException
 /// </summary>
 public class NotFoundException : AppException
 {
-    public NotFoundException(string code, string message, Dictionary<string, object>? details = null) 
+    public NotFoundException(string code, string message, Dictionary<string, object>? details = null)
         : base(code, message, ErrorType.NotFound, details) { }
 
     public static NotFoundException Entity(string entityType, Guid id) =>
@@ -55,7 +55,7 @@ public class NotFoundException : AppException
 /// </summary>
 public class ForbiddenException : AppException
 {
-    public ForbiddenException(string code, string message, Dictionary<string, object>? details = null) 
+    public ForbiddenException(string code, string message, Dictionary<string, object>? details = null)
         : base(code, message, ErrorType.Forbidden, details) { }
 }
 
@@ -64,7 +64,7 @@ public class ForbiddenException : AppException
 /// </summary>
 public class ConflictException : AppException
 {
-    public ConflictException(string code, string message, Dictionary<string, object>? details = null) 
+    public ConflictException(string code, string message, Dictionary<string, object>? details = null)
         : base(code, message, ErrorType.Conflict, details) { }
 
     public static ConflictException DuplicateField(string fieldName, string value) =>
@@ -77,7 +77,7 @@ public class ConflictException : AppException
 /// </summary>
 public class BusinessRuleException : AppException
 {
-    public BusinessRuleException(string code, string message, Dictionary<string, object>? details = null) 
+    public BusinessRuleException(string code, string message, Dictionary<string, object>? details = null)
         : base(code, message, ErrorType.Validation, details) { }
 }
 
@@ -89,11 +89,11 @@ public class MultiValidationException : AppException
 {
     public List<FieldError> FieldErrors { get; }
 
-    public MultiValidationException(List<FieldError> fieldErrors) 
+    public MultiValidationException(List<FieldError> fieldErrors)
         : base(
-            ErrorCodes.VALIDATION_ERROR, 
-            "Ошибки валидации", 
-            ErrorType.Validation, 
+            ErrorCodes.VALIDATION_ERROR,
+            "Ошибки валидации",
+            ErrorType.Validation,
             new Dictionary<string, object> { ["fieldErrors"] = fieldErrors })
     {
         FieldErrors = fieldErrors;

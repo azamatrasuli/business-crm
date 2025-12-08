@@ -12,6 +12,7 @@ import { servicesApi } from '@/lib/api/services'
 import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import { toast } from 'sonner'
+import { formatISODate } from '@/lib/utils/date'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -262,8 +263,8 @@ export function useCompensationForm({
         await servicesApi.createCompensations({
           employeeIds,
           dailyLimit,
-          startDate: startDate.toISOString().split('T')[0],
-          endDate: endDate.toISOString().split('T')[0],
+          startDate: formatISODate(startDate),
+          endDate: formatISODate(endDate),
           carryOver,
         })
         toast.success(
