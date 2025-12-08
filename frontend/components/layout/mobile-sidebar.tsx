@@ -14,7 +14,9 @@ export function MobileSidebar() {
   const pathname = usePathname()
   const { user, hasPermission, logout } = useAuthStore()
 
-  const canAccessUsers = user?.role === "Admin" || user?.role === "Superadmin"
+  const isDev = process.env.NODE_ENV === 'development'
+  // Users page: только в dev режиме, скрыта в production
+  const canAccessUsers = isDev
 
   const visibleItems = menuItems.filter((item) => {
     if (item.permission === "users") {

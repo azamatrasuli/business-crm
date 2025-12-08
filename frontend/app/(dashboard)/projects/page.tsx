@@ -356,44 +356,40 @@ export default function ProjectsPage() {
       )}
 
       {/* Stats Cards */}
-      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-2 grid-cols-2 sm:grid-cols-4">
         {/* Total Budget */}
-        <Card className="relative overflow-hidden border-2 border-emerald-500/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-green-500/5" />
-          <CardHeader className="relative pb-2">
-            <div className="flex items-center gap-2">
-              <div className="rounded-lg bg-gradient-to-br from-emerald-500/20 to-teal-500/20 p-1.5">
-                <Wallet className="h-4 w-4 text-emerald-500" />
+        <Card className="relative overflow-hidden border border-emerald-500/20 py-0">
+          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-transparent" />
+          <CardContent className="relative p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="rounded bg-emerald-500/10 p-1">
+                <Wallet className="h-3 w-3 text-emerald-500" />
               </div>
-              <CardTitle className="text-sm font-semibold">Общий бюджет</CardTitle>
+              <span className="text-xs text-muted-foreground">Общий бюджет</span>
             </div>
-          </CardHeader>
-          <CardContent className="relative">
-            <p className="text-2xl font-bold">{formatNumber(stats.totalBudget)}</p>
-            <p className="text-xs text-muted-foreground">TJS</p>
+            <p className="text-lg font-bold">{formatNumber(stats.totalBudget)}</p>
+            <p className="text-[10px] text-muted-foreground">TJS</p>
           </CardContent>
         </Card>
 
         {/* Total Spent */}
-        <Card className="relative overflow-hidden border-2 border-red-500/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-red-500/10 via-rose-500/5 to-pink-500/5" />
-          <CardHeader className="relative pb-2">
-            <div className="flex items-center gap-2">
-              <div className="rounded-lg bg-gradient-to-br from-red-500/20 to-rose-500/20 p-1.5">
-                <TrendingDown className="h-4 w-4 text-red-500" />
+        <Card className="relative overflow-hidden border border-red-500/20 py-0">
+          <div className="absolute inset-0 bg-gradient-to-br from-red-500/10 via-rose-500/5 to-transparent" />
+          <CardContent className="relative p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="rounded bg-red-500/10 p-1">
+                <TrendingDown className="h-3 w-3 text-red-500" />
               </div>
-              <CardTitle className="text-sm font-semibold">Всего расходов</CardTitle>
+              <span className="text-xs text-muted-foreground">Всего расходов</span>
             </div>
-          </CardHeader>
-          <CardContent className="relative">
-            <p className="text-2xl font-bold">{formatNumber(stats.totalSpent)}</p>
-            <div className="flex gap-3 mt-1 text-xs">
-              <span className="flex items-center gap-1 text-amber-600">
-                <UtensilsCrossed className="h-3 w-3" />
+            <p className="text-lg font-bold">{formatNumber(stats.totalSpent)}</p>
+            <div className="flex gap-2 text-[10px]">
+              <span className="flex items-center gap-0.5 text-amber-600">
+                <UtensilsCrossed className="h-2.5 w-2.5" />
                 {formatNumber(stats.spentLunch)}
               </span>
-              <span className="flex items-center gap-1 text-blue-600">
-                <CreditCard className="h-3 w-3" />
+              <span className="flex items-center gap-0.5 text-blue-600">
+                <CreditCard className="h-2.5 w-2.5" />
                 {formatNumber(stats.spentCompensation)}
               </span>
             </div>
@@ -401,48 +397,41 @@ export default function ProjectsPage() {
         </Card>
 
         {/* Remaining Budget */}
-        <Card className="relative overflow-hidden border-2 border-primary/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-purple-500/5 to-violet-500/5" />
-          <CardHeader className="relative pb-2">
-            <div className="flex items-center gap-2">
-              <div className="rounded-lg bg-gradient-to-br from-primary/20 to-purple-500/20 p-1.5">
-                <PiggyBank className="h-4 w-4 text-primary" />
+        <Card className="relative overflow-hidden border border-primary/20 py-0">
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-purple-500/5 to-transparent" />
+          <CardContent className="relative p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="rounded bg-primary/10 p-1">
+                <PiggyBank className="h-3 w-3 text-primary" />
               </div>
-              <CardTitle className="text-sm font-semibold">Остаток бюджета</CardTitle>
+              <span className="text-xs text-muted-foreground">Остаток</span>
             </div>
-          </CardHeader>
-          <CardContent className="relative">
-            <p className="text-2xl font-bold">{formatNumber(stats.totalRemaining)}</p>
-            <div className="mt-1">
-              <Progress value={stats.budgetUsedPercent} className="h-1.5" />
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Использовано {stats.budgetUsedPercent.toFixed(0)}%
-              </p>
-            </div>
+            <p className="text-lg font-bold">{formatNumber(stats.totalRemaining)}</p>
+            <p className="text-[10px] text-muted-foreground">
+              Использовано {stats.budgetUsedPercent.toFixed(0)}%
+            </p>
           </CardContent>
         </Card>
 
         {/* Employees */}
-        <Card className="relative overflow-hidden border-2 border-blue-500/20">
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-indigo-500/5 to-cyan-500/5" />
-          <CardHeader className="relative pb-2">
-            <div className="flex items-center gap-2">
-              <div className="rounded-lg bg-gradient-to-br from-blue-500/20 to-indigo-500/20 p-1.5">
-                <Users className="h-4 w-4 text-blue-500" />
+        <Card className="relative overflow-hidden border border-blue-500/20 py-0">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-indigo-500/5 to-transparent" />
+          <CardContent className="relative p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="rounded bg-blue-500/10 p-1">
+                <Users className="h-3 w-3 text-blue-500" />
               </div>
-              <CardTitle className="text-sm font-semibold">Сотрудники</CardTitle>
+              <span className="text-xs text-muted-foreground">Сотрудники</span>
             </div>
-          </CardHeader>
-          <CardContent className="relative">
-            <p className="text-2xl font-bold">{stats.totalEmployees}</p>
-            <div className="flex gap-3 mt-1 text-xs">
-              <span className="flex items-center gap-1 text-amber-600">
-                <UtensilsCrossed className="h-3 w-3" />
-                {stats.totalLunch} обеды
+            <p className="text-lg font-bold">{stats.totalEmployees}</p>
+            <div className="flex gap-2 text-[10px]">
+              <span className="flex items-center gap-0.5 text-amber-600">
+                <UtensilsCrossed className="h-2.5 w-2.5" />
+                {stats.totalLunch}
               </span>
-              <span className="flex items-center gap-1 text-blue-600">
-                <CreditCard className="h-3 w-3" />
-                {stats.totalCompensation} комп.
+              <span className="flex items-center gap-0.5 text-blue-600">
+                <CreditCard className="h-2.5 w-2.5" />
+                {stats.totalCompensation}
               </span>
             </div>
           </CardContent>

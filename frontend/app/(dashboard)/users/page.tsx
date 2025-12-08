@@ -6,9 +6,8 @@ import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { SortableHeader, useSort, sortData } from '@/components/ui/sortable-header'
-import { Plus, Pencil, Trash2, Users as UsersIcon, Shield, TrendingUp } from 'lucide-react'
+import { Plus, Pencil, Trash2, Users as UsersIcon } from 'lucide-react'
 import { CreateUserDialog } from '@/components/features/users/create-user-dialog'
 import { EditUserDialog } from '@/components/features/users/edit-user-dialog'
 import { DeleteUserDialog } from '@/components/features/users/delete-user-dialog'
@@ -21,7 +20,6 @@ import {
 } from '@/components/ui/tooltip'
 import { DataTable } from '@/components/ui/data-table'
 import type { ColumnDef } from '@tanstack/react-table'
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer } from 'recharts'
 
 export default function UsersPage() {
   const { users, isLoading: loading, error, total, currentPage, totalPages, fetchUsers, fetchAvailableRoutes } = useUsersStore()
@@ -51,40 +49,6 @@ export default function UsersPage() {
     [users]
   )
 
-  // Статистика пользователей
-  const usersStats = useMemo(() => {
-    const totalUsers = users.length
-    const activeUsers = users.filter((u) => u.status === 'Активный').length
-    const blockedUsers = users.filter((u) => u.status === 'Заблокирован').length
-    
-    // Распределение по ролям
-    const rolesMap = new Map<string, number>()
-    users.forEach((user) => {
-      const role = user.role || 'Без роли'
-      rolesMap.set(role, (rolesMap.get(role) || 0) + 1)
-    })
-    const rolesDistribution = Array.from(rolesMap.entries())
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-
-    // Администраторы
-    const admins = users.filter((u) => {
-      const roleName = u.role?.toLowerCase() || ''
-      return roleName.includes('admin')
-    }).length
-
-    // Процент активных
-    const activePercentage = totalUsers > 0 ? (activeUsers / totalUsers) * 100 : 0
-
-    return {
-      totalUsers,
-      activeUsers,
-      blockedUsers,
-      rolesDistribution,
-      admins,
-      activePercentage,
-    }
-  }, [users])
 
   const handleEdit = useCallback((user: User) => {
     setSelectedUser(user)
@@ -270,204 +234,6 @@ export default function UsersPage() {
         </Alert>
       )}
 
-      {/* Statistics Cards */}
-      {users.length > 0 && (
-        <div className="grid gap-2 sm:gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-          {/* Общая статистика */}
-          <Card className="relative overflow-hidden border-2 border-primary/20">
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-primary/5 to-purple-500/5" />
-            <CardHeader className="relative pb-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="rounded-lg bg-gradient-to-br from-primary/20 to-purple-500/20 p-1.5 shadow-sm">
-                    <UsersIcon className="h-4 w-4 text-primary" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-sm font-semibold text-foreground">Пользователи</CardTitle>
-                    <p className="text-[10px] text-muted-foreground">Общая статистика</p>
-                  </div>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="relative space-y-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] text-muted-foreground">Всего пользователей</p>
-                  <p className="text-lg font-bold mt-0.5">{usersStats.totalUsers}</p>
-                </div>
-                <div className="h-14 w-14">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={[
-                          { name: 'Активные', value: usersStats.activeUsers, fill: '#6528f5' },
-                          { name: 'Заблокированные', value: usersStats.blockedUsers, fill: '#c7d2fe' },
-                        ]}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={12}
-                        outerRadius={20}
-                        dataKey="value"
-                        startAngle={90}
-                        endAngle={-270}
-                      >
-                        <Cell key="active" fill="#6528f5" />
-                        <Cell key="blocked" fill="#c7d2fe" />
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                <div className="rounded-lg border border-primary/20 bg-primary/5 p-1.5">
-                  <div className="flex items-center gap-1 mb-0.5">
-                    <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                    <span className="text-[10px] text-muted-foreground">Активных</span>
-                  </div>
-                  <p className="text-sm font-bold text-primary">{usersStats.activeUsers}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    {usersStats.activePercentage.toFixed(0)}%
-                  </p>
-                </div>
-                <div className="rounded-lg border border-slate-500/20 bg-slate-500/5 p-1.5">
-                  <div className="flex items-center gap-1 mb-0.5">
-                    <div className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-                    <span className="text-[10px] text-muted-foreground">Заблокированных</span>
-                  </div>
-                  <p className="text-sm font-bold text-slate-600 dark:text-slate-400">{usersStats.blockedUsers}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    {((usersStats.blockedUsers / usersStats.totalUsers) * 100).toFixed(0)}%
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Распределение по ролям */}
-          <Card className="relative overflow-hidden border-2 border-blue-500/20">
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-indigo-500/5 to-purple-500/5" />
-            <CardHeader className="relative pb-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="rounded-lg bg-gradient-to-br from-blue-500/20 to-indigo-500/20 p-1.5 shadow-sm">
-                    <Shield className="h-4 w-4 text-blue-500" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-sm font-semibold text-foreground">Роли</CardTitle>
-                    <p className="text-[10px] text-muted-foreground">Распределение по ролям</p>
-                  </div>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="relative space-y-2">
-              <div className="h-12 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    layout="vertical"
-                    data={usersStats.rolesDistribution.slice(0, 3).map((role) => ({
-                      name: role.name.length > 10 ? role.name.substring(0, 10) + '...' : role.name,
-                      value: role.value,
-                    }))}
-                  >
-                    <defs>
-                      <linearGradient id="roleGradient" x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0%" stopColor="#3b82f6" stopOpacity={1} />
-                        <stop offset="100%" stopColor="#6366f1" stopOpacity={0.8} />
-                      </linearGradient>
-                    </defs>
-                    <XAxis type="number" hide />
-                    <YAxis dataKey="name" type="category" hide />
-                    <Bar dataKey="value" fill="url(#roleGradient)" radius={[0, 4, 4, 0]} isAnimationActive={false} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="space-y-1">
-                {usersStats.rolesDistribution.slice(0, 3).map((role, idx) => (
-                  <div key={idx} className="flex items-center justify-between text-[10px]">
-                    <span className="text-muted-foreground truncate flex-1">{role.name}</span>
-                    <span className="font-semibold ml-2">{role.value}</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Статусы пользователей */}
-          <Card className="relative overflow-hidden border-2 border-orange-500/20">
-            <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 via-amber-500/5 to-red-500/5" />
-            <CardHeader className="relative pb-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="rounded-lg bg-gradient-to-br from-orange-500/20 to-amber-500/20 p-1.5 shadow-sm">
-                    <TrendingUp className="h-4 w-4 text-orange-500" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-sm font-semibold text-foreground">Статусы</CardTitle>
-                    <p className="text-[10px] text-muted-foreground">Активность пользователей</p>
-                  </div>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="relative space-y-2">
-              <div className="space-y-1">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-[10px] font-medium text-muted-foreground">Активных</span>
-                  <span className="text-sm font-bold">{usersStats.activeUsers}</span>
-                </div>
-                <div className="h-12 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      layout="vertical"
-                      data={[
-                        {
-                          name: 'Активность',
-                          Использовано: usersStats.totalUsers > 0
-                            ? (usersStats.activeUsers / usersStats.totalUsers) * 100
-                            : 0,
-                        },
-                      ]}
-                    >
-                      <defs>
-                        <linearGradient id="statusGradient" x1="0" y1="0" x2="1" y2="0">
-                          <stop offset="0%" stopColor="#f97316" stopOpacity={1} />
-                          <stop offset="100%" stopColor="#fb923c" stopOpacity={0.8} />
-                        </linearGradient>
-                      </defs>
-                      <XAxis type="number" domain={[0, 100]} hide />
-                      <YAxis dataKey="name" type="category" hide />
-                      <Bar
-                        dataKey="Использовано"
-                        fill="url(#statusGradient)"
-                        radius={[0, 4, 4, 0]}
-                        isAnimationActive={false}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                  <span>Заблокированных</span>
-                  <span className="font-semibold text-foreground">
-                    {usersStats.totalUsers > 0
-                      ? ((usersStats.blockedUsers / usersStats.totalUsers) * 100).toFixed(1)
-                      : 0}
-                    %
-                  </span>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                <div className="rounded-lg border border-orange-500/20 bg-orange-500/5 p-1.5">
-                  <div className="text-[10px] text-muted-foreground mb-0.5">Активных</div>
-                  <div className="text-xs font-bold">{usersStats.activeUsers}</div>
-                </div>
-                <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-1.5">
-                  <div className="text-[10px] text-muted-foreground mb-0.5">Заблокированных</div>
-                  <div className="text-xs font-bold">{usersStats.blockedUsers}</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
 
       {/* Users Table */}
       <DataTable

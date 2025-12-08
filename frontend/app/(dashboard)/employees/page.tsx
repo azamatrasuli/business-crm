@@ -49,7 +49,6 @@ import { debounce } from 'lodash-es'
 import type { Employee } from '@/lib/api/employees'
 import { DataTable } from '@/components/ui/data-table'
 import type { ColumnDef } from '@tanstack/react-table'
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer } from 'recharts'
 
 // Вспомогательные функции для отображения
 
@@ -175,52 +174,54 @@ export default function EmployeesPage() {
     fetchEmployees(page)
   }
 
-  // Статистика сотрудников
+  // Статистика сотрудников (бизнес-метрики)
   const employeesStats = useMemo(() => {
     const totalEmployees = employees.length
     const activeEmployees = employees.filter((e) => e.isActive).length
-    const inactiveEmployees = employees.filter((e) => !e.isActive).length
-
-    // Статистика по бюджетам
-    const employeesWithBudget = employees.filter((e) => e.totalBudget && e.totalBudget > 0)
-    const totalBudget = employeesWithBudget.reduce((sum, e) => sum + (e.totalBudget || 0), 0)
-    const avgBudget = employeesWithBudget.length > 0 ? totalBudget / employeesWithBudget.length : 0
-    const maxBudget = employeesWithBudget.length > 0
-      ? Math.max(...employeesWithBudget.map((e) => e.totalBudget || 0))
-      : 0
-
-    // Статистика по статусам приглашений
-    const acceptedInvites = employees.filter((e) => e.inviteStatus === 'Принято').length
-    const pendingInvites = employees.filter((e) => e.inviteStatus === 'Ожидает').length
-    const rejectedInvites = employees.filter((e) => e.inviteStatus === 'Отклонено').length
-
-    // Статистика по обедам
-    const activeMeals = employees.filter((e) => e.mealStatus === 'Активен').length
-    const pausedMeals = employees.filter((e) => e.mealStatus === 'На паузе').length
-    const noMeals = employees.filter((e) => e.mealStatus === 'Не заказан' || !e.mealStatus).length
-
-    // Процент активных
-    const activePercentage = totalEmployees > 0 ? (activeEmployees / totalEmployees) * 100 : 0
-
-    // Процент с принятыми приглашениями
-    const acceptedPercentage = totalEmployees > 0 ? (acceptedInvites / totalEmployees) * 100 : 0
+    
+    // Сотрудники с активными услугами
+    const withLunch = employees.filter((e) => e.lunchSubscription?.status === 'Активна').length
+    const withCompensation = employees.filter((e) => e.compensation?.status === 'Активна').length
+    
+    // Сотрудники без услуг (активные, но без ланча и компенсации)
+    const withoutService = employees.filter((e) => 
+      e.isActive && 
+      e.inviteStatus === 'Принято' &&
+      !e.lunchSubscription && 
+      !e.compensation
+    ).length
+    
+    // Ожидают приглашения (требуют внимания сегодня)
+    const pendingInvites = employees.filter((e) => e.isActive && e.inviteStatus === 'Ожидает').length
+    
+    // Финансы: сумма бюджетов подписок
+    const totalLunchBudget = employees.reduce((sum, e) => 
+      sum + (e.lunchSubscription?.totalPrice || 0), 0)
+    const totalCompensationBudget = employees.reduce((sum, e) => 
+      sum + (e.compensation?.totalBudget || 0), 0)
+    const usedCompensation = employees.reduce((sum, e) => 
+      sum + (e.compensation?.usedAmount || 0), 0)
+    
+    // Заканчивается подписка скоро (в течение 3 дней)
+    const today = new Date()
+    const threeDaysLater = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000)
+    const expiringLunch = employees.filter((e) => {
+      if (!e.lunchSubscription?.endDate) return false
+      const endDate = new Date(e.lunchSubscription.endDate)
+      return endDate >= today && endDate <= threeDaysLater
+    }).length
 
     return {
       totalEmployees,
       activeEmployees,
-      inactiveEmployees,
-      totalBudget,
-      avgBudget,
-      maxBudget,
-      employeesWithBudget: employeesWithBudget.length,
-      acceptedInvites,
+      withLunch,
+      withCompensation,
+      withoutService,
       pendingInvites,
-      rejectedInvites,
-      activeMeals,
-      pausedMeals,
-      noMeals,
-      activePercentage,
-      acceptedPercentage,
+      expiringLunch,
+      totalLunchBudget,
+      totalCompensationBudget,
+      usedCompensation,
     }
   }, [employees])
 
@@ -625,219 +626,76 @@ export default function EmployeesPage() {
         </Alert>
       )}
 
-      {/* Statistics Cards */}
+      {/* Stats Cards */}
       {employees.length > 0 && (
-        <div className="grid gap-2 sm:gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-          {/* Общая статистика */}
-          <Card className="relative overflow-hidden border-2 border-primary/20">
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-primary/5 to-purple-500/5" />
-            <CardHeader className="relative pb-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="rounded-lg bg-gradient-to-br from-primary/20 to-purple-500/20 p-1.5 shadow-sm">
-                    <UserIcon className="h-4 w-4 text-primary" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-sm font-semibold text-foreground">Сотрудники</CardTitle>
-                    <p className="text-[10px] text-muted-foreground">Общая статистика</p>
-                  </div>
+        <div className="grid gap-2 grid-cols-2 sm:grid-cols-4">
+          {/* Сотрудники */}
+          <Card className="relative overflow-hidden border border-primary/20 py-0">
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-purple-500/5 to-transparent" />
+            <CardContent className="relative p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="rounded bg-primary/10 p-1">
+                  <UserIcon className="h-3 w-3 text-primary" />
                 </div>
+                <span className="text-xs text-muted-foreground">Сотрудники</span>
               </div>
-            </CardHeader>
-            <CardContent className="relative space-y-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] text-muted-foreground">Всего сотрудников</p>
-                  <p className="text-lg font-bold mt-0.5">{employeesStats.totalEmployees}</p>
-                </div>
-                <div className="h-14 w-14">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={[
-                          { name: 'Активные', value: employeesStats.activeEmployees, fill: '#6528f5' },
-                          { name: 'Деактивированные', value: employeesStats.inactiveEmployees, fill: '#c7d2fe' },
-                        ]}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={12}
-                        outerRadius={20}
-                        dataKey="value"
-                        startAngle={90}
-                        endAngle={-270}
-                      >
-                        <Cell key="active" fill="#6528f5" />
-                        <Cell key="inactive" fill="#c7d2fe" />
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                <div className="rounded-lg border border-primary/20 bg-primary/5 p-1.5">
-                  <div className="flex items-center gap-1 mb-0.5">
-                    <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-                    <span className="text-[10px] text-muted-foreground">Активных</span>
-                  </div>
-                  <p className="text-sm font-bold text-primary">{employeesStats.activeEmployees}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    {employeesStats.activePercentage.toFixed(0)}%
-                  </p>
-                </div>
-                <div className="rounded-lg border border-slate-500/20 bg-slate-500/5 p-1.5">
-                  <div className="flex items-center gap-1 mb-0.5">
-                    <div className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-                    <span className="text-[10px] text-muted-foreground">Деактивированных</span>
-                  </div>
-                  <p className="text-sm font-bold text-slate-600 dark:text-slate-400">{employeesStats.inactiveEmployees}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">
-                    {((employeesStats.inactiveEmployees / employeesStats.totalEmployees) * 100).toFixed(0)}%
-                  </p>
-                </div>
-              </div>
+              <p className="text-lg font-bold">{employeesStats.activeEmployees}<span className="text-sm text-muted-foreground font-normal">/{employeesStats.totalEmployees}</span></p>
+              <p className="text-[10px] text-muted-foreground">активных</p>
             </CardContent>
           </Card>
 
-          {/* Статистика по бюджетам */}
-          <Card className="relative overflow-hidden border-2 border-blue-500/20">
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-indigo-500/5 to-purple-500/5" />
-            <CardHeader className="relative pb-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="rounded-lg bg-gradient-to-br from-blue-500/20 to-indigo-500/20 p-1.5 shadow-sm">
-                    <Wallet className="h-4 w-4 text-blue-500" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-sm font-semibold text-foreground">Бюджеты</CardTitle>
-                    <p className="text-[10px] text-muted-foreground">Статистика по бюджетам</p>
-                  </div>
+          {/* Обеды - бюджет */}
+          <Card className="relative overflow-hidden border border-amber-500/20 py-0">
+            <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent" />
+            <CardContent className="relative p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="rounded bg-amber-500/10 p-1">
+                  <UtensilsCrossed className="h-3 w-3 text-amber-500" />
                 </div>
+                <span className="text-xs text-muted-foreground">Обеды</span>
               </div>
-            </CardHeader>
-            <CardContent className="relative space-y-2">
-              <div className="space-y-1">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-[10px] font-medium text-muted-foreground">Общий бюджет</span>
-                  <span className="text-sm font-bold">{employeesStats.totalBudget.toLocaleString()} TJS</span>
-                </div>
-                <div className="h-12 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      layout="vertical"
-                      data={[
-                        {
-                          name: 'Бюджет',
-                          Использовано: employeesStats.totalEmployees > 0
-                            ? (employeesStats.employeesWithBudget / employeesStats.totalEmployees) * 100
-                            : 0,
-                        },
-                      ]}
-                    >
-                      <defs>
-                        <linearGradient id="employeeBudgetGradient" x1="0" y1="0" x2="1" y2="0">
-                          <stop offset="0%" stopColor="#3b82f6" stopOpacity={1} />
-                          <stop offset="100%" stopColor="#6366f1" stopOpacity={0.8} />
-                        </linearGradient>
-                      </defs>
-                      <XAxis type="number" domain={[0, 100]} hide />
-                      <YAxis dataKey="name" type="category" hide />
-                      <Bar dataKey="Использовано" fill="url(#employeeBudgetGradient)" radius={[0, 4, 4, 0]} isAnimationActive={false} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-1.5">
-                    <div className="text-[10px] text-muted-foreground mb-0.5">Средний</div>
-                    <div className="text-xs font-bold">{employeesStats.avgBudget.toLocaleString()} TJS</div>
-                  </div>
-                  <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-1.5">
-                    <div className="text-[10px] text-muted-foreground mb-0.5">Максимальный</div>
-                    <div className="text-xs font-bold">{employeesStats.maxBudget.toLocaleString()} TJS</div>
-                  </div>
-                </div>
-              </div>
+              <p className="text-lg font-bold">{employeesStats.totalLunchBudget.toLocaleString()}<span className="text-xs text-muted-foreground font-normal ml-1">TJS</span></p>
+              <p className="text-[10px] text-muted-foreground">
+                {employeesStats.withLunch} подписок
+                {employeesStats.expiringLunch > 0 && (
+                  <span className="text-amber-600 ml-1">• {employeesStats.expiringLunch} истекают</span>
+                )}
+              </p>
             </CardContent>
           </Card>
 
-          {/* Статусы обедов */}
-          <Card className="relative overflow-hidden border-2 border-emerald-500/20">
-            <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-green-500/5" />
-            <CardHeader className="relative pb-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="rounded-lg bg-gradient-to-br from-emerald-500/20 to-teal-500/20 p-1.5 shadow-sm">
-                    <UtensilsCrossed className="h-4 w-4 text-emerald-500" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-sm font-semibold text-foreground">Обеды</CardTitle>
-                    <p className="text-[10px] text-muted-foreground">Статусы обедов</p>
-                  </div>
+          {/* Компенсации - использовано */}
+          <Card className="relative overflow-hidden border border-emerald-500/20 py-0">
+            <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-transparent" />
+            <CardContent className="relative p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="rounded bg-emerald-500/10 p-1">
+                  <Wallet className="h-3 w-3 text-emerald-500" />
                 </div>
+                <span className="text-xs text-muted-foreground">Компенсации</span>
               </div>
-            </CardHeader>
-            <CardContent className="relative space-y-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] text-muted-foreground">Активных обедов</p>
-                  <p className="text-lg font-bold mt-0.5">{employeesStats.activeMeals}</p>
+              <p className="text-lg font-bold">{employeesStats.usedCompensation.toLocaleString()}<span className="text-xs text-muted-foreground font-normal ml-1">TJS</span></p>
+              <p className="text-[10px] text-muted-foreground">из {employeesStats.totalCompensationBudget.toLocaleString()} ({employeesStats.withCompensation} чел.)</p>
+            </CardContent>
+          </Card>
+
+          {/* Требуют внимания */}
+          <Card className="relative overflow-hidden border border-orange-500/20 py-0">
+            <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 via-red-500/5 to-transparent" />
+            <CardContent className="relative p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="rounded bg-orange-500/10 p-1">
+                  <AlertTriangle className="h-3 w-3 text-orange-500" />
                 </div>
-                <div className="h-14 w-14">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={[
-                          { name: 'Активен', value: employeesStats.activeMeals, fill: '#10b981' },
-                          { name: 'На паузе', value: employeesStats.pausedMeals, fill: '#34d399' },
-                          { name: 'Не заказан', value: employeesStats.noMeals, fill: '#d1fae5' },
-                        ]}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={12}
-                        outerRadius={20}
-                        dataKey="value"
-                        startAngle={90}
-                        endAngle={-270}
-                      >
-                        <Cell key="active" fill="#10b981" />
-                        <Cell key="paused" fill="#34d399" />
-                        <Cell key="none" fill="#d1fae5" />
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
+                <span className="text-xs text-muted-foreground">Внимание</span>
               </div>
-              <div className="grid grid-cols-3 gap-1">
-                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-1">
-                  <div className="text-[10px] text-muted-foreground mb-0.5">Активен</div>
-                  <div className="text-xs font-bold">{employeesStats.activeMeals}</div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5">
-                    {employeesStats.totalEmployees > 0
-                      ? ((employeesStats.activeMeals / employeesStats.totalEmployees) * 100).toFixed(0)
-                      : 0}
-                    %
-                  </div>
-                </div>
-                <div className="rounded-lg border border-teal-500/20 bg-teal-500/5 p-1">
-                  <div className="text-[10px] text-muted-foreground mb-0.5">На паузе</div>
-                  <div className="text-xs font-bold">{employeesStats.pausedMeals}</div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5">
-                    {employeesStats.totalEmployees > 0
-                      ? ((employeesStats.pausedMeals / employeesStats.totalEmployees) * 100).toFixed(0)
-                      : 0}
-                    %
-                  </div>
-                </div>
-                <div className="rounded-lg border border-slate-500/20 bg-slate-500/5 p-1">
-                  <div className="text-[10px] text-muted-foreground mb-0.5">Не заказан</div>
-                  <div className="text-xs font-bold">{employeesStats.noMeals}</div>
-                  <div className="text-[10px] text-muted-foreground mt-0.5">
-                    {employeesStats.totalEmployees > 0
-                      ? ((employeesStats.noMeals / employeesStats.totalEmployees) * 100).toFixed(0)
-                      : 0}
-                    %
-                  </div>
-                </div>
-              </div>
+              <p className="text-lg font-bold">{employeesStats.withoutService + employeesStats.pendingInvites}</p>
+              <p className="text-[10px] text-muted-foreground">
+                {employeesStats.pendingInvites > 0 && `${employeesStats.pendingInvites} ждут приглаш.`}
+                {employeesStats.pendingInvites > 0 && employeesStats.withoutService > 0 && ' • '}
+                {employeesStats.withoutService > 0 && `${employeesStats.withoutService} без услуг`}
+                {employeesStats.pendingInvites === 0 && employeesStats.withoutService === 0 && 'всё ок ✓'}
+              </p>
             </CardContent>
           </Card>
         </div>

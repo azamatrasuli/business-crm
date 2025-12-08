@@ -161,7 +161,9 @@ export function Sidebar() {
     window.location.href = '/login'
   }
 
-  const canAccessUsers = user?.role === 'Admin' || user?.role === 'Superadmin'
+  const isDev = process.env.NODE_ENV === 'development'
+  // Users page: только в dev режиме, скрыта в production
+  const canAccessUsers = isDev
 
   const visibleItems = menuItems.filter((item) => {
     // Projects page is only visible for headquarters admins
