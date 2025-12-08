@@ -44,6 +44,11 @@ interface LunchSubscriptionSummary {
   scheduleType: ScheduleType;
   customDays?: string[];
   status: string;
+  // Данные из БД (после нормализации)
+  totalDays?: number;
+  totalPrice?: number;
+  futureOrdersCount?: number;
+  completedOrdersCount?: number;
 }
 
 interface ManageLunchDialogProps {
@@ -95,6 +100,22 @@ export function ManageLunchDialog({
   open, onOpenChange, mode, employee, employees: propEmployees = [], existingSubscription, onSuccess,
 }: ManageLunchDialogProps) {
   const isEditing = Boolean(existingSubscription);
+  
+  // Debug: логируем данные подписки при открытии
+  useEffect(() => {
+    if (open && existingSubscription) {
+      console.log('[ManageLunchDialog] existingSubscription data:', {
+        id: existingSubscription.id,
+        totalDays: existingSubscription.totalDays,
+        totalPrice: existingSubscription.totalPrice,
+        futureOrdersCount: existingSubscription.futureOrdersCount,
+        completedOrdersCount: existingSubscription.completedOrdersCount,
+        startDate: existingSubscription.startDate,
+        endDate: existingSubscription.endDate,
+      });
+    }
+  }, [open, existingSubscription]);
+  
   const [step, setStep] = useState(1);
   const [comboType, setComboType] = useState<ComboType>("Комбо 25");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
@@ -232,7 +253,13 @@ export function ManageLunchDialog({
   }, [mode, employee]);
 
   // Calculate days for individual mode or as default estimate
+  // При редактировании - берём реальные данные из БД!
   const calculatedDays = useMemo(() => {
+    // При редактировании существующей подписки - используем данные из БД
+    if (isEditing && existingSubscription?.totalDays !== undefined) {
+      return existingSubscription.totalDays;
+    }
+    
     if (!startDate || !endDate) return 0;
     if (scheduleType === "CUSTOM") return customDates.length;
     
@@ -250,7 +277,7 @@ export function ManageLunchDialog({
       current = addDays(current, 1);
     }
     return count;
-  }, [startDate, endDate, scheduleType, customDates, workingDays]);
+  }, [isEditing, existingSubscription?.totalDays, startDate, endDate, scheduleType, customDates, workingDays]);
 
   // For bulk mode: calculate total price based on each employee's individual working days
   const bulkCalculatedData = useMemo(() => {
@@ -290,9 +317,21 @@ export function ManageLunchDialog({
   }, [mode, startDate, endDate, selectedEmployeeIds, employees, scheduleType, customDates, selectedCombo.price]);
 
   // Total price: use bulk calculation for bulk mode, simple calculation for individual
-  const totalPrice = mode === "bulk" 
-    ? bulkCalculatedData.totalPrice 
-    : calculatedDays * selectedCombo.price;
+  // При редактировании берём цену из БД если комбо не изменилось
+  const totalPrice = useMemo(() => {
+    if (mode === "bulk") {
+      return bulkCalculatedData.totalPrice;
+    }
+    
+    // При редактировании с тем же комбо - показываем реальную цену из БД
+    if (isEditing && existingSubscription?.totalPrice !== undefined && 
+        existingSubscription.comboType === comboType) {
+      return existingSubscription.totalPrice;
+    }
+    
+    // Иначе пересчитываем
+    return calculatedDays * selectedCombo.price;
+  }, [mode, bulkCalculatedData.totalPrice, isEditing, existingSubscription?.totalPrice, existingSubscription?.comboType, comboType, calculatedDays, selectedCombo.price]);
 
   // В individual mode блокируем весь процесс если сотрудник не подходит
   const canProceedStep1 = Boolean(comboType) && (mode !== "individual" || individualValidation.isValid);
@@ -532,41 +571,20 @@ export function ManageLunchDialog({
       return { total: calculatedDays, remaining: calculatedDays };
     }
     
-    // Для редактирования - вычисляем оставшиеся дни с учётом прошедших
-    const today = startOfDay(new Date());
-    
-    // Считаем общее количество дней доставки на основе текущих настроек (calculatedDays)
-    const total = calculatedDays;
-    
-    // Считаем оставшиеся дни (будущие) на основе выбранного периода и графика
-    let remaining = 0;
-    let current = new Date(startDate);
-    const end = new Date(endDate);
-    
-    while (current <= end) {
-      const dow = current.getDay() as DayOfWeek;
-      
-      let isDeliveryDay = false;
-      if (scheduleType === "EVERY_DAY") {
-        isDeliveryDay = workingDays.includes(dow);
-      } else if (scheduleType === "EVERY_OTHER_DAY") {
-        isDeliveryDay = workingDays.includes(dow) && [1, 3, 5].includes(dow);
-      } else if (scheduleType === "CUSTOM") {
-        const dateStr = format(current, 'yyyy-MM-dd');
-        isDeliveryDay = customDates.some(d => format(d, 'yyyy-MM-dd') === dateStr);
-      }
-      
-      if (isDeliveryDay && current >= today) {
-        remaining++;
-      }
-      current = addDays(current, 1);
-    }
+    // При редактировании - берём реальные данные из БД!
+    const total = existingSubscription.totalDays ?? calculatedDays;
+    const remaining = existingSubscription.futureOrdersCount ?? total;
     
     return { total, remaining };
-  }, [existingSubscription, startDate, endDate, workingDays, calculatedDays, scheduleType, customDates]);
+  }, [existingSubscription, startDate, endDate, calculatedDays]);
 
   const originalPrice = useMemo(() => {
     if (!existingSubscription) return 0;
+    // Берём реальную цену из БД если есть
+    if (existingSubscription.totalPrice !== undefined) {
+      return existingSubscription.totalPrice;
+    }
+    // Fallback: вычисляем по старому
     const origCombo = COMBO_OPTIONS.find(c => c.value === existingSubscription.comboType);
     return remainingDays.total * (origCombo?.price || 0);
   }, [existingSubscription, remainingDays.total]);
