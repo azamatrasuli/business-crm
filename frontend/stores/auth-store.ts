@@ -290,31 +290,35 @@ export const useAuthStore = create<AuthStore>()(
       },
 
       stopImpersonating: async () => {
-        const { originalUser } = get()
-
-        if (!originalUser) {
-          console.error('No original user to restore')
-          return
-        }
-
         try {
-          await authApi.stopImpersonation()
+          // Backend returns fresh tokens and user data for the original user
+          const response = await authApi.stopImpersonation()
+
+          if (!response.user) {
+            throw new Error('No user data returned')
+          }
+
+          setAuthStatusCookie()
+
+          set({
+            user: response.user,
+            ...extractUserContext(response.user),
+            isImpersonating: false,
+            impersonatedBy: null,
+            originalUser: null,
+          })
+
+          if (typeof window !== 'undefined') {
+            window.location.href = '/'
+          }
         } catch (error) {
-          console.warn('Failed to stop impersonation:', error)
-        }
-
-        setAuthStatusCookie()
-
-        set({
-          user: originalUser,
-          ...extractUserContext(originalUser),
-          isImpersonating: false,
-          impersonatedBy: null,
-          originalUser: null,
-        })
-
-        if (typeof window !== 'undefined') {
-          window.location.href = '/'
+          console.error('Failed to stop impersonation:', error)
+          // Fallback: clear auth state and redirect to login
+          clearAuthStatusCookie()
+          set(clearAuthState())
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login'
+          }
         }
       },
 

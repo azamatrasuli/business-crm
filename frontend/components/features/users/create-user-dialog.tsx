@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -226,7 +227,7 @@ const CreateUserDialogComponent = ({ open, onOpenChange }: CreateUserDialogProps
                         <FormItem>
                           <FormLabel>Пароль *</FormLabel>
                           <FormControl>
-                            <Input type="password" placeholder="Минимум 6 символов" {...field} />
+                            <PasswordInput placeholder="Минимум 6 символов" {...field} />
                           </FormControl>
                           <FormDescription>
                             Это временный пароль. Пользователь поменяет его при первом входе.
@@ -243,7 +244,7 @@ const CreateUserDialogComponent = ({ open, onOpenChange }: CreateUserDialogProps
                         <FormItem>
                           <FormLabel>Подтвердите пароль *</FormLabel>
                           <FormControl>
-                            <Input type="password" placeholder="Повторите пароль" {...field} />
+                            <PasswordInput placeholder="Повторите пароль" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

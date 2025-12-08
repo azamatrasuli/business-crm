@@ -117,8 +117,9 @@ export const authApi = {
     return response.data
   },
 
-  async stopImpersonation(): Promise<void> {
-    await apiClient.post('/auth/stop-impersonation', {})
+  async stopImpersonation(): Promise<LoginResponse> {
+    const response = await apiClient.post<LoginResponse>('/auth/stop-impersonation', {})
+    return response.data
   },
 
   async getAllAdmins(search?: string): Promise<AdminListItem[]> {

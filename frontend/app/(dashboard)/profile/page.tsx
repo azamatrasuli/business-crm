@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -250,9 +251,8 @@ export default function ProfilePage() {
                       <FormLabel>Текущий пароль</FormLabel>
                       <FormControl>
                         <div className="relative">
-                          <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                          <Input
-                            type="password"
+                          <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4 z-10" />
+                          <PasswordInput
                             placeholder="Временный пароль"
                             className="pl-10"
                             disabled={passwordLoading}
@@ -273,9 +273,8 @@ export default function ProfilePage() {
                       <FormLabel>Новый пароль</FormLabel>
                       <FormControl>
                         <div className="relative">
-                          <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                          <Input
-                            type="password"
+                          <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4 z-10" />
+                          <PasswordInput
                             placeholder="Минимум 6 символов"
                             className="pl-10"
                             disabled={passwordLoading}
@@ -296,9 +295,9 @@ export default function ProfilePage() {
                       <FormLabel>Подтвердите пароль</FormLabel>
                       <FormControl>
                         <div className="relative">
-                          <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                          <Input
-                            type="password"
+                          <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4 z-10" />
+                          <PasswordInput
+                            placeholder="Повторите пароль"
                             className="pl-10"
                             disabled={passwordLoading}
                             {...field}

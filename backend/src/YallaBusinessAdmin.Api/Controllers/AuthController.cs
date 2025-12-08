@@ -233,11 +233,11 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Stop impersonation and log the action
+    /// Stop impersonation and restore original user session with fresh tokens
     /// </summary>
     [HttpPost("stop-impersonation")]
     [Authorize]
-    public async Task<ActionResult> StopImpersonation([FromBody] StopImpersonationRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<LoginResponse>> StopImpersonation([FromBody] StopImpersonationRequest request, CancellationToken cancellationToken)
     {
         var impersonatorId = GetImpersonatorId();
         if (impersonatorId == null)
@@ -253,12 +253,14 @@ public class AuthController : ControllerBase
 
         var ipAddress = GetClientIpAddress();
         var userAgent = GetUserAgent();
-        await _authService.StopImpersonatingAsync(impersonatorId.Value, impersonatedUserId.Value, ipAddress, userAgent, cancellationToken);
+        
+        // Stop impersonation and get fresh tokens for the original user
+        var result = await _authService.StopImpersonatingAsync(impersonatorId.Value, impersonatedUserId.Value, ipAddress, userAgent, cancellationToken);
 
-        // Clear impersonation cookies - frontend will restore original token
-        ClearTokenCookies();
+        // Set new cookies for the original user
+        SetTokenCookies(result.Token, result.RefreshToken, result.ExpiresAt);
 
-        return Ok(new { success = true, message = "Режим имперсонации завершён" });
+        return Ok(result);
     }
 
     /// <summary>

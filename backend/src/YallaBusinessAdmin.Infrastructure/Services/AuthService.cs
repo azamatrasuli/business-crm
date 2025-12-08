@@ -578,7 +578,7 @@ public class AuthService : IAuthService
         };
     }
 
-    public async Task StopImpersonatingAsync(
+    public async Task<LoginResponse> StopImpersonatingAsync(
         Guid impersonatorId, 
         Guid impersonatedUserId, 
         string? ipAddress = null, 
@@ -597,6 +597,64 @@ public class AuthService : IAuthService
                 impersonatedCompany = impersonatedUser?.Company?.Name ?? "Unknown" 
             },
             ipAddress: ipAddress, userAgent: userAgent, cancellationToken: cancellationToken);
+
+        // Get the original user (impersonator) and generate fresh tokens
+        var originalUser = await _context.AdminUsers
+            .Include(u => u.Permissions)
+            .Include(u => u.Project)
+            .Include(u => u.Company)
+            .FirstOrDefaultAsync(u => u.Id == impersonatorId && u.DeletedAt == null, cancellationToken);
+
+        if (originalUser == null)
+        {
+            throw new KeyNotFoundException("Оригинальный пользователь не найден");
+        }
+
+        // Generate fresh tokens for the original user (no impersonation claim)
+        var accessToken = _jwtService.GenerateToken(originalUser);
+        var refreshToken = GenerateRefreshToken();
+        var refreshTokenHash = HashToken(refreshToken);
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(24).ToUnixTimeMilliseconds();
+        
+        // Store refresh token
+        var refreshTokenEntity = new RefreshToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = originalUser.Id,
+            TokenHash = refreshTokenHash,
+            ExpiresAt = DateTime.UtcNow.AddDays(RefreshTokenExpirationDays),
+            CreatedAt = DateTime.UtcNow,
+            IpAddress = ipAddress,
+            DeviceInfo = userAgent
+        };
+        
+        await _context.RefreshTokens.AddAsync(refreshTokenEntity, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return new LoginResponse
+        {
+            Token = accessToken,
+            RefreshToken = refreshToken,
+            ExpiresAt = expiresAt,
+            IsImpersonating = false,
+            ImpersonatedBy = null,
+            User = new UserDto
+            {
+                Id = originalUser.Id,
+                FullName = originalUser.FullName,
+                Phone = originalUser.Phone,
+                Email = originalUser.Email,
+                Role = originalUser.Role,
+                Status = originalUser.Status.ToRussian(),
+                CompanyId = originalUser.CompanyId,
+                CompanyName = originalUser.Company?.Name,
+                ProjectId = originalUser.ProjectId,
+                ProjectName = originalUser.Project?.Name,
+                IsHeadquarters = originalUser.Project?.IsHeadquarters ?? false,
+                ProjectServiceTypes = originalUser.Project?.ServiceTypes,
+                Permissions = originalUser.Permissions.Select(p => p.Route)
+            }
+        };
     }
 
     // Helper methods
