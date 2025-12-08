@@ -13,6 +13,7 @@ import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import { toast } from 'sonner'
 import { formatISODate } from '@/lib/utils/date'
+import { DEFAULT_WORKING_DAYS, getEffectiveWorkingDays, countWorkingDaysInRange } from '@/lib/constants/employee'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -136,18 +137,19 @@ export function useCompensationForm({
   const endDate = dateRange?.to
   const totalDays = startDate && endDate ? differenceInDays(endDate, startDate) + 1 : 0
 
-  // Calculate working days (Mon-Fri) in the period
+  // Get employee's working days or use default
+  const employeeWorkingDays = useMemo(() => {
+    if (mode === 'individual' && employee) {
+      return getEffectiveWorkingDays((employee as EmployeeDetail).workingDays)
+    }
+    return DEFAULT_WORKING_DAYS
+  }, [mode, employee])
+
+  // Calculate working days based on employee's actual working days
   const workingDays = useMemo(() => {
     if (!startDate || !endDate) return 0
-    let count = 0
-    let current = new Date(startDate)
-    while (current <= endDate) {
-      const dow = current.getDay()
-      if (dow >= 1 && dow <= 5) count++
-      current = addDays(current, 1)
-    }
-    return count
-  }, [startDate, endDate])
+    return countWorkingDaysInRange(employeeWorkingDays, startDate, endDate)
+  }, [startDate, endDate, employeeWorkingDays])
 
   const totalBudget = dailyLimit * workingDays
   const totalCost = totalBudget * (mode === 'bulk' ? selectedEmployeeIds.length : 1)

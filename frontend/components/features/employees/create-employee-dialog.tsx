@@ -368,7 +368,8 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
                   <div className="flex gap-1">
                     {DAYS_OF_WEEK.map((day) => {
                       const isSelected = workingDays.includes(day.value)
-                      const isWeekend = day.value === 0 || day.value === 6
+                      // Use actual working days from form to determine styling
+                      // Non-selected days are shown as "dimmed" instead of hardcoding weekends
                       return (
                         <button
                           key={day.value}
@@ -378,9 +379,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
                             "flex-1 py-2 rounded-lg text-sm font-medium transition-all border-2",
                             isSelected
                               ? "bg-primary text-primary-foreground border-primary"
-                              : isWeekend
-                                ? "bg-muted/50 text-muted-foreground border-transparent hover:border-muted-foreground/20"
-                                : "bg-background text-foreground border-transparent hover:border-primary/30"
+                              : "bg-muted/50 text-muted-foreground border-transparent hover:border-primary/30"
                           )}
                         >
                           {day.shortLabel}

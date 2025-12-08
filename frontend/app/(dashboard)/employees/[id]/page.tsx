@@ -1020,12 +1020,12 @@ export default function EmployeeDetailPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Дни недели - компактно */}
-              <div className="space-y-2">
+                <div className="space-y-2">
                 <div className="flex gap-1">
                   {[1, 2, 3, 4, 5, 6, 0].map((d) => {
                     const dow = d as DayOfWeek
                     const isWorking = workingDays.includes(dow)
-                    const isWeekend = dow === 0 || dow === 6
+                    // Use employee's actual working days for styling instead of hardcoded weekend
                     return (
                       <div
                         key={d}
@@ -1033,9 +1033,7 @@ export default function EmployeeDetailPage() {
                           "flex-1 h-8 rounded-md flex items-center justify-center text-xs font-medium",
                           isWorking
                             ? "bg-primary text-primary-foreground"
-                            : isWeekend
-                              ? "bg-muted/30 text-muted-foreground/50"
-                              : "bg-muted/50 text-muted-foreground/70"
+                            : "bg-muted/30 text-muted-foreground/50"
                         )}
                       >
                         {DAYS_OF_WEEK_SHORT[d]}

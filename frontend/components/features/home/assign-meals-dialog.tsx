@@ -8,7 +8,7 @@ import { useHomeStore } from '@/stores/home-store'
 import { useEmployeesStore } from '@/stores/employees-store'
 import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
-import { getEffectiveWorkingDays } from '@/lib/constants/employee'
+import { getEffectiveWorkingDays, isWorkingDay, DEFAULT_WORKING_DAYS } from '@/lib/constants/employee'
 import {
   Dialog,
   DialogBody,
@@ -39,16 +39,16 @@ import { COMBO_METADATA, COMBO_TYPES } from '@/lib/combos'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 
-const isWeekend = (date: Date) => {
-  const day = date.getDay()
-  return day === 0 || day === 6
-}
-
+/**
+ * Get next working day based on DEFAULT working days (Mon-Fri).
+ * For bulk assignment, we use default schedule since different employees
+ * may have different working days. Individual filtering happens separately.
+ */
 const getNextWorkingDay = (date: Date) => {
   const next = new Date(date)
   do {
     next.setDate(next.getDate() + 1)
-  } while (isWeekend(next))
+  } while (!isWorkingDay(DEFAULT_WORKING_DAYS, next))
   return next
 }
 
@@ -89,7 +89,7 @@ export function AssignMealsDialog({ open, onOpenChange }: AssignMealsDialogProps
   // 2. Has a project (for delivery address)
   // 3. ServiceType is LUNCH (configured for lunch service)
   // 4. Day shift (lunch is delivered during the day)
-  // 5. Has weekday working days
+  // 5. WORKS ON THE SELECTED DATE (based on their individual working days)
   const eligibleEmployees = useMemo(
     () => employees.filter((employee) => {
       // Basic requirements
@@ -103,14 +103,14 @@ export function AssignMealsDialog({ open, onOpenChange }: AssignMealsDialogProps
       // Night shift is incompatible with lunch
       if (employee.shiftType === 'NIGHT') return false
       
-      // Must have at least one weekday in working days (Mon-Fri)
+      // CRITICAL: Check if employee works on the selected date
+      // Uses employee's individual working days, not hardcoded weekends
       const workDays = getEffectiveWorkingDays(employee.workingDays)
-      const hasWeekdays = workDays.some(d => d >= 1 && d <= 5)
-      if (!hasWeekdays) return false
+      if (!isWorkingDay(workDays, nextWorkingDay)) return false
       
       return true
     }),
-    [employees]
+    [employees, nextWorkingDay]
   )
 
   const filteredEmployees = useMemo(() => {
@@ -318,6 +318,14 @@ export function AssignMealsDialog({ open, onOpenChange }: AssignMealsDialogProps
                                   if (lunchType.length === 0) return 'Нет сотрудников с типом услуги «Обеды»'
                                   const dayShift = lunchType.filter(e => e.shiftType !== 'NIGHT')
                                   if (dayShift.length === 0) return 'Все сотрудники с обедами работают в ночную смену'
+                                  // Check who works on the selected date
+                                  const worksOnDate = dayShift.filter(e => {
+                                    const workDays = getEffectiveWorkingDays(e.workingDays)
+                                    return isWorkingDay(workDays, nextWorkingDay)
+                                  })
+                                  if (worksOnDate.length === 0) {
+                                    return `Нет сотрудников, работающих ${nextWorkingDayLabel}`
+                                  }
                                   return 'Нет подходящих сотрудников для назначения обедов'
                                 })()
                               : 'По запросу ничего не найдено.'}

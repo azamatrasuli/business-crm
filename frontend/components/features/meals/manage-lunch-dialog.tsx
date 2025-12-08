@@ -335,7 +335,9 @@ export function ManageLunchDialog({
 
   // В individual mode блокируем весь процесс если сотрудник не подходит
   const canProceedStep1 = Boolean(comboType) && (mode !== "individual" || individualValidation.isValid);
-  const canProceedStep2 = startDate && endDate && totalDays >= 5;
+  // FIXED: Check calculated WORKING days, not calendar days
+  // calculatedDays respects employee's working days schedule
+  const canProceedStep2 = startDate && endDate && calculatedDays >= 5;
   const canProceedStep3 = scheduleType !== "CUSTOM" || customDates.length > 0;
   const canProceedStep4 = mode === "individual" || selectedEmployeeIds.length > 0;
 
@@ -402,6 +404,24 @@ export function ManageLunchDialog({
   const filteredEmployees = shiftFilteredEmployees.filter(e => 
     e.fullName.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // CRITICAL FIX: Sync selectedEmployeeIds when filters change
+  // Remove employees from selection if they no longer pass the filters
+  // Using Set of valid IDs for O(1) lookup
+  const validEmployeeIdsSet = useMemo(
+    () => new Set(shiftFilteredEmployees.map(e => e.id)),
+    [shiftFilteredEmployees]
+  );
+  
+  useEffect(() => {
+    if (mode !== "bulk") return;
+    
+    setSelectedEmployeeIds(prev => {
+      const filteredSelection = prev.filter(id => validEmployeeIdsSet.has(id));
+      // Only update if there are invalid selections to avoid infinite loops
+      return filteredSelection.length !== prev.length ? filteredSelection : prev;
+    });
+  }, [mode, validEmployeeIdsSet]);
 
   // Подсчёт сотрудников для каждого типа графика (для отображения в UI)
   const scheduleTypeCounts = useMemo(() => {

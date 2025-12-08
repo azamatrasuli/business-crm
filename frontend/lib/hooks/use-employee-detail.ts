@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useEmployeesStore } from '@/stores/employees-store'
 import { employeesApi, type EmployeeOrder, type DayOfWeek, type EmployeeDetail } from '@/lib/api/employees'
 import { differenceInDays, parseISO, isAfter, getDay } from 'date-fns'
-import { getEffectiveWorkingDays } from '@/lib/constants/employee'
+import { getEffectiveWorkingDays, countWorkingDaysInRange } from '@/lib/constants/employee'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -157,6 +157,14 @@ export function useEmployeeDetail(employeeId: string): UseEmployeeDetailReturn {
     canManageBudget && employeeServiceType !== 'LUNCH' && !hasActiveLunch
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // Working Days (needed for progress calculations)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const workingDays = useMemo(() => {
+    return getEffectiveWorkingDays(employee?.workingDays)
+  }, [employee?.workingDays])
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // Progress Calculations
   // ─────────────────────────────────────────────────────────────────────────────
 
@@ -165,11 +173,16 @@ export function useEmployeeDetail(employeeId: string): UseEmployeeDetailReturn {
     const start = parseISO(lunchSub.startDate)
     const end = parseISO(lunchSub.endDate)
     const today = new Date()
-    const total = differenceInDays(end, start) + 1
-    const used = Math.max(0, differenceInDays(today, start) + 1)
+    
+    // Use actual working days instead of calendar days
+    // workingDays comes from employee settings (or defaults to Mon-Fri)
+    const total = countWorkingDaysInRange(workingDays, start, end)
+    const used = today > start 
+      ? countWorkingDaysInRange(workingDays, start, today > end ? end : today)
+      : 0
     const percent = total > 0 ? Math.min((used / total) * 100, 100) : 0
     return { total, used: Math.min(used, total), percent }
-  }, [lunchSub])
+  }, [lunchSub, workingDays])
 
   const compensationProgress = useMemo<ProgressInfo>(() => {
     if (!compensation?.totalBudget) return { total: 0, used: 0, percent: 0 }
@@ -211,12 +224,8 @@ export function useEmployeeDetail(employeeId: string): UseEmployeeDetailReturn {
     compensationDaysRemaining !== null && compensationDaysRemaining <= 7 && compensationDaysRemaining > 0
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Working Days
+  // Working Days Text
   // ─────────────────────────────────────────────────────────────────────────────
-
-  const workingDays = useMemo(() => {
-    return getEffectiveWorkingDays(employee?.workingDays)
-  }, [employee?.workingDays])
 
   const workingDaysText = useMemo(() => {
     if (workingDays.length === 7) return 'Все дни'

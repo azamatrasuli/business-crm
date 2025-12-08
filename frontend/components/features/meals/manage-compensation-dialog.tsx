@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { format, addDays, differenceInDays, startOfDay } from "date-fns";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { format, addDays, startOfDay } from "date-fns";
+import { getEffectiveWorkingDays, countWorkingDaysInRange, DEFAULT_WORKING_DAYS } from "@/lib/constants/employee";
+import type { DayOfWeek } from "@/lib/api/employees";
 import { ru } from "date-fns/locale";
 import { DateRange } from "react-day-picker";
 import { 
@@ -129,16 +131,30 @@ export function ManageCompensationDialog({
 
   const startDate = dateRange?.from;
   const endDate = dateRange?.to;
-  const totalDays = startDate && endDate ? differenceInDays(endDate, startDate) + 1 : 0;
   const dailyLimitNum = parseFloat(dailyLimit) || 0;
+  
+  // Get employee's working days or use default
+  const employeeWorkingDays = useMemo((): DayOfWeek[] => {
+    if (mode === "individual" && employee) {
+      return getEffectiveWorkingDays(employee.workingDays);
+    }
+    return DEFAULT_WORKING_DAYS;
+  }, [mode, employee]);
+  
+  // FIXED: Calculate actual WORKING days, not calendar days
+  const workingDaysCount = useMemo(() => {
+    if (!startDate || !endDate) return 0;
+    return countWorkingDaysInRange(employeeWorkingDays, startDate, endDate);
+  }, [startDate, endDate, employeeWorkingDays]);
   
   const totalBudget = totalBudgetInput 
     ? parseFloat(totalBudgetInput) || 0 
-    : totalDays * dailyLimitNum;
+    : workingDaysCount * dailyLimitNum;
   
   const totalCost = totalBudget * (mode === "bulk" ? selectedEmployeeIds.length : 1);
 
-  const canSubmit = dailyLimitNum > 0 && startDate && endDate && totalDays >= 5 && 
+  // FIXED: Use working days count for validation
+  const canSubmit = dailyLimitNum > 0 && startDate && endDate && workingDaysCount >= 5 && 
     (mode === "individual" || selectedEmployeeIds.length > 0) && 
     (mode !== "individual" || individualValidation.isValid);
 
@@ -167,6 +183,22 @@ export function ManageCompensationDialog({
   const filteredEmployees = availableEmployees.filter(e => 
     e.fullName.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // CRITICAL FIX: Sync selectedEmployeeIds when available employees change
+  // Remove employees from selection if they no longer pass the filters
+  const validEmployeeIdsSet = useMemo(
+    () => new Set(availableEmployees.map(e => e.id)),
+    [availableEmployees]
+  );
+
+  useEffect(() => {
+    if (mode !== "bulk") return;
+    
+    setSelectedEmployeeIds(prev => {
+      const filteredSelection = prev.filter(id => validEmployeeIdsSet.has(id));
+      return filteredSelection.length !== prev.length ? filteredSelection : prev;
+    });
+  }, [mode, validEmployeeIdsSet]);
   
   // Определяем причину пустого списка с диагностикой
   const getEmptyReason = () => {
@@ -365,14 +397,14 @@ export function ManageCompensationDialog({
                 <h3 className="text-lg font-semibold">Выберите период</h3>
                 <p className={cn(
                   "text-sm font-medium",
-                  totalDays >= 5 ? "text-emerald-600" : "text-destructive"
+                  workingDaysCount >= 5 ? "text-emerald-600" : "text-destructive"
                 )}>
                   {startDate && endDate ? (
                     <>
                       {format(startDate, "d MMMM", { locale: ru })} — {format(endDate, "d MMMM yyyy", { locale: ru })}
                       <span className="mx-2">•</span>
-                      <span className="font-bold">{totalDays} дней</span>
-                      {totalDays < 5 && <span className="text-destructive ml-2">(мин. 5)</span>}
+                      <span className="font-bold">{workingDaysCount} рабочих дней</span>
+                      {workingDaysCount < 5 && <span className="text-destructive ml-2">(мин. 5)</span>}
                     </>
                   ) : (
                     <span className="text-muted-foreground">Минимум 5 дней</span>
@@ -460,9 +492,9 @@ export function ManageCompensationDialog({
                   TJS
                 </span>
               </div>
-              {!totalBudgetInput && totalDays > 0 && dailyLimitNum > 0 && (
+              {!totalBudgetInput && workingDaysCount > 0 && dailyLimitNum > 0 && (
                 <p className="text-sm text-muted-foreground">
-                  Авторасчёт: {totalDays} дней × {dailyLimitNum} TJS = {totalBudget} TJS
+                  Авторасчёт: {workingDaysCount} раб.дн. × {dailyLimitNum} TJS = {totalBudget} TJS
                 </p>
               )}
             </div>
@@ -531,7 +563,7 @@ export function ManageCompensationDialog({
                     {(mode === "bulk" && selectedEmployeeIds.length > 1 ? totalCost : totalBudget).toLocaleString()} TJS
                   </p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    {dailyLimitNum} TJS/день × {totalDays} дней
+                    {dailyLimitNum} TJS/день × {workingDaysCount} раб.дн.
                     {mode === "bulk" && selectedEmployeeIds.length > 1 && ` × ${selectedEmployeeIds.length} сотр.`}
                   </p>
                 </div>

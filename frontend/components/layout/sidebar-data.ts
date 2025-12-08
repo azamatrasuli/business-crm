@@ -25,9 +25,9 @@ export const menuItems: MenuItem[] = [
   // MVP Features (всегда доступны)
   { icon: LayoutDashboard, label: 'Админ панель', href: '/', permission: 'home' },
   { icon: FolderKanban, label: 'Проекты', href: '/projects', permission: 'projects' },
-  { icon: Users, label: 'Пользователи', href: '/users', permission: 'users' },
   { icon: User, label: 'Сотрудники', href: '/employees', permission: 'employees' },
   // Phase 2 Features (заблокированы в production)
+  { icon: Users, label: 'Пользователи', href: '/users', permission: 'users', feature: 'users' },
   { icon: CreditCard, label: 'Оплаты', href: '/payments', permission: 'payments', feature: 'payments' },
   { icon: TrendingUp, label: 'Аналитика', href: '/analytics', permission: 'analytics', feature: 'analytics' },
   { icon: Newspaper, label: 'Новости', href: '/news', permission: 'news', feature: 'news' },

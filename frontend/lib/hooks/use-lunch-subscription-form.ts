@@ -275,7 +275,8 @@ export function useLunchSubscriptionForm({
   }, [mode, employee, isEditing])
 
   const canProceedStep1 = Boolean(comboType) && (mode !== 'individual' || individualValidation.isValid)
-  const canProceedStep2 = Boolean(startDate && endDate && totalDays >= 5)
+  // FIXED: Use calculated WORKING days, not calendar days
+  const canProceedStep2 = Boolean(startDate && endDate && calculatedDays >= 5)
   const canProceedStep3 = scheduleType !== 'CUSTOM' || customDates.length > 0
   const canProceedStep4 = mode === 'individual' || selectedEmployeeIds.length > 0
 
@@ -336,6 +337,23 @@ export function useLunchSubscriptionForm({
 
     return filtered
   }, [availableEmployees, shiftFilter, searchQuery])
+
+  // CRITICAL FIX: Sync selectedEmployeeIds when filters change
+  // Remove employees from selection if they no longer pass the filters
+  const validEmployeeIdsSet = useMemo(
+    () => new Set(filteredEmployees.map(e => e.id)),
+    [filteredEmployees]
+  )
+
+  useEffect(() => {
+    if (mode !== 'bulk') return
+    
+    setSelectedEmployeeIds(prev => {
+      const filteredSelection = prev.filter(id => validEmployeeIdsSet.has(id))
+      // Only update if there are invalid selections to avoid infinite loops
+      return filteredSelection.length !== prev.length ? filteredSelection : prev
+    })
+  }, [mode, validEmployeeIdsSet])
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Step Navigation

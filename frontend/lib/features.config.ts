@@ -32,7 +32,7 @@ const PRODUCTION_FEATURES: Record<FeatureFlag, boolean> = {
   // MVP - всегда включено
   auth: true,
   projects: true,
-  users: true,
+  users: false, // Скрыто для production - Phase 2
   employees: true,
   dashboard: true,
   guestOrders: true,
@@ -93,6 +93,7 @@ export const getBlockedReason = (feature: FeatureFlag): string | null => {
   if (isFeatureEnabled(feature)) return null
   
   const reasons: Partial<Record<FeatureFlag, string>> = {
+    users: 'Управление пользователями будет доступно в следующем обновлении',
     compensation: 'Компенсации будут доступны после запуска Client Web',
     passwordReset: 'Сброс пароля будет доступен в следующем обновлении',
     payments: 'Раздел оплат находится в разработке',
@@ -136,7 +137,7 @@ export const featureToRoute: Partial<Record<FeatureFlag, string>> = {
 export const routeToFeature: Record<string, FeatureFlag | null> = {
   '/': null, // dashboard всегда доступен
   '/projects': null, // projects в MVP
-  '/users': null, // users в MVP
+  '/users': 'users', // скрыто для production
   '/employees': null, // employees в MVP
   '/forgot-password': 'passwordReset',
   '/reset-password': 'passwordReset',

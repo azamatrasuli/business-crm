@@ -41,6 +41,7 @@ import { ru } from 'date-fns/locale'
 import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import { formatISODate } from '@/lib/utils/date'
+import { isWorkingDay, DEFAULT_WORKING_DAYS } from '@/lib/constants/employee'
 import {
   Form,
   FormControl,
@@ -76,6 +77,11 @@ const hasCutoffPassed = (cutoffTime: string | null) => {
   return now > cutoff
 }
 
+/**
+ * Get display date for guest orders.
+ * If date is provided, use it. Otherwise, use today or next working day.
+ * Guest orders use DEFAULT_WORKING_DAYS since they're not tied to a specific employee.
+ */
 const getDisplayDate = (isoDate?: string) => {
   if (isoDate) {
     try {
@@ -85,11 +91,12 @@ const getDisplayDate = (isoDate?: string) => {
     }
   }
   const date = new Date()
-  if (date.getDay() === 0 || date.getDay() === 6) {
+  // If today is not a working day, find the next one
+  if (!isWorkingDay(DEFAULT_WORKING_DAYS, date)) {
     const next = new Date(date)
     do {
       next.setDate(next.getDate() + 1)
-    } while (next.getDay() === 0 || next.getDay() === 6)
+    } while (!isWorkingDay(DEFAULT_WORKING_DAYS, next))
     return next
   }
   return date

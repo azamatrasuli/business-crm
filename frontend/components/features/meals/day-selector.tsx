@@ -8,7 +8,6 @@ import {
   endOfWeek,
   eachDayOfInterval,
   isSameDay,
-  isWeekend,
   isBefore,
   startOfDay,
 } from "date-fns";
@@ -189,7 +188,8 @@ export function DaySelector({
             </span>
           </div>
           {DAY_ORDER.map((dayIndex) => {
-            const isWeekendDay = dayIndex === 0 || dayIndex === 6;
+            // Use employee's working days to determine non-working day styling
+            const isNonWorkingDay = !employeeWorkingDays.includes(dayIndex as DayOfWeek);
             return (
               <button
                 key={dayIndex}
@@ -198,7 +198,7 @@ export function DaySelector({
                 className={cn(
                   "p-2.5 text-center text-xs font-semibold transition-colors",
                   "hover:bg-amber-100/50 active:bg-amber-200/50",
-                  isWeekendDay
+                  isNonWorkingDay
                     ? "text-muted-foreground/60"
                     : "text-foreground"
                 )}
@@ -258,8 +258,8 @@ export function DaySelector({
                 const inRange = isInRange(date);
                 const isPast = isBefore(date, today);
                 const selected = isSelected(date);
-                const weekend = isWeekend(date);
                 const working = isWorkingDay(date);
+                const nonWorking = !working; // Based on employee's actual working days
                 const disabled = !inRange || isPast;
                 const isToday = isSameDay(date, today);
 
@@ -280,11 +280,10 @@ export function DaySelector({
                         "w-8 h-8 rounded-lg flex items-center justify-center text-sm font-medium transition-all duration-150",
                         // Selected state
                         selected && "bg-amber-500 text-white shadow-sm",
-                        // Not selected states
+                        // Not selected states - use employee's actual working days for styling
                         !selected && !disabled && [
-                          weekend && "text-muted-foreground/50",
-                          !weekend && working && "text-foreground ring-1 ring-amber-300/50",
-                          !weekend && !working && "text-foreground",
+                          nonWorking && "text-muted-foreground/50",
+                          working && "text-foreground ring-1 ring-amber-300/50",
                           "group-hover:ring-2 group-hover:ring-amber-400 group-hover:bg-amber-50",
                         ],
                         // Today marker
