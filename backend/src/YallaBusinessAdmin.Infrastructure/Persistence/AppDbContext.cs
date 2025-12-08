@@ -193,6 +193,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.WorkEndTime).HasColumnName("work_end_time");
 
             entity.HasIndex(e => e.Phone).IsUnique();
+            entity.HasIndex(e => e.Email).IsUnique().HasDatabaseName("idx_employees_email_unique");
             entity.HasOne(e => e.Company)
                 .WithMany(c => c.Employees)
                 .HasForeignKey(e => e.CompanyId)

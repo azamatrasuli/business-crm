@@ -38,7 +38,10 @@ public static class ErrorCodes
     public const string EMP_NOT_FOUND = "EMP_NOT_FOUND";
     public const string EMP_PHONE_EXISTS = "EMP_PHONE_EXISTS";
     public const string EMP_PHONE_DELETED = "EMP_PHONE_DELETED";
+    public const string EMP_EMAIL_EXISTS = "EMP_EMAIL_EXISTS";
+    public const string EMP_EMAIL_DELETED = "EMP_EMAIL_DELETED";
     public const string EMP_INVALID_PHONE_FORMAT = "EMP_INVALID_PHONE_FORMAT";
+    public const string EMP_INVALID_EMAIL_FORMAT = "EMP_INVALID_EMAIL_FORMAT";
     public const string EMP_REQUIRED_FIELD_MISSING = "EMP_REQUIRED_FIELD_MISSING";
     public const string EMP_SERVICE_TYPE_SWITCH_BLOCKED = "EMP_SERVICE_TYPE_SWITCH_BLOCKED";
     public const string EMP_HAS_ACTIVE_ORDERS = "EMP_HAS_ACTIVE_ORDERS";
@@ -131,7 +134,10 @@ public static class ErrorMessages
         [ErrorCodes.EMP_NOT_FOUND] = "Сотрудник не найден",
         [ErrorCodes.EMP_PHONE_EXISTS] = "Сотрудник с таким телефоном уже существует",
         [ErrorCodes.EMP_PHONE_DELETED] = "Сотрудник с таким телефоном был удален. Обратитесь к администратору для восстановления",
+        [ErrorCodes.EMP_EMAIL_EXISTS] = "Сотрудник с такой почтой уже существует",
+        [ErrorCodes.EMP_EMAIL_DELETED] = "Сотрудник с такой почтой был удален. Обратитесь к администратору для восстановления",
         [ErrorCodes.EMP_INVALID_PHONE_FORMAT] = "Неверный формат телефона. Телефон должен начинаться с + и содержать только цифры",
+        [ErrorCodes.EMP_INVALID_EMAIL_FORMAT] = "Неверный формат email",
         [ErrorCodes.EMP_REQUIRED_FIELD_MISSING] = "Обязательное поле не заполнено",
         [ErrorCodes.EMP_SERVICE_TYPE_SWITCH_BLOCKED] = "Невозможно переключить тип услуги: у сотрудника активная подписка",
         [ErrorCodes.EMP_HAS_ACTIVE_ORDERS] = "Невозможно удалить сотрудника с активными заказами",

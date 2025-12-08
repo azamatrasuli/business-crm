@@ -64,7 +64,10 @@ export const ErrorCodes = {
   EMP_NOT_FOUND: 'EMP_NOT_FOUND',
   EMP_PHONE_EXISTS: 'EMP_PHONE_EXISTS',
   EMP_PHONE_DELETED: 'EMP_PHONE_DELETED',
+  EMP_EMAIL_EXISTS: 'EMP_EMAIL_EXISTS',
+  EMP_EMAIL_DELETED: 'EMP_EMAIL_DELETED',
   EMP_INVALID_PHONE_FORMAT: 'EMP_INVALID_PHONE_FORMAT',
+  EMP_INVALID_EMAIL_FORMAT: 'EMP_INVALID_EMAIL_FORMAT',
   EMP_SERVICE_TYPE_SWITCH_BLOCKED: 'EMP_SERVICE_TYPE_SWITCH_BLOCKED',
 
   // Project
@@ -121,6 +124,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   
   [ErrorCodes.EMP_PHONE_EXISTS]: 'Сотрудник с таким телефоном уже существует',
   [ErrorCodes.EMP_PHONE_DELETED]: 'Этот телефон был удалён. Обратитесь к администратору',
+  [ErrorCodes.EMP_EMAIL_EXISTS]: 'Сотрудник с такой почтой уже существует',
+  [ErrorCodes.EMP_EMAIL_DELETED]: 'Эта почта была удалена. Обратитесь к администратору',
+  [ErrorCodes.EMP_INVALID_EMAIL_FORMAT]: 'Неверный формат email',
   [ErrorCodes.EMP_SERVICE_TYPE_SWITCH_BLOCKED]: 'Нельзя сменить тип услуги при активной подписке',
   
   [ErrorCodes.FREEZE_LIMIT_EXCEEDED]: 'Вы уже использовали 2 заморозки на этой неделе',

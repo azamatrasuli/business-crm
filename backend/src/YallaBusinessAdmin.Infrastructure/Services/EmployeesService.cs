@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using YallaBusinessAdmin.Application.Audit;
+using YallaBusinessAdmin.Application.Common.Errors;
 using YallaBusinessAdmin.Application.Common.Models;
 using YallaBusinessAdmin.Application.Common.Validators;
 using YallaBusinessAdmin.Application.Employees;
@@ -19,7 +20,7 @@ public class EmployeesService : IEmployeesService
     private readonly IEmployeeOrderHistoryService _orderHistoryService;
 
     public EmployeesService(
-        AppDbContext context, 
+        AppDbContext context,
         IAuditService auditService,
         IEmployeeBudgetService budgetService,
         IEmployeeOrderHistoryService orderHistoryService)
@@ -53,7 +54,7 @@ public class EmployeesService : IEmployeesService
             .Include(e => e.Orders.Where(o => o.OrderDate >= DateTime.UtcNow.Date))
             .Include(e => e.LunchSubscription)
             .Where(e => e.CompanyId == companyId);
-        
+
         // Apply project filter
         if (projectId.HasValue)
         {
@@ -120,23 +121,23 @@ public class EmployeesService : IEmployeesService
         // Apply sorting
         query = sortBy?.ToLower() switch
         {
-            "fullname" or "name" => sortDesc 
-                ? query.OrderByDescending(e => e.FullName) 
+            "fullname" or "name" => sortDesc
+                ? query.OrderByDescending(e => e.FullName)
                 : query.OrderBy(e => e.FullName),
-            "phone" => sortDesc 
-                ? query.OrderByDescending(e => e.Phone) 
+            "phone" => sortDesc
+                ? query.OrderByDescending(e => e.Phone)
                 : query.OrderBy(e => e.Phone),
-            "email" => sortDesc 
-                ? query.OrderByDescending(e => e.Email) 
+            "email" => sortDesc
+                ? query.OrderByDescending(e => e.Email)
                 : query.OrderBy(e => e.Email),
-            "budget" => sortDesc 
-                ? query.OrderByDescending(e => e.Budget != null ? e.Budget.TotalBudget : 0) 
+            "budget" => sortDesc
+                ? query.OrderByDescending(e => e.Budget != null ? e.Budget.TotalBudget : 0)
                 : query.OrderBy(e => e.Budget != null ? e.Budget.TotalBudget : 0),
-            "status" => sortDesc 
-                ? query.OrderByDescending(e => e.IsActive) 
+            "status" => sortDesc
+                ? query.OrderByDescending(e => e.IsActive)
                 : query.OrderBy(e => e.IsActive),
-            _ => sortDesc 
-                ? query.OrderByDescending(e => e.CreatedAt) 
+            _ => sortDesc
+                ? query.OrderByDescending(e => e.CreatedAt)
                 : query.OrderBy(e => e.CreatedAt)
         };
 
@@ -186,34 +187,34 @@ public class EmployeesService : IEmployeesService
         {
             throw new InvalidOperationException("Неверный формат телефона. Телефон должен начинаться с + и содержать только цифры");
         }
-        
+
         // Validate email format
         var emailValidation = EmployeeValidator.ValidateEmail(request.Email);
         if (!emailValidation.IsValid)
         {
             throw new InvalidOperationException(emailValidation.ErrorMessage);
         }
-        
+
         // Validate working days
         var workingDaysValidation = EmployeeValidator.ValidateWorkingDays(request.WorkingDays);
         if (!workingDaysValidation.IsValid)
         {
             throw new InvalidOperationException(workingDaysValidation.ErrorMessage);
         }
-        
+
         // Validate work time
         var startTimeValidation = EmployeeValidator.ValidateAndParseTime(request.WorkStartTime, "Время начала работы");
         if (!startTimeValidation.IsValid)
         {
             throw new InvalidOperationException(startTimeValidation.ErrorMessage);
         }
-        
+
         var endTimeValidation = EmployeeValidator.ValidateAndParseTime(request.WorkEndTime, "Время окончания работы");
         if (!endTimeValidation.IsValid)
         {
             throw new InvalidOperationException(endTimeValidation.ErrorMessage);
         }
-        
+
         var timeRangeValidation = EmployeeValidator.ValidateWorkTimeRange(startTimeValidation.Time, endTimeValidation.Time);
         if (!timeRangeValidation.IsValid)
         {
@@ -230,17 +231,46 @@ public class EmployeesService : IEmployeesService
         }
 
         // Check for duplicate phone across all employees (including deleted)
-        var existingEmployee = await _context.Employees
+        var existingByPhone = await _context.Employees
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(e => e.Phone == request.Phone, cancellationToken);
 
-        if (existingEmployee != null)
+        if (existingByPhone != null)
         {
-            if (existingEmployee.DeletedAt != null)
+            if (existingByPhone.DeletedAt != null)
             {
-                throw new InvalidOperationException("Сотрудник с таким телефоном был удален. Обратитесь к администратору для восстановления.");
+                throw new ConflictException(
+                    ErrorCodes.EMP_PHONE_DELETED,
+                    ErrorMessages.GetMessage(ErrorCodes.EMP_PHONE_DELETED),
+                    new Dictionary<string, object> { ["field"] = "phone" });
             }
-            throw new InvalidOperationException("Сотрудник с таким телефоном уже существует");
+            throw new ConflictException(
+                ErrorCodes.EMP_PHONE_EXISTS,
+                ErrorMessages.GetMessage(ErrorCodes.EMP_PHONE_EXISTS),
+                new Dictionary<string, object> { ["field"] = "phone" });
+        }
+
+        // Check for duplicate email across all employees (including deleted)
+        if (!string.IsNullOrWhiteSpace(request.Email))
+        {
+            var existingByEmail = await _context.Employees
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(e => e.Email == request.Email, cancellationToken);
+
+            if (existingByEmail != null)
+            {
+                if (existingByEmail.DeletedAt != null)
+                {
+                    throw new ConflictException(
+                        ErrorCodes.EMP_EMAIL_DELETED,
+                        ErrorMessages.GetMessage(ErrorCodes.EMP_EMAIL_DELETED),
+                        new Dictionary<string, object> { ["field"] = "email" });
+                }
+                throw new ConflictException(
+                    ErrorCodes.EMP_EMAIL_EXISTS,
+                    ErrorMessages.GetMessage(ErrorCodes.EMP_EMAIL_EXISTS),
+                    new Dictionary<string, object> { ["field"] = "email" });
+            }
         }
 
         var employee = new Employee
@@ -256,11 +286,11 @@ public class EmployeesService : IEmployeesService
             // TODO: вернуть EmployeeInviteStatus.Pending когда запустим Client Web и бюджетирование
             InviteStatus = EmployeeInviteStatus.Accepted,
             // Service type and work schedule
-            ServiceType = !string.IsNullOrWhiteSpace(request.ServiceType) 
-                ? ServiceTypeExtensions.FromDatabase(request.ServiceType) 
+            ServiceType = !string.IsNullOrWhiteSpace(request.ServiceType)
+                ? ServiceTypeExtensions.FromDatabase(request.ServiceType)
                 : null,
-            ShiftType = !string.IsNullOrWhiteSpace(request.ShiftType) 
-                ? ShiftTypeExtensions.FromDatabase(request.ShiftType) 
+            ShiftType = !string.IsNullOrWhiteSpace(request.ShiftType)
+                ? ShiftTypeExtensions.FromDatabase(request.ShiftType)
                 : null,
             WorkingDays = request.WorkingDays,
             // Use pre-validated TimeOnly values (validation done above)
@@ -333,7 +363,7 @@ public class EmployeesService : IEmployeesService
             employee.Position = request.Position;
         if (request.ProjectId.HasValue)
             employee.ProjectId = request.ProjectId.Value;
-        
+
         // ═══════════════════════════════════════════════════════════════
         // Service Type Update - Uses Rich Domain Model method
         // ═══════════════════════════════════════════════════════════════
@@ -343,7 +373,7 @@ public class EmployeesService : IEmployeesService
             // Domain method handles business rule validation
             employee.SwitchServiceType(newServiceType);
         }
-        
+
         // ═══════════════════════════════════════════════════════════════
         // Work Schedule Update
         // ═══════════════════════════════════════════════════════════════
@@ -351,17 +381,17 @@ public class EmployeesService : IEmployeesService
         {
             employee.ShiftType = ShiftTypeExtensions.FromDatabase(request.ShiftType);
         }
-        
+
         if (request.WorkingDays != null)
         {
             employee.WorkingDays = request.WorkingDays;
         }
-        
+
         if (!string.IsNullOrWhiteSpace(request.WorkStartTime))
         {
             employee.WorkStartTime = TimeOnly.Parse(request.WorkStartTime);
         }
-        
+
         if (!string.IsNullOrWhiteSpace(request.WorkEndTime))
         {
             employee.WorkEndTime = TimeOnly.Parse(request.WorkEndTime);
@@ -397,7 +427,7 @@ public class EmployeesService : IEmployeesService
         }
 
         var wasActive = employee.IsActive;
-        
+
         // Use Rich Domain Model methods
         if (wasActive)
         {
@@ -445,7 +475,7 @@ public class EmployeesService : IEmployeesService
         }
 
         var oldValues = new { employee.FullName, employee.Phone, employee.Email };
-        
+
         // Use Rich Domain Model method - handles all cascading operations
         employee.SoftDelete();
 
@@ -484,9 +514,9 @@ public class EmployeesService : IEmployeesService
     /// Kept for backwards compatibility.
     /// </summary>
     public async Task<PagedResult<EmployeeOrderResponse>> GetEmployeeOrdersAsync(
-        Guid id, 
-        int page, 
-        int pageSize, 
+        Guid id,
+        int page,
+        int pageSize,
         Guid companyId,
         string? dateFrom = null,
         string? dateTo = null,
@@ -507,10 +537,10 @@ public class EmployeesService : IEmployeesService
 
         // Use Rich Domain Model properties
         var hasActiveLunchSubscription = employee.HasActiveLunchSubscription;
-        
+
         // TODO: Add real compensation tracking when available
         var hasActiveCompensation = false; // placeholder
-        
+
         // Calculate subscription dates and remaining days from LunchSubscription
         DateOnly? subscriptionStartDate = null;
         DateOnly? subscriptionEndDate = null;
@@ -518,41 +548,41 @@ public class EmployeesService : IEmployeesService
         string? switchBlockedReason = null;
         string subscriptionStatus = "Активна";
         decimal? totalPrice = null;
-        
+
         // Order statistics for subscription
         int futureOrdersCount = 0;
         int completedOrdersCount = 0;
         int? totalDays = null;
         string subscriptionScheduleType = "EVERY_DAY";
         List<string>? customDays = null;
-        
+
         if (hasActiveLunchSubscription && employee.LunchSubscription != null)
         {
             var sub = employee.LunchSubscription;
-            
+
             subscriptionStartDate = sub.StartDate;
             subscriptionEndDate = sub.EndDate;
             totalPrice = sub.TotalPrice;
             subscriptionStatus = sub.Status ?? "Активна";
             totalDays = sub.TotalDays;
-            
+
             // Use Rich Domain Model method for remaining days
             remainingDays = employee.GetSubscriptionRemainingDays() ?? sub.RemainingDays;
-            
+
             // Count future orders (today and forward, Active or Frozen status)
             var today = DateTime.UtcNow.Date;
-            futureOrdersCount = employee.Orders.Count(o => 
-                o.OrderDate.Date >= today && 
+            futureOrdersCount = employee.Orders.Count(o =>
+                o.OrderDate.Date >= today &&
                 (o.Status == Domain.Enums.OrderStatus.Active || o.Status == Domain.Enums.OrderStatus.Frozen));
-            
+
             // Count completed orders (Delivered or Completed status)
-            completedOrdersCount = employee.Orders.Count(o => 
-                o.Status == Domain.Enums.OrderStatus.Delivered || 
+            completedOrdersCount = employee.Orders.Count(o =>
+                o.Status == Domain.Enums.OrderStatus.Delivered ||
                 o.Status == Domain.Enums.OrderStatus.Completed);
-            
+
             // Get schedule type
             subscriptionScheduleType = sub.ScheduleType ?? "EVERY_DAY";
-            
+
             // For CUSTOM schedules, extract dates from orders
             if (subscriptionScheduleType == "CUSTOM" && subscriptionStartDate.HasValue && subscriptionEndDate.HasValue)
             {
@@ -564,7 +594,7 @@ public class EmployeesService : IEmployeesService
                     .OrderBy(d => d)
                     .ToList();
             }
-            
+
             if (subscriptionEndDate.HasValue)
             {
                 // Create blocked reason with expiry date
@@ -596,7 +626,7 @@ public class EmployeesService : IEmployeesService
             ProjectName = employee.Project?.Name ?? "",
             AddressName = employee.Project?.AddressName ?? "",
             AddressFullAddress = employee.Project?.AddressFullAddress ?? "",
-            
+
             // ═══════════════════════════════════════════════════════════════
             // Service Type (attached to employee, not project)
             // Uses Rich Domain Model property for business rule
@@ -606,7 +636,7 @@ public class EmployeesService : IEmployeesService
             CanSwitchToLunch = !hasActiveCompensation,
             SwitchToCompensationBlockedReason = !employee.CanSwitchToCompensation ? switchBlockedReason : null,
             SwitchToLunchBlockedReason = hasActiveCompensation ? "У сотрудника активная компенсация" : null,
-            
+
             // ═══════════════════════════════════════════════════════════════
             // Work Schedule
             // ═══════════════════════════════════════════════════════════════
@@ -614,7 +644,7 @@ public class EmployeesService : IEmployeesService
             WorkingDays = employee.WorkingDays,
             WorkStartTime = employee.WorkStartTime?.ToString("HH:mm"),
             WorkEndTime = employee.WorkEndTime?.ToString("HH:mm"),
-            
+
             // ═══════════════════════════════════════════════════════════════
             // Active Subscriptions
             // ═══════════════════════════════════════════════════════════════
@@ -636,7 +666,7 @@ public class EmployeesService : IEmployeesService
                 CompletedOrdersCount = completedOrdersCount
             } : null,
             Compensation = null, // TODO: Add when compensation entity is available
-            
+
             CreatedAt = employee.CreatedAt,
             Budget = employee.Budget != null ? new BudgetResponse
             {
@@ -657,12 +687,12 @@ public class EmployeesService : IEmployeesService
             HasSubscription = hasActiveLunchSubscription
         };
     }
-    
+
     private static string GetDaysWord(int days)
     {
         var lastDigit = days % 10;
         var lastTwoDigits = days % 100;
-        
+
         if (lastTwoDigits >= 11 && lastTwoDigits <= 19)
             return "дней";
         if (lastDigit == 1)

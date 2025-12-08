@@ -147,6 +147,11 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
         case ErrorCodes.EMP_INVALID_PHONE_FORMAT:
           form.setError('phone', { message: appError.message })
           break
+        case ErrorCodes.EMP_EMAIL_EXISTS:
+        case ErrorCodes.EMP_EMAIL_DELETED:
+        case ErrorCodes.EMP_INVALID_EMAIL_FORMAT:
+          form.setError('email', { message: appError.message })
+          break
         case ErrorCodes.PROJ_NOT_FOUND:
           toast.error('Проект не найден', {
             description: 'Пожалуйста, перезайдите в систему',

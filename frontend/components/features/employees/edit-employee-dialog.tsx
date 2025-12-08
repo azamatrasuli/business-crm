@@ -166,6 +166,11 @@ export function EditEmployeeDialog({
             duration: 8000,
           })
           break
+        case ErrorCodes.EMP_EMAIL_EXISTS:
+        case ErrorCodes.EMP_EMAIL_DELETED:
+        case ErrorCodes.EMP_INVALID_EMAIL_FORMAT:
+          form.setError('email', { message: appError.message })
+          break
         default:
           // Note: phone is not editable in this dialog
           toast.error(appError.message, {
