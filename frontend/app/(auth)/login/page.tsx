@@ -13,6 +13,7 @@ import { Phone, Lock, Loader2, AlertCircle, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { parseError, ErrorCodes, isRetryableError } from '@/lib/errors'
 import { logger } from '@/lib/logger'
+import { isFeatureEnabled } from '@/lib/features.config'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -152,11 +153,13 @@ export default function LoginPage() {
                   aria-invalid={!!error}
                 />
               </div>
-              <div className="text-right">
-                <Button variant="link" className="px-0" asChild>
-                  <Link href="/forgot-password">Забыли пароль?</Link>
-                </Button>
-              </div>
+              {isFeatureEnabled('passwordReset') && (
+                <div className="text-right">
+                  <Button variant="link" className="px-0" asChild>
+                    <Link href="/forgot-password">Забыли пароль?</Link>
+                  </Button>
+                </div>
+              )}
             </div>
 
             <Button

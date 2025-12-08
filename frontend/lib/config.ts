@@ -87,6 +87,7 @@ export interface AppConfig {
   features: {
     lunch: boolean
     compensation: boolean
+    passwordReset: boolean
     payments: boolean
     analytics: boolean
     news: boolean

@@ -45,6 +45,7 @@ import {
 import { toast } from 'sonner'
 import { Sun, Moon, Calendar, UtensilsCrossed, Wallet, Clock, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { isFeatureEnabled, getBlockedReason } from '@/lib/features.config'
 import type { CreateEmployeeRequest, ShiftType, DayOfWeek, ServiceType } from '@/lib/api/employees'
 
 const formSchema = z.object({
@@ -442,40 +443,52 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
                         </button>
 
                         {/* COMPENSATION Card */}
-                        <button
-                          type="button"
-                          onClick={() => field.onChange(field.value === 'COMPENSATION' ? null : 'COMPENSATION')}
-                          className={cn(
-                            "relative flex items-center gap-3 rounded-xl border-2 p-3 transition-all text-left",
-                            field.value === 'COMPENSATION'
-                              ? "border-emerald-500 bg-emerald-500/10"
-                              : "border-muted hover:border-emerald-300 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20"
-                          )}
-                        >
-                          <div className={cn(
-                            "rounded-lg p-2 transition-colors shrink-0",
-                            field.value === 'COMPENSATION' ? "bg-emerald-500/20" : "bg-muted"
-                          )}>
-                            <Wallet className={cn(
-                              "h-5 w-5",
-                              field.value === 'COMPENSATION' ? "text-emerald-600" : "text-muted-foreground"
-                            )} />
-                          </div>
-                          <div>
-                            <p className={cn(
-                              "font-medium text-sm",
-                              field.value === 'COMPENSATION' ? "text-emerald-700 dark:text-emerald-400" : ""
-                            )}>
-                              Компенсация
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              Денежная компенсация
-                            </p>
-                          </div>
-                          {field.value === 'COMPENSATION' && (
-                            <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-emerald-500" />
-                          )}
-                        </button>
+                        {(() => {
+                          const isCompensationEnabled = isFeatureEnabled('compensation')
+                          const blockedReason = getBlockedReason('compensation')
+
+                          return (
+                            <button
+                              type="button"
+                              disabled={!isCompensationEnabled}
+                              onClick={() => isCompensationEnabled && field.onChange(field.value === 'COMPENSATION' ? null : 'COMPENSATION')}
+                              title={blockedReason || undefined}
+                              className={cn(
+                                "relative flex items-center gap-3 rounded-xl border-2 p-3 transition-all text-left",
+                                !isCompensationEnabled && "opacity-50 cursor-not-allowed",
+                                field.value === 'COMPENSATION'
+                                  ? "border-emerald-500 bg-emerald-500/10"
+                                  : isCompensationEnabled
+                                    ? "border-muted hover:border-emerald-300 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20"
+                                    : "border-muted"
+                              )}
+                            >
+                              <div className={cn(
+                                "rounded-lg p-2 transition-colors shrink-0",
+                                field.value === 'COMPENSATION' ? "bg-emerald-500/20" : "bg-muted"
+                              )}>
+                                <Wallet className={cn(
+                                  "h-5 w-5",
+                                  field.value === 'COMPENSATION' ? "text-emerald-600" : "text-muted-foreground"
+                                )} />
+                              </div>
+                              <div>
+                                <p className={cn(
+                                  "font-medium text-sm",
+                                  field.value === 'COMPENSATION' ? "text-emerald-700 dark:text-emerald-400" : ""
+                                )}>
+                                  Компенсация
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {isCompensationEnabled ? 'Денежная компенсация' : 'Скоро'}
+                                </p>
+                              </div>
+                              {field.value === 'COMPENSATION' && (
+                                <div className="absolute top-2 right-2 h-2 w-2 rounded-full bg-emerald-500" />
+                              )}
+                            </button>
+                          )
+                        })()}
                       </div>
                       <p className="text-xs text-muted-foreground text-center mt-2">
                         Можно назначить позже через профиль сотрудника

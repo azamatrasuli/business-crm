@@ -19,6 +19,7 @@ export type FeatureFlag =
   | 'guestOrders'       // Гостевые заказы
   // Phase 2 Features (blocked in production)
   | 'compensation'      // Компенсации на питание
+  | 'passwordReset'     // Сброс пароля
   | 'payments'          // Оплаты / Инвойсы
   | 'analytics'         // Аналитика
   | 'news'              // Новости
@@ -38,6 +39,7 @@ const PRODUCTION_FEATURES: Record<FeatureFlag, boolean> = {
   // Из config.json
   lunch: FEATURES.lunch,
   compensation: FEATURES.compensation,
+  passwordReset: FEATURES.passwordReset,
   payments: FEATURES.payments,
   analytics: FEATURES.analytics,
   news: FEATURES.news,
@@ -56,6 +58,7 @@ const DEVELOPMENT_FEATURES: Record<FeatureFlag, boolean> = {
   dashboard: true,
   guestOrders: true,
   compensation: true,
+  passwordReset: true,
   payments: true,
   analytics: true,
   news: true,
@@ -91,6 +94,7 @@ export const getBlockedReason = (feature: FeatureFlag): string | null => {
   
   const reasons: Partial<Record<FeatureFlag, string>> = {
     compensation: 'Компенсации будут доступны после запуска Client Web',
+    passwordReset: 'Сброс пароля будет доступен в следующем обновлении',
     payments: 'Раздел оплат находится в разработке',
     analytics: 'Аналитика будет доступна в следующем обновлении',
     news: 'Новости будут доступны в следующем обновлении',
@@ -106,8 +110,8 @@ export const getBlockedReason = (feature: FeatureFlag): string | null => {
 export const getBlockedFeatures = (): FeatureFlag[] => {
   const allFeatures: FeatureFlag[] = [
     'auth', 'projects', 'users', 'employees', 'lunch', 
-    'dashboard', 'guestOrders', 'compensation', 'payments', 
-    'analytics', 'news', 'partners'
+    'dashboard', 'guestOrders', 'compensation', 'passwordReset',
+    'payments', 'analytics', 'news', 'partners'
   ]
   return allFeatures.filter(f => !isFeatureEnabled(f))
 }
@@ -134,6 +138,8 @@ export const routeToFeature: Record<string, FeatureFlag | null> = {
   '/projects': null, // projects в MVP
   '/users': null, // users в MVP
   '/employees': null, // employees в MVP
+  '/forgot-password': 'passwordReset',
+  '/reset-password': 'passwordReset',
   '/payments': 'payments',
   '/analytics': 'analytics', 
   '/news': 'news',

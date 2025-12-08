@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   Card,
   CardContent,
@@ -18,14 +19,28 @@ import { authApi } from '@/lib/api/auth'
 import { toast } from 'sonner'
 import { parseError, isRetryableError } from '@/lib/errors'
 import { logger } from '@/lib/logger'
+import { isFeatureEnabled } from '@/lib/features.config'
 
 export default function ForgotPasswordPage() {
+  const router = useRouter()
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
   const [errorAction, setErrorAction] = useState('')
   const [canRetry, setCanRetry] = useState(false)
+
+  // Redirect if feature is disabled
+  useEffect(() => {
+    if (!isFeatureEnabled('passwordReset')) {
+      router.replace('/login')
+    }
+  }, [router])
+
+  // Don't render if feature is disabled (avoids content flash)
+  if (!isFeatureEnabled('passwordReset')) {
+    return null
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

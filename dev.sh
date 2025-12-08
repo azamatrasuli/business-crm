@@ -8,25 +8,32 @@
 #   Frontend: http://localhost:3000
 #
 # Использование:
-#   ./dev.sh              - запустить всё (localhost)
+#   ./dev.sh              - запустить всё (development mode)
+#   ./dev.sh prod         - запустить с production feature flags
 #   ./dev.sh wifi         - запустить с WiFi доступом
+#   ./dev.sh prod wifi    - production + WiFi
 #   ./dev.sh backend      - только backend
-#   ./dev.sh frontend     - только frontend
-#   ./dev.sh backend wifi - backend с WiFi
-#   ./dev.sh frontend wifi- frontend с WiFi
+#   ./dev.sh frontend     - только frontend  
+#   ./dev.sh frontend prod- frontend в prod режиме
 #   ./dev.sh stop         - остановить всё
+#
+# Режимы:
+#   dev (default)  - все feature flags включены
+#   prod           - feature flags из config.json (как в продакшене)
 # ===========================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_PORT=4000
 FRONTEND_PORT=3000
 WIFI_MODE=false
+PROD_MODE=false
 
 # Цвета
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
 NC='\033[0m' # No Color
 
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
@@ -34,11 +41,16 @@ log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-# Проверяем наличие wifi в аргументах
+# Парсим аргументы
 for arg in "$@"; do
-    if [ "$arg" = "wifi" ] || [ "$arg" = "--wifi" ] || [ "$arg" = "-w" ]; then
-        WIFI_MODE=true
-    fi
+    case "$arg" in
+        wifi|--wifi|-w)
+            WIFI_MODE=true
+            ;;
+        prod|--prod|-p|production)
+            PROD_MODE=true
+            ;;
+    esac
 done
 
 stop_services() {
@@ -68,11 +80,29 @@ start_frontend() {
     log_info "Запускаю Frontend на порту $FRONTEND_PORT..."
     cd "$SCRIPT_DIR/frontend"
     
-    if [ "$WIFI_MODE" = true ]; then
-        log_info "WiFi режим включен - доступ из сети"
-        npm run dev -- --hostname 0.0.0.0 &
+    # Собираем команду
+    local cmd="npm run dev"
+    local env_vars=""
+    
+    # Production режим (feature flags из config.json)
+    if [ "$PROD_MODE" = true ]; then
+        env_vars="NEXT_PUBLIC_APP_ENV=production"
+        log_info "🏭 Production mode - feature flags из config.json"
     else
-        npm run dev &
+        log_info "🔧 Development mode - все feature flags включены"
+    fi
+    
+    # WiFi режим
+    if [ "$WIFI_MODE" = true ]; then
+        cmd="$cmd -- --hostname 0.0.0.0"
+        log_info "📶 WiFi режим включен - доступ из сети"
+    fi
+    
+    # Запускаем с env переменными
+    if [ -n "$env_vars" ]; then
+        env $env_vars $cmd &
+    else
+        $cmd &
     fi
     
     sleep 3
@@ -82,7 +112,11 @@ start_frontend() {
 show_info() {
     echo ""
     echo -e "${GREEN}=========================================${NC}"
-    echo -e "${GREEN}  Yalla Business Admin - Development${NC}"
+    if [ "$PROD_MODE" = true ]; then
+        echo -e "${GREEN}  Yalla Business Admin - ${PURPLE}PRODUCTION${GREEN}${NC}"
+    else
+        echo -e "${GREEN}  Yalla Business Admin - ${BLUE}DEVELOPMENT${GREEN}${NC}"
+    fi
     if [ "$WIFI_MODE" = true ]; then
         echo -e "${YELLOW}  📶 WiFi Mode${NC}"
     fi
@@ -90,6 +124,16 @@ show_info() {
     echo ""
     echo -e "  ${BLUE}Backend:${NC}  http://localhost:$BACKEND_PORT"
     echo -e "  ${BLUE}Frontend:${NC} http://localhost:$FRONTEND_PORT"
+    echo ""
+    
+    # Режим работы
+    if [ "$PROD_MODE" = true ]; then
+        echo -e "  ${PURPLE}🏭 Mode:${NC} Production (feature flags из config.json)"
+        echo -e "     - compensation: disabled"
+        echo -e "     - passwordReset: disabled"
+    else
+        echo -e "  ${BLUE}🔧 Mode:${NC} Development (все feature flags ON)"
+    fi
     echo ""
     
     # Показываем WiFi адрес только если включен WiFi режим
@@ -110,6 +154,13 @@ show_info() {
 # Получаем первый аргумент (команду)
 CMD="$1"
 
+# Если первый аргумент это флаг (wifi/prod), то команда - запуск всего
+case "$CMD" in
+    wifi|--wifi|-w|prod|--prod|-p|production)
+        CMD="all"
+        ;;
+esac
+
 case "$CMD" in
     stop)
         stop_services
@@ -126,8 +177,9 @@ case "$CMD" in
         show_info
         wait
         ;;
-    wifi)
-        # Если первый аргумент wifi - запускаем всё с WiFi
+    dev)
+        # Явно development режим
+        PROD_MODE=false
         stop_services
         start_backend
         start_frontend
@@ -135,6 +187,7 @@ case "$CMD" in
         wait
         ;;
     *)
+        # По умолчанию или "all"
         stop_services
         start_backend
         start_frontend

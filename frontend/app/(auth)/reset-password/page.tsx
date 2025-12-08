@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, Suspense } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -19,6 +19,7 @@ import { authApi } from '@/lib/api/auth'
 import { toast } from 'sonner'
 import { parseError, isRetryableError } from '@/lib/errors'
 import { logger } from '@/lib/logger'
+import { isFeatureEnabled } from '@/lib/features.config'
 
 function ResetPasswordContent() {
   const router = useRouter()
@@ -31,6 +32,18 @@ function ResetPasswordContent() {
   const [error, setError] = useState('')
   const [errorAction, setErrorAction] = useState('')
   const [canRetry, setCanRetry] = useState(false)
+
+  // Redirect if feature is disabled
+  useEffect(() => {
+    if (!isFeatureEnabled('passwordReset')) {
+      router.replace('/login')
+    }
+  }, [router])
+
+  // Don't render if feature is disabled (avoids content flash)
+  if (!isFeatureEnabled('passwordReset')) {
+    return null
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
