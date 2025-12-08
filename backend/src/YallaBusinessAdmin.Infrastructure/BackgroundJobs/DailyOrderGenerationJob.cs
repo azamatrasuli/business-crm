@@ -6,6 +6,7 @@ using YallaBusinessAdmin.Domain.Entities;
 using YallaBusinessAdmin.Domain.Enums;
 using YallaBusinessAdmin.Domain.Helpers;
 using YallaBusinessAdmin.Infrastructure.Persistence;
+using YallaBusinessAdmin.Infrastructure.Services.Dashboard;
 
 namespace YallaBusinessAdmin.Infrastructure.BackgroundJobs;
 
@@ -95,6 +96,15 @@ public class DailyOrderGenerationJob : BackgroundService
                 {
                     var employee = subscription.Employee!;
 
+                    // CRITICAL FIX: Skip CUSTOM schedule type subscriptions
+                    // For CUSTOM, orders are created at subscription creation time with specific dates.
+                    // We should NOT auto-generate daily orders for CUSTOM subscriptions.
+                    // (EVERY_OTHER_DAY is now converted to CUSTOM on frontend)
+                    if (subscription.ScheduleType == "CUSTOM")
+                    {
+                        continue; // Custom schedules have pre-created orders
+                    }
+
                     // Check if today is a working day for this employee (uses default Mon-Fri if not set)
                     if (!WorkingDaysHelper.IsWorkingDay(employee.WorkingDays, projectToday))
                     {
@@ -102,22 +112,19 @@ public class DailyOrderGenerationJob : BackgroundService
                     }
 
                     // Check if order already exists for this employee today
+                    // CRITICAL FIX: Use UTC DateTime for Postgres compatibility
+                    var todayUtc = DateTime.SpecifyKind(projectToday.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
                     var existingOrder = await context.Orders
                         .AnyAsync(o => 
                             o.EmployeeId == employee.Id &&
-                            o.OrderDate.Date == projectToday.ToDateTime(TimeOnly.MinValue).Date,
+                            o.OrderDate.Date == todayUtc.Date,
                             cancellationToken);
 
                     if (existingOrder)
                         continue;
 
-                    // Get combo price
-                    var price = subscription.ComboType switch
-                    {
-                        "Комбо 25" => 25m,
-                        "Комбо 35" => 35m,
-                        _ => 25m
-                    };
+                    // Get combo price from centralized constants
+                    var price = ComboPricingConstants.GetPrice(subscription.ComboType);
 
                     // Create order from lunch subscription
                     var order = new Order

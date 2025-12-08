@@ -531,11 +531,34 @@ export function ManageLunchDialog({
       // toISOString() would convert to UTC and potentially shift the date by -1 day
       const formatDate = (d: Date) => format(d, 'yyyy-MM-dd');
       
+      // CRITICAL FIX: Backend doesn't handle EVERY_OTHER_DAY properly!
+      // Convert EVERY_OTHER_DAY to CUSTOM with specific dates (Mon, Wed, Fri)
+      // This ensures correct order creation on backend
+      let effectiveScheduleType = scheduleType;
+      let effectiveCustomDays: string[] | undefined;
+      
+      if (scheduleType === "CUSTOM") {
+        effectiveCustomDays = customDates.map(d => formatDate(d));
+      } else if (scheduleType === "EVERY_OTHER_DAY") {
+        // Generate Mon, Wed, Fri dates in the period
+        effectiveScheduleType = "CUSTOM";
+        effectiveCustomDays = [];
+        let current = new Date(startDate);
+        while (current <= endDate) {
+          const dow = current.getDay() as DayOfWeek;
+          // Mon=1, Wed=3, Fri=5
+          if ([1, 3, 5].includes(dow) && workingDays.includes(dow)) {
+            effectiveCustomDays.push(formatDate(current));
+          }
+          current = addDays(current, 1);
+        }
+      }
+      
       if (isEditing && existingSubscription) {
+        // NOTE: Backend only supports updating comboType for existing subscriptions
+        // To change schedule, user must cancel and create new subscription
         await servicesApi.updateLunchSubscription(existingSubscription.id, {
           comboType,
-          scheduleType,
-          customDays: scheduleType === "CUSTOM" ? customDates.map(d => formatDate(d)) : undefined,
         });
         toast.success("Подписка обновлена");
       } else {
@@ -544,8 +567,8 @@ export function ManageLunchDialog({
           comboType,
           startDate: formatDate(startDate),
           endDate: formatDate(endDate),
-          scheduleType,
-          customDays: scheduleType === "CUSTOM" ? customDates.map(d => formatDate(d)) : undefined,
+          scheduleType: effectiveScheduleType,
+          customDays: effectiveCustomDays,
         });
         
         if (result.errors && result.errors.length > 0) {
@@ -728,50 +751,25 @@ export function ManageLunchDialog({
                 </div>
               </section>
 
-              {/* Schedule */}
+              {/* Schedule - READ ONLY in editing mode */}
               <section className="space-y-3">
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                   График доставки
                 </h3>
-                <RadioGroup 
-                  value={scheduleType} 
-                  onValueChange={(v) => setScheduleType(v as ScheduleType)} 
-                  className="space-y-2"
-                >
-                  {[
-                    { value: "EVERY_DAY", label: "Каждый рабочий день", desc: "Пн — Пт" },
-                    { value: "EVERY_OTHER_DAY", label: "Через день", desc: "Пн, Ср, Пт" },
-                    { value: "CUSTOM", label: "Выбрать дни вручную", desc: "Отметьте дни в календаре" },
-                  ].map(opt => (
-                    <Label 
-                      key={opt.value}
-                      className={cn(
-                        "flex items-center gap-4 rounded-xl border-2 p-4 cursor-pointer transition-all duration-200",
-                        "hover:border-amber-400/50",
-                        scheduleType === opt.value 
-                          ? "border-amber-500 bg-amber-50/30 dark:bg-amber-950/10" 
-                          : "border-border"
-                      )}
-                    >
-                      <RadioGroupItem value={opt.value} className="text-amber-600" />
-                      <div className="flex-1">
-                        <p className="font-medium">{opt.label}</p>
-                        <p className="text-xs text-muted-foreground">{opt.desc}</p>
-                      </div>
-                    </Label>
-                  ))}
-                </RadioGroup>
-                {scheduleType === "CUSTOM" && startDate && endDate && (
-                  <div className="mt-3 pt-3 border-t">
-                    <DaySelector
-                      startDate={startDate}
-                      endDate={endDate}
-                      selectedDates={customDates}
-                      onDatesChange={setCustomDates}
-                      employeeWorkingDays={workingDays}
-                    />
+                <div className="rounded-xl border bg-muted/30 p-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-medium">
+                      {scheduleType === "EVERY_DAY" ? "Каждый рабочий день" : 
+                       scheduleType === "EVERY_OTHER_DAY" ? "Через день (Пн, Ср, Пт)" : 
+                       "Выбранные дни"}
+                    </span>
                   </div>
-                )}
+                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Info className="h-3 w-3" />
+                    Для изменения графика отмените подписку и создайте новую
+                  </p>
+                </div>
               </section>
 
               {/* Price Recalculation */}

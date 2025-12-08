@@ -15,7 +15,8 @@ export interface LunchSubscription {
   scheduleType: ScheduleType
   customDays?: string[] // ISO date strings for custom schedule
   addressId?: string
-  status: 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'CANCELLED'
+  // Backend returns Russian statuses: "Активна", "Приостановлена", "Завершена"
+  status: string
   totalDays: number
   totalAmount: number
   createdAt: string
@@ -56,7 +57,8 @@ export interface Compensation {
   endDate: string
   carryOver: boolean
   autoRenew: boolean
-  status: 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'CANCELLED'
+  // Backend returns Russian statuses: "Активна", "Приостановлена", "Завершена"
+  status: string
   usedAmount: number
   remainingAmount: number
   createdAt: string
@@ -121,8 +123,9 @@ export const servicesApi = {
     await apiClient.delete(`/subscriptions/${id}`)
   },
 
-  async pauseLunchSubscription(id: string, dates?: string[]): Promise<LunchSubscription> {
-    const response = await apiClient.post<LunchSubscription>(`/subscriptions/${id}/pause`, { dates })
+  async pauseLunchSubscription(id: string): Promise<LunchSubscription> {
+    // NOTE: Backend does not accept dates parameter - use freeze for date-specific pauses
+    const response = await apiClient.post<LunchSubscription>(`/subscriptions/${id}/pause`)
     return response.data
   },
 
@@ -162,23 +165,28 @@ export const servicesApi = {
   },
 
   // ----- Service Availability Check -----
+  // NOTE: This endpoint does NOT exist on backend yet - implement before using!
 
   async checkServiceAvailability(employeeIds: string[]): Promise<ServiceAvailability[]> {
+    // TODO: Backend endpoint /services/check-availability needs to be created
     const response = await apiClient.post<ServiceAvailability[]>('/services/check-availability', { employeeIds })
     return response.data
   },
 
   // ----- Bulk Operations -----
 
-  async bulkPauseLunch(subscriptionIds: string[], dates?: string[]): Promise<void> {
-    await apiClient.post('/subscriptions/bulk/pause', { subscriptionIds, dates })
+  async bulkPauseLunch(subscriptionIds: string[]): Promise<void> {
+    // NOTE: Backend expects { SubscriptionIds } not { subscriptionIds }
+    await apiClient.post('/subscriptions/bulk/pause', { SubscriptionIds: subscriptionIds })
   },
 
   async bulkResumeLunch(subscriptionIds: string[]): Promise<void> {
-    await apiClient.post('/subscriptions/bulk/resume', { subscriptionIds })
+    // NOTE: Backend expects { SubscriptionIds } not { subscriptionIds }
+    await apiClient.post('/subscriptions/bulk/resume', { SubscriptionIds: subscriptionIds })
   },
 
   async bulkCancelServices(employeeIds: string[], serviceType: ServiceType): Promise<void> {
+    // TODO: Backend endpoint /services/bulk/cancel needs to be created
     await apiClient.post('/services/bulk/cancel', { employeeIds, serviceType })
   },
 }

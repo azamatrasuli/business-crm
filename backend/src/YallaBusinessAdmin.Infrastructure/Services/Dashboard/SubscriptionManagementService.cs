@@ -39,11 +39,35 @@ public sealed class SubscriptionManagementService : ISubscriptionManagementServi
 
         if (!string.IsNullOrWhiteSpace(request.ComboType))
         {
+            // CRITICAL FIX: Update BOTH active orders AND the subscription itself
+            // Otherwise new auto-generated orders will use old combo type!
+            
+            // 1. Update active orders
             var updatedCount = await UpdateActiveOrdersComboTypeAsync(
                 employeeId, request.ComboType, cancellationToken);
 
+            // 2. Update the subscription too!
+            var subscription = await _context.LunchSubscriptions
+                .FirstOrDefaultAsync(s => s.EmployeeId == employeeId && s.IsActive, cancellationToken);
+            
+            if (subscription != null)
+            {
+                var oldPrice = ComboPricingConstants.GetPrice(subscription.ComboType);
+                var newPrice = ComboPricingConstants.GetPrice(request.ComboType);
+                
+                subscription.ComboType = request.ComboType;
+                // Recalculate total price based on remaining days
+                if (subscription.TotalDays > 0 && oldPrice > 0)
+                {
+                    subscription.TotalPrice = (subscription.TotalPrice / oldPrice) * newPrice;
+                }
+                subscription.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+
             _logger.LogInformation(
-                "Updated {Count} orders for employee {EmployeeId} with combo type {ComboType}",
+                "Updated {Count} orders and subscription for employee {EmployeeId} with combo type {ComboType}",
                 updatedCount, employeeId, request.ComboType);
         }
 
@@ -65,15 +89,44 @@ public sealed class SubscriptionManagementService : ISubscriptionManagementServi
         // NOTE: Address cannot be changed - it comes from employee's project
         // To change address, employee must be moved to a different project
 
-        foreach (var employee in employees)
+        if (!string.IsNullOrWhiteSpace(request.ComboType))
         {
-            if (!string.IsNullOrWhiteSpace(request.ComboType))
+            // CRITICAL FIX: Update BOTH active orders AND subscriptions
+            // Otherwise new auto-generated orders will use old combo type!
+            
+            var employeeIds = employees.Select(e => e.Id).ToList();
+            
+            // 1. Update all active orders for these employees
+            var activeOrders = await _context.Orders
+                .Where(o => employeeIds.Contains(o.EmployeeId!.Value) && o.Status == OrderStatus.Active)
+                .ToListAsync(cancellationToken);
+
+            foreach (var order in activeOrders)
             {
-                await UpdateActiveOrdersComboTypeAsync(
-                    employee.Id, request.ComboType, cancellationToken);
+                order.ComboType = request.ComboType;
+                order.Price = ComboPricingConstants.GetPrice(request.ComboType);
+                order.UpdatedAt = DateTime.UtcNow;
             }
 
-            updated++;
+            // 2. Update all subscriptions for these employees
+            var subscriptions = await _context.LunchSubscriptions
+                .Where(s => employeeIds.Contains(s.EmployeeId) && s.IsActive)
+                .ToListAsync(cancellationToken);
+
+            foreach (var subscription in subscriptions)
+            {
+                var oldPrice = ComboPricingConstants.GetPrice(subscription.ComboType);
+                var newPrice = ComboPricingConstants.GetPrice(request.ComboType);
+                
+                subscription.ComboType = request.ComboType;
+                if (subscription.TotalDays > 0 && oldPrice > 0)
+                {
+                    subscription.TotalPrice = (subscription.TotalPrice / oldPrice) * newPrice;
+                }
+                subscription.UpdatedAt = DateTime.UtcNow;
+            }
+
+            updated = employees.Count;
         }
 
         await _context.SaveChangesAsync(cancellationToken);

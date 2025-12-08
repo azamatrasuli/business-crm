@@ -184,7 +184,8 @@ export function useCompensationForm({
   }, [mode, employee, isEditing])
 
   const canProceedStep1 = dailyLimit > 0 && (mode !== 'individual' || individualValidation.isValid)
-  const canProceedStep2 = Boolean(startDate && endDate && totalDays >= 5)
+  // FIXED: Use calculated WORKING days, not calendar days
+  const canProceedStep2 = Boolean(startDate && endDate && workingDays >= 5)
   const canProceedStep3 = mode === 'individual' || selectedEmployeeIds.length > 0
 
   const canProceed = useMemo(() => {

@@ -78,7 +78,7 @@ const ACTION_OPTIONS: ActionOption[] = [
   {
     id: 'pause',
     label: 'Приостановить подписки',
-    description: 'Дни переносятся в конец периода',
+    description: 'Временная остановка доставки',
     icon: <PauseCircle className="h-5 w-5" />,
     color: 'text-orange-600',
     bgColor: 'bg-orange-50 dark:bg-orange-950/30',
@@ -284,7 +284,7 @@ export function BulkEditDialog({
           }
           await bulkAction(request)
           toast.success(`Приостановлено: ${lunchOrders.length} заказов`, {
-            description: 'Дни будут перенесены в конец периода подписки',
+            description: 'Заказы временно приостановлены',
           })
           break
         }
@@ -599,9 +599,9 @@ export function BulkEditDialog({
               <PauseCircle className="h-4 w-4 text-orange-600" />
               <AlertDescription className="text-orange-800 dark:text-orange-200">
                 <ul className="list-disc list-inside space-y-1">
-                  <li>Подписки будут приостановлены</li>
-                  <li>Все будущие дни <span className="font-medium">переносятся в конец периода</span></li>
-                  <li>Период подписки автоматически продлевается</li>
+                  <li>Заказы будут временно приостановлены</li>
+                  <li><span className="font-medium">Внимание:</span> приостановленные дни НЕ переносятся</li>
+                  <li>Для переноса дней используйте «Заморозить»</li>
                 </ul>
               </AlertDescription>
             </Alert>
@@ -612,9 +612,8 @@ export function BulkEditDialog({
               <PlayCircle className="h-4 w-4 text-green-600" />
               <AlertDescription className="text-green-800 dark:text-green-200">
                 <ul className="list-disc list-inside space-y-1">
-                  <li>Подписки будут возобновлены</li>
-                  <li>Доставка продолжится с ближайшего рабочего дня</li>
-                  <li>Перенесённые дни добавлены в конец периода</li>
+                  <li>Приостановленные заказы будут возобновлены</li>
+                  <li>Доставка продолжится по расписанию</li>
                 </ul>
               </AlertDescription>
             </Alert>

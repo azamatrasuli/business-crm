@@ -385,12 +385,33 @@ export function useLunchSubscriptionForm({
       // IMPORTANT: Use local date formatting to avoid timezone shift
       const formatDateLocal = (d: Date) => format(d, 'yyyy-MM-dd')
       
+      // CRITICAL FIX: Backend doesn't handle EVERY_OTHER_DAY properly!
+      // Convert EVERY_OTHER_DAY to CUSTOM with specific dates (Mon, Wed, Fri)
+      let effectiveScheduleType = scheduleType
+      let effectiveCustomDays: string[] | undefined
+      
+      if (scheduleType === 'CUSTOM') {
+        effectiveCustomDays = customDates.map((d) => formatDateLocal(d))
+      } else if (scheduleType === 'EVERY_OTHER_DAY') {
+        // Generate Mon, Wed, Fri dates in the period
+        effectiveScheduleType = 'CUSTOM'
+        effectiveCustomDays = []
+        let current = new Date(startDate)
+        while (current <= endDate) {
+          const dow = current.getDay() as DayOfWeek
+          // Mon=1, Wed=3, Fri=5
+          if ([1, 3, 5].includes(dow) && workingDays.includes(dow)) {
+            effectiveCustomDays.push(formatDateLocal(current))
+          }
+          current = addDays(current, 1)
+        }
+      }
+      
       if (isEditing && existingSubscription) {
         await servicesApi.updateLunchSubscription(existingSubscription.id, {
           comboType,
-          scheduleType,
-          customDays:
-            scheduleType === 'CUSTOM' ? customDates.map((d) => formatDateLocal(d)) : undefined,
+          scheduleType: effectiveScheduleType,
+          customDays: effectiveCustomDays,
         })
         toast.success('Подписка обновлена')
       } else {
@@ -399,9 +420,8 @@ export function useLunchSubscriptionForm({
           comboType,
           startDate: formatDateLocal(startDate),
           endDate: formatDateLocal(endDate),
-          scheduleType,
-          customDays:
-            scheduleType === 'CUSTOM' ? customDates.map((d) => formatDateLocal(d)) : undefined,
+          scheduleType: effectiveScheduleType,
+          customDays: effectiveCustomDays,
         })
         toast.success(
           employeeIds.length === 1

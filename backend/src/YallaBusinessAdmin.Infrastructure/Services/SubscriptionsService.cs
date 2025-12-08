@@ -241,7 +241,47 @@ public class SubscriptionsService : ISubscriptionsService
 
         if (!string.IsNullOrWhiteSpace(request.ComboType))
         {
+            var oldComboType = subscription.ComboType;
             subscription.ComboType = request.ComboType;
+            
+            // CRITICAL FIX: Also update active orders to use new combo type
+            // Otherwise existing orders would have wrong combo after update
+            if (oldComboType != request.ComboType)
+            {
+                var oldPrice = request.ComboType switch
+                {
+                    "Комбо 25" => 25m,
+                    "Комбо 35" => 35m,
+                    _ => 25m
+                };
+                
+                var newPrice = request.ComboType switch
+                {
+                    "Комбо 25" => 25m,
+                    "Комбо 35" => 35m,
+                    _ => 25m
+                };
+                
+                // Recalculate subscription price
+                if (subscription.TotalDays > 0)
+                {
+                    subscription.TotalPrice = newPrice * subscription.TotalDays;
+                }
+                
+                // Update all active/future orders for this employee
+                var activeOrders = await _context.Orders
+                    .Where(o => o.EmployeeId == subscription.EmployeeId && 
+                               (o.Status == OrderStatus.Active || o.Status == OrderStatus.Frozen) &&
+                               o.OrderDate >= DateTime.UtcNow.Date)
+                    .ToListAsync(cancellationToken);
+
+                foreach (var order in activeOrders)
+                {
+                    order.ComboType = request.ComboType;
+                    order.Price = newPrice;
+                    order.UpdatedAt = DateTime.UtcNow;
+                }
+            }
         }
 
         // NOTE: Address cannot be changed here - it comes from employee's project
@@ -381,8 +421,24 @@ public class SubscriptionsService : ISubscriptionsService
                 ? DateOnly.ParseExact(request.EndDate, "yyyy-MM-dd", CultureInfo.InvariantCulture)
                 : startDate.AddMonths(1);
 
-            // Calculate total WORKING days and price (not calendar days!)
-            var totalDays = WorkingDaysHelper.CountWorkingDays(employee.WorkingDays, startDate, endDate);
+            // Calculate total days based on schedule type
+            // CRITICAL FIX: For CUSTOM, use the actual custom days count, not working days!
+            int totalDays;
+            if (request.ScheduleType == "CUSTOM" && request.CustomDays != null && request.CustomDays.Count > 0)
+            {
+                // For CUSTOM schedule, total days = number of custom days selected
+                // Filter out past dates (same logic as CreateOrdersForCustomDaysAsync)
+                var today = DateOnly.FromDateTime(DateTime.Today);
+                totalDays = request.CustomDays
+                    .Select(d => DateOnly.Parse(d))
+                    .Count(d => d >= today);
+            }
+            else
+            {
+                // For EVERY_DAY (and converted EVERY_OTHER_DAY), count working days
+                totalDays = WorkingDaysHelper.CountWorkingDays(employee.WorkingDays, startDate, endDate);
+            }
+            
             var price = request.ComboType switch
             {
                 "Комбо 25" => 25m,
