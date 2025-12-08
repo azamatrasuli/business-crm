@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { useEmployeesStore } from '@/stores/employees-store'
 import { useAuthStore } from '@/stores/auth-store'
-import { parseError, ErrorCodes } from '@/lib/errors'
+import { parseError, ErrorCodes, applyFieldErrors } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import {
   DAYS_OF_WEEK,
@@ -138,9 +138,20 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 
       logger.error('Failed to create employee', error instanceof Error ? error : new Error(appError.message), {
         errorCode: appError.code,
+        fieldErrors: appError.fieldErrors,
       })
 
-      // Map specific errors to form fields
+      // Handle multiple field errors at once
+      if (appError.isMultiValidationError) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const hasFieldErrors = applyFieldErrors(appError, form.setError as any)
+        if (!hasFieldErrors) {
+          toast.error(appError.message, { description: appError.action })
+        }
+        return
+      }
+
+      // Handle single field errors (backwards compatibility)
       switch (appError.code) {
         case ErrorCodes.EMP_PHONE_EXISTS:
         case ErrorCodes.EMP_PHONE_DELETED:

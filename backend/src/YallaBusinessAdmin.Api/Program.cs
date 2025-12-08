@@ -390,6 +390,33 @@ app.UseExceptionHandler(errorApp =>
         var exceptionHandlerPathFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerPathFeature>();
         var exception = exceptionHandlerPathFeature?.Error;
         
+        // Special handling for MultiValidationException - return all field errors
+        if (exception is YallaBusinessAdmin.Application.Common.Errors.MultiValidationException multiEx)
+        {
+            context.Response.StatusCode = 400;
+            
+            Log.Warning("Multiple validation errors at {Path}: {ErrorCount} errors", 
+                context.Request.Path, multiEx.FieldErrors.Count);
+            
+            var multiResponse = new
+            {
+                success = false,
+                error = new
+                {
+                    code = "MULTI_VALIDATION_ERROR",
+                    message = "Ошибки валидации",
+                    type = "Validation",
+                    fieldErrors = multiEx.FieldErrors.Select(e => new { e.Field, e.Code, e.Message }),
+                    action = "Исправьте указанные поля"
+                },
+                path = context.Request.Path.Value,
+                timestamp = DateTime.UtcNow
+            };
+            
+            await context.Response.WriteAsJsonAsync(multiResponse);
+            return;
+        }
+        
         // Determine error type and status code
         var (statusCode, errorCode, errorType, message, details) = exception switch
         {

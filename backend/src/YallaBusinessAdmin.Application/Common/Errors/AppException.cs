@@ -81,4 +81,50 @@ public class BusinessRuleException : AppException
         : base(code, message, ErrorType.Validation, details) { }
 }
 
+/// <summary>
+/// Multiple field validation errors (400 Bad Request)
+/// Used when multiple fields have validation errors and we want to show them all at once
+/// </summary>
+public class MultiValidationException : AppException
+{
+    public List<FieldError> FieldErrors { get; }
+
+    public MultiValidationException(List<FieldError> fieldErrors) 
+        : base(
+            ErrorCodes.VALIDATION_ERROR, 
+            "Ошибки валидации", 
+            ErrorType.Validation, 
+            new Dictionary<string, object> { ["fieldErrors"] = fieldErrors })
+    {
+        FieldErrors = fieldErrors;
+    }
+
+    public static void ThrowIfHasErrors(List<FieldError> errors)
+    {
+        if (errors.Count > 0)
+        {
+            throw new MultiValidationException(errors);
+        }
+    }
+}
+
+/// <summary>
+/// Represents a single field validation error
+/// </summary>
+public class FieldError
+{
+    public string Field { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+
+    public FieldError() { }
+
+    public FieldError(string field, string code, string message)
+    {
+        Field = field;
+        Code = code;
+        Message = message;
+    }
+}
+
 

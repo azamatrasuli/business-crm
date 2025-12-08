@@ -6,6 +6,31 @@ import { AxiosError } from 'axios'
 export type ErrorType = 'Validation' | 'NotFound' | 'Forbidden' | 'Conflict' | 'Internal'
 
 /**
+ * Single field error from backend
+ */
+export interface FieldError {
+  field: string
+  code: string
+  message: string
+}
+
+/**
+ * Multi-validation error response from backend
+ */
+export interface MultiValidationErrorResponse {
+  success: false
+  error: {
+    code: 'MULTI_VALIDATION_ERROR'
+    message: string
+    type: 'Validation'
+    fieldErrors: FieldError[]
+    action?: string | null
+  }
+  path: string
+  timestamp: string
+}
+
+/**
  * Structured API error response from backend
  */
 export interface ApiErrorResponse {
@@ -30,10 +55,12 @@ export interface AppError {
   type: ErrorType
   details?: Record<string, unknown>
   action?: string
+  fieldErrors?: FieldError[]
   isNetworkError: boolean
   isServerError: boolean
   isValidationError: boolean
   isAuthError: boolean
+  isMultiValidationError: boolean
 }
 
 /**
@@ -175,15 +202,33 @@ export function parseError(error: unknown): AppError {
       isServerError: false,
       isValidationError: false,
       isAuthError: false,
+      isMultiValidationError: false,
     }
   }
 
   // Axios error with response
   if (isAxiosError(error) && error.response) {
-    const data = error.response.data as ApiErrorResponse | { message?: string }
+    const data = error.response.data as ApiErrorResponse | MultiValidationErrorResponse | { message?: string }
     
     // Structured error response from backend
     if ('success' in data && data.success === false && 'error' in data) {
+      // Check for multi-validation error
+      if (data.error.code === 'MULTI_VALIDATION_ERROR' && 'fieldErrors' in data.error) {
+        const multiError = data as MultiValidationErrorResponse
+        return {
+          code: multiError.error.code,
+          message: multiError.error.message,
+          type: multiError.error.type,
+          fieldErrors: multiError.error.fieldErrors,
+          action: multiError.error.action ?? 'Исправьте указанные поля',
+          isNetworkError: false,
+          isServerError: false,
+          isValidationError: true,
+          isAuthError: false,
+          isMultiValidationError: true,
+        }
+      }
+      
       const apiError = data as ApiErrorResponse
       return {
         code: apiError.error.code,
@@ -195,6 +240,7 @@ export function parseError(error: unknown): AppError {
         isServerError: apiError.error.type === 'Internal',
         isValidationError: apiError.error.type === 'Validation',
         isAuthError: apiError.error.code.startsWith('AUTH_'),
+        isMultiValidationError: false,
       }
     }
 
@@ -211,6 +257,7 @@ export function parseError(error: unknown): AppError {
       isServerError: statusCode >= 500,
       isValidationError: statusCode >= 400 && statusCode < 500,
       isAuthError: statusCode === 401 || statusCode === 403,
+      isMultiValidationError: false,
     }
   }
 
@@ -224,6 +271,7 @@ export function parseError(error: unknown): AppError {
     isServerError: true,
     isValidationError: false,
     isAuthError: false,
+    isMultiValidationError: false,
   }
 }
 
@@ -263,5 +311,32 @@ export function formatErrorForToast(error: AppError): { title: string; descripti
  */
 export function isRetryableError(error: AppError): boolean {
   return error.isNetworkError || error.isServerError
+}
+
+/**
+ * Apply field errors to a react-hook-form instance
+ * Returns true if any field errors were applied
+ */
+export function applyFieldErrors<T extends string>(
+  error: AppError,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  setError: (field: T | `root.${string}` | 'root', error: { message: string }) => void,
+  fieldMapping?: Record<string, T>
+): boolean {
+  if (!error.isMultiValidationError || !error.fieldErrors?.length) {
+    return false
+  }
+
+  for (const fieldError of error.fieldErrors) {
+    // Map backend field name to form field name if mapping provided
+    const formField = fieldMapping?.[fieldError.field] ?? (fieldError.field as T)
+    try {
+      setError(formField, { message: fieldError.message })
+    } catch {
+      // Field not in form, ignore
+    }
+  }
+
+  return true
 }
 

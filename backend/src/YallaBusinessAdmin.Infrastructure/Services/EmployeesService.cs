@@ -171,55 +171,66 @@ public class EmployeesService : IEmployeesService
 
     public async Task<EmployeeResponse> CreateAsync(CreateEmployeeRequest request, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
     {
-        // Validate required fields
-        if (string.IsNullOrWhiteSpace(request.Phone))
-        {
-            throw new InvalidOperationException("Телефон обязателен для заполнения");
-        }
-
+        var errors = new List<FieldError>();
+        
+        // ═══════════════════════════════════════════════════════════════
+        // Step 1: Validate required fields and formats (sync validation)
+        // ═══════════════════════════════════════════════════════════════
+        
         if (string.IsNullOrWhiteSpace(request.FullName))
         {
-            throw new InvalidOperationException("ФИО обязательно для заполнения");
+            errors.Add(new FieldError("fullName", ErrorCodes.EMP_REQUIRED_FIELD_MISSING, "ФИО обязательно для заполнения"));
         }
 
-        // Validate phone format using Domain model method
-        if (!Employee.IsValidPhoneFormat(request.Phone))
+        if (string.IsNullOrWhiteSpace(request.Phone))
         {
-            throw new InvalidOperationException("Неверный формат телефона. Телефон должен начинаться с + и содержать только цифры");
+            errors.Add(new FieldError("phone", ErrorCodes.EMP_REQUIRED_FIELD_MISSING, "Телефон обязателен для заполнения"));
         }
-
+        else if (!Employee.IsValidPhoneFormat(request.Phone))
+        {
+            errors.Add(new FieldError("phone", ErrorCodes.EMP_INVALID_PHONE_FORMAT, ErrorMessages.GetMessage(ErrorCodes.EMP_INVALID_PHONE_FORMAT)));
+        }
+        
         // Validate email format
         var emailValidation = EmployeeValidator.ValidateEmail(request.Email);
         if (!emailValidation.IsValid)
         {
-            throw new InvalidOperationException(emailValidation.ErrorMessage);
+            errors.Add(new FieldError("email", ErrorCodes.EMP_INVALID_EMAIL_FORMAT, emailValidation.ErrorMessage ?? "Неверный формат email"));
         }
-
+        
         // Validate working days
         var workingDaysValidation = EmployeeValidator.ValidateWorkingDays(request.WorkingDays);
         if (!workingDaysValidation.IsValid)
         {
-            throw new InvalidOperationException(workingDaysValidation.ErrorMessage);
+            errors.Add(new FieldError("workingDays", ErrorCodes.VALIDATION_ERROR, workingDaysValidation.ErrorMessage ?? "Ошибка валидации рабочих дней"));
         }
-
+        
         // Validate work time
         var startTimeValidation = EmployeeValidator.ValidateAndParseTime(request.WorkStartTime, "Время начала работы");
         if (!startTimeValidation.IsValid)
         {
-            throw new InvalidOperationException(startTimeValidation.ErrorMessage);
+            errors.Add(new FieldError("workStartTime", ErrorCodes.VALIDATION_ERROR, startTimeValidation.ErrorMessage ?? "Неверный формат времени"));
         }
-
+        
         var endTimeValidation = EmployeeValidator.ValidateAndParseTime(request.WorkEndTime, "Время окончания работы");
         if (!endTimeValidation.IsValid)
         {
-            throw new InvalidOperationException(endTimeValidation.ErrorMessage);
+            errors.Add(new FieldError("workEndTime", ErrorCodes.VALIDATION_ERROR, endTimeValidation.ErrorMessage ?? "Неверный формат времени"));
+        }
+        
+        // Only validate time range if both times are valid
+        if (startTimeValidation.IsValid && endTimeValidation.IsValid)
+        {
+            var timeRangeValidation = EmployeeValidator.ValidateWorkTimeRange(startTimeValidation.Time, endTimeValidation.Time);
+            if (!timeRangeValidation.IsValid)
+            {
+                errors.Add(new FieldError("workEndTime", ErrorCodes.VALIDATION_ERROR, timeRangeValidation.ErrorMessage ?? "Неверный диапазон времени"));
+            }
         }
 
-        var timeRangeValidation = EmployeeValidator.ValidateWorkTimeRange(startTimeValidation.Time, endTimeValidation.Time);
-        if (!timeRangeValidation.IsValid)
-        {
-            throw new InvalidOperationException(timeRangeValidation.ErrorMessage);
-        }
+        // ═══════════════════════════════════════════════════════════════
+        // Step 2: Async validation (database checks)
+        // ═══════════════════════════════════════════════════════════════
 
         // Validate project exists and belongs to the company
         var project = await _context.Projects
@@ -227,31 +238,25 @@ public class EmployeesService : IEmployeesService
 
         if (project == null)
         {
-            throw new InvalidOperationException("Указанный проект не найден или не принадлежит вашей компании");
+            errors.Add(new FieldError("projectId", ErrorCodes.PROJ_NOT_FOUND, "Указанный проект не найден или не принадлежит вашей компании"));
         }
 
-        // Check for duplicate phone across all employees (including deleted)
-        var existingByPhone = await _context.Employees
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(e => e.Phone == request.Phone, cancellationToken);
-
-        if (existingByPhone != null)
+        // Check for duplicate phone across all employees (only if phone format is valid)
+        if (!string.IsNullOrWhiteSpace(request.Phone) && Employee.IsValidPhoneFormat(request.Phone))
         {
-            if (existingByPhone.DeletedAt != null)
-            {
-                throw new ConflictException(
-                    ErrorCodes.EMP_PHONE_DELETED,
-                    ErrorMessages.GetMessage(ErrorCodes.EMP_PHONE_DELETED),
-                    new Dictionary<string, object> { ["field"] = "phone" });
-            }
-            throw new ConflictException(
-                ErrorCodes.EMP_PHONE_EXISTS,
-                ErrorMessages.GetMessage(ErrorCodes.EMP_PHONE_EXISTS),
-                new Dictionary<string, object> { ["field"] = "phone" });
-        }
+            var existingByPhone = await _context.Employees
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(e => e.Phone == request.Phone, cancellationToken);
 
-        // Check for duplicate email across all employees (including deleted)
-        if (!string.IsNullOrWhiteSpace(request.Email))
+            if (existingByPhone != null)
+            {
+                var code = existingByPhone.DeletedAt != null ? ErrorCodes.EMP_PHONE_DELETED : ErrorCodes.EMP_PHONE_EXISTS;
+                errors.Add(new FieldError("phone", code, ErrorMessages.GetMessage(code)));
+            }
+        }
+        
+        // Check for duplicate email across all employees (only if email format is valid)
+        if (!string.IsNullOrWhiteSpace(request.Email) && emailValidation.IsValid)
         {
             var existingByEmail = await _context.Employees
                 .IgnoreQueryFilters()
@@ -259,19 +264,15 @@ public class EmployeesService : IEmployeesService
 
             if (existingByEmail != null)
             {
-                if (existingByEmail.DeletedAt != null)
-                {
-                    throw new ConflictException(
-                        ErrorCodes.EMP_EMAIL_DELETED,
-                        ErrorMessages.GetMessage(ErrorCodes.EMP_EMAIL_DELETED),
-                        new Dictionary<string, object> { ["field"] = "email" });
-                }
-                throw new ConflictException(
-                    ErrorCodes.EMP_EMAIL_EXISTS,
-                    ErrorMessages.GetMessage(ErrorCodes.EMP_EMAIL_EXISTS),
-                    new Dictionary<string, object> { ["field"] = "email" });
+                var code = existingByEmail.DeletedAt != null ? ErrorCodes.EMP_EMAIL_DELETED : ErrorCodes.EMP_EMAIL_EXISTS;
+                errors.Add(new FieldError("email", code, ErrorMessages.GetMessage(code)));
             }
         }
+
+        // ═══════════════════════════════════════════════════════════════
+        // Step 3: Throw all errors at once if any
+        // ═══════════════════════════════════════════════════════════════
+        MultiValidationException.ThrowIfHasErrors(errors);
 
         var employee = new Employee
         {

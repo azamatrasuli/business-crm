@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { useEmployeesStore } from '@/stores/employees-store'
-import { parseError, ErrorCodes } from '@/lib/errors'
+import { parseError, ErrorCodes, applyFieldErrors } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import {
   DAYS_OF_WEEK,
@@ -155,9 +155,20 @@ export function EditEmployeeDialog({
       logger.error('Failed to update employee', error instanceof Error ? error : new Error(appError.message), {
         errorCode: appError.code,
         employeeId: employee.id,
+        fieldErrors: appError.fieldErrors,
       })
 
-      // Map specific errors to form fields
+      // Handle multiple field errors at once
+      if (appError.isMultiValidationError) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const hasFieldErrors = applyFieldErrors(appError, form.setError as any)
+        if (!hasFieldErrors) {
+          toast.error(appError.message, { description: appError.action })
+        }
+        return
+      }
+
+      // Handle single field errors (backwards compatibility)
       switch (appError.code) {
         case ErrorCodes.EMP_SERVICE_TYPE_SWITCH_BLOCKED:
           form.setError('serviceType', { message: appError.message })
