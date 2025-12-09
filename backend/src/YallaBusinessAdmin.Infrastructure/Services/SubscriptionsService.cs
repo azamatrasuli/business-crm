@@ -248,7 +248,6 @@ public class SubscriptionsService : ISubscriptionsService
             // Otherwise existing orders would have wrong combo after update
             if (oldComboType != request.ComboType)
             {
-                // FIX: oldPrice должен браться из старого комбо, не из нового!
                 var oldPrice = oldComboType switch
                 {
                     "Комбо 25" => 25m,
@@ -263,20 +262,32 @@ public class SubscriptionsService : ISubscriptionsService
                     _ => 25m
                 };
                 
-                // Recalculate subscription price
-                if (subscription.TotalDays > 0)
-                {
-                    subscription.TotalPrice = newPrice * subscription.TotalDays;
-                }
-                
-                // Update all active/future orders for this employee
-                var activeOrders = await _context.Orders
+                // Get future orders to update (Active or Frozen, today and forward)
+                var futureOrders = await _context.Orders
                     .Where(o => o.EmployeeId == subscription.EmployeeId && 
                                (o.Status == OrderStatus.Active || o.Status == OrderStatus.Frozen) &&
                                o.OrderDate >= DateTime.UtcNow.Date)
                     .ToListAsync(cancellationToken);
-
-                foreach (var order in activeOrders)
+                
+                var futureOrdersCount = futureOrders.Count;
+                
+                // FIXED: Recalculate subscription price correctly
+                // TotalPrice = (completed days * old price) + (remaining days * new price)
+                // We can calculate this as: current price - (remaining * old price) + (remaining * new price)
+                // Which simplifies to: current price + remaining * (new price - old price)
+                if (subscription.TotalPrice.HasValue && futureOrdersCount > 0)
+                {
+                    var priceDifference = (newPrice - oldPrice) * futureOrdersCount;
+                    subscription.TotalPrice = subscription.TotalPrice.Value + priceDifference;
+                }
+                else if (subscription.TotalDays > 0)
+                {
+                    // Fallback: if no TotalPrice, recalculate from scratch
+                    subscription.TotalPrice = newPrice * subscription.TotalDays;
+                }
+                
+                // Update future orders with new combo and price
+                foreach (var order in futureOrders)
                 {
                     order.ComboType = request.ComboType;
                     order.Price = newPrice;
@@ -318,14 +329,14 @@ public class SubscriptionsService : ISubscriptionsService
         subscription.Deactivate(); // Uses domain method which sets IsActive=false and Status="Завершена"
 
         // ═══════════════════════════════════════════════════════════════
-        // CANCEL FUTURE ORDERS: Cancel only future orders (Active or Frozen)
-        // Keep today's orders and all past orders as history
+        // CANCEL FUTURE ORDERS: Cancel orders from today onwards (Active or Frozen)
+        // Orders already Delivered/Completed are not affected (history preserved)
         // ═══════════════════════════════════════════════════════════════
-        var tomorrow = DateTime.UtcNow.Date.AddDays(1);
+        var today = DateTime.UtcNow.Date;
         var futureOrders = await _context.Orders
             .Where(o => o.EmployeeId == subscription.EmployeeId
                      && (o.Status == OrderStatus.Active || o.Status == OrderStatus.Frozen)
-                     && o.OrderDate >= tomorrow)
+                     && o.OrderDate >= today)
             .ToListAsync(cancellationToken);
 
         // FIX: Рассчитываем сумму возврата за отменённые заказы

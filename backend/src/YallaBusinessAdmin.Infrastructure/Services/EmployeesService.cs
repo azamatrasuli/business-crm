@@ -47,11 +47,14 @@ public class EmployeesService : IEmployeesService
         Guid? projectId = null,
         CancellationToken cancellationToken = default)
     {
+        // Load orders for the current subscription period to correctly count future/completed
+        // Using today-30 days to cover most subscription periods while limiting data
+        var ordersStartDate = DateTime.UtcNow.Date.AddDays(-30);
         var query = _context.Employees
             .AsNoTracking()
             .Include(e => e.Budget)
             .Include(e => e.Project)
-            .Include(e => e.Orders.Where(o => o.OrderDate >= DateTime.UtcNow.Date))
+            .Include(e => e.Orders.Where(o => o.OrderDate >= ordersStartDate))
             .Include(e => e.LunchSubscription)
             .Where(e => e.CompanyId == companyId);
 
@@ -157,7 +160,8 @@ public class EmployeesService : IEmployeesService
             .AsNoTracking()
             .Include(e => e.Budget)
             .Include(e => e.Project)
-            .Include(e => e.Orders.Where(o => o.OrderDate >= DateTime.UtcNow.Date.AddDays(-7)))
+            // Load ALL orders for the employee to correctly count future/completed for subscription stats
+            .Include(e => e.Orders)
             .Include(e => e.LunchSubscription)
             .FirstOrDefaultAsync(e => e.Id == id && e.CompanyId == companyId, cancellationToken);
 

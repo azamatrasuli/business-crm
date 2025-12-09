@@ -1231,7 +1231,7 @@ function HomePageContent() {
             className="flex-1 sm:flex-initial gap-2 text-amber-600 hover:text-amber-700"
           >
             <UtensilsCrossed className="h-4 w-4" />
-            Управлять обедами
+            Назначить обеды
           </Button>
           <FeatureVisible feature="compensation">
           <Button 
@@ -1240,7 +1240,7 @@ function HomePageContent() {
             className="flex-1 sm:flex-initial gap-2 text-emerald-600 hover:text-emerald-700"
           >
             <Wallet className="h-4 w-4" />
-            Управлять компенсациями
+            Назначить компенсации
           </Button>
           </FeatureVisible>
           <TooltipProvider>

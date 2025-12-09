@@ -261,7 +261,13 @@ export function ManageLunchDialog({
     }
     
     if (!startDate || !endDate) return 0;
-    if (scheduleType === "CUSTOM") return customDates.length;
+    
+    // FIXED: Для CUSTOM фильтруем по рабочим дням сотрудника
+    if (scheduleType === "CUSTOM") {
+      return customDates.filter(date => 
+        workingDays.includes(date.getDay() as DayOfWeek)
+      ).length;
+    }
     
     // Use centralized function for accurate calculation
     if (scheduleType === "EVERY_DAY") {
@@ -296,7 +302,10 @@ export function ManageLunchDialog({
       let days = 0;
       
       if (scheduleType === "CUSTOM") {
-        days = customDates.length;
+        // FIXED: Считаем только дни из customDates, которые совпадают с рабочими днями сотрудника
+        days = customDates.filter(date => 
+          empWorkDays.includes(date.getDay() as DayOfWeek)
+        ).length;
       } else if (scheduleType === "EVERY_DAY") {
         days = countWorkingDaysInRange(empWorkDays, startDate, endDate);
       } else {
@@ -338,7 +347,7 @@ export function ManageLunchDialog({
   // FIXED: Check calculated WORKING days, not calendar days
   // calculatedDays respects employee's working days schedule
   const canProceedStep2 = startDate && endDate && calculatedDays >= 5;
-  const canProceedStep3 = scheduleType !== "CUSTOM" || customDates.length > 0;
+  // canProceedStep3 defined below after scheduleTypeFilteredEmployees (dependency)
   const canProceedStep4 = mode === "individual" || selectedEmployeeIds.length > 0;
 
   // В bulk режиме показываем только сотрудников:
@@ -366,6 +375,7 @@ export function ManageLunchDialog({
 
   // Фильтрация по графику доставки (применяется на шаге 3)
   // Проверяем совместимость рабочих дней сотрудника с выбранным графиком
+  // CRITICAL: Эта логика должна быть идентична scheduleTypeCounts!
   const scheduleTypeFilteredEmployees = useMemo(() => {
     return availableEmployees.filter(e => {
       const empWorkDays = getEffectiveWorkingDays(e.workingDays);
@@ -380,15 +390,35 @@ export function ManageLunchDialog({
         return ([1, 3, 5] as DayOfWeek[]).every(d => (empWorkDays as DayOfWeek[]).includes(d));
       }
       
-      if (scheduleType === "CUSTOM" && customDates.length > 0) {
-        // Проверить что рабочие дни пересекаются с выбранными датами
-        const selectedDays = customDates.map(d => d.getDay() as DayOfWeek);
-        return selectedDays.some(d => (empWorkDays as DayOfWeek[]).includes(d));
+      if (scheduleType === "CUSTOM") {
+        // FIXED: Для CUSTOM всегда проверяем пересечение с выбранными датами
+        // Если даты не выбраны - никто не проходит (нельзя создать подписку без дней)
+        if (customDates.length === 0) {
+          return false;
+        }
+        // Получаем уникальные дни недели из выбранных дат
+        const selectedDaysOfWeek = [...new Set(customDates.map(d => d.getDay() as DayOfWeek))];
+        // Сотрудник проходит если хотя бы один из его рабочих дней есть в выбранных
+        return selectedDaysOfWeek.some(d => (empWorkDays as DayOfWeek[]).includes(d));
       }
       
       return true;
     });
   }, [availableEmployees, scheduleType, customDates]);
+
+  // FIXED: Для CUSTOM требуем выбора дат И наличия подходящих сотрудников (в bulk mode)
+  // Moved here because it depends on scheduleTypeFilteredEmployees
+  const canProceedStep3 = useMemo(() => {
+    if (scheduleType === "CUSTOM") {
+      // Для CUSTOM нужны выбранные даты
+      if (customDates.length === 0) return false;
+    }
+    // В bulk mode нужны подходящие сотрудники после фильтра графика
+    if (mode === "bulk") {
+      return scheduleTypeFilteredEmployees.length > 0;
+    }
+    return true;
+  }, [scheduleType, customDates.length, mode, scheduleTypeFilteredEmployees.length]);
 
   // Фильтрация по смене (применяется на шаге 3)
   // DAY = дневная смена (доставка 11:30-12:30)
@@ -424,6 +454,7 @@ export function ManageLunchDialog({
   }, [mode, validEmployeeIdsSet]);
 
   // Подсчёт сотрудников для каждого типа графика (для отображения в UI)
+  // CRITICAL: Эта логика должна быть идентична scheduleTypeFilteredEmployees!
   const scheduleTypeCounts = useMemo(() => {
     // Считаем сколько сотрудников подходят под каждый тип графика
     const everyDayCount = availableEmployees.filter(e => {
@@ -436,13 +467,16 @@ export function ManageLunchDialog({
       return ([1, 3, 5] as DayOfWeek[]).every(d => empWorkDays.includes(d));
     }).length;
     
-    const customCount = customDates.length > 0 
-      ? availableEmployees.filter(e => {
-          const empWorkDays = getEffectiveWorkingDays(e.workingDays);
-          const selectedDays = customDates.map(d => d.getDay() as DayOfWeek);
-          return selectedDays.some(d => empWorkDays.includes(d));
-        }).length
-      : availableEmployees.length;
+    // FIXED: Для CUSTOM показываем реальное количество подходящих сотрудников
+    // Если даты не выбраны - показываем 0 (выберите дни)
+    let customCount = 0;
+    if (customDates.length > 0) {
+      const selectedDaysOfWeek = [...new Set(customDates.map(d => d.getDay() as DayOfWeek))];
+      customCount = availableEmployees.filter(e => {
+        const empWorkDays = getEffectiveWorkingDays(e.workingDays);
+        return selectedDaysOfWeek.some(d => empWorkDays.includes(d));
+      }).length;
+    }
     
     return { everyDayCount, everyOtherDayCount, customCount };
   }, [availableEmployees, customDates]);
@@ -621,18 +655,23 @@ export function ManageLunchDialog({
     return { total, remaining };
   }, [existingSubscription, startDate, endDate, calculatedDays]);
 
-  const originalPrice = useMemo(() => {
+  // FIXED: При редактировании считаем цену только за ОСТАВШИЕСЯ дни, не за все
+  const originalPriceForRemaining = useMemo(() => {
     if (!existingSubscription) return 0;
-    // Берём реальную цену из БД если есть
-    if (existingSubscription.totalPrice !== undefined) {
-      return existingSubscription.totalPrice;
-    }
-    // Fallback: вычисляем по старому
     const origCombo = COMBO_OPTIONS.find(c => c.value === existingSubscription.comboType);
-    return remainingDays.total * (origCombo?.price || 0);
-  }, [existingSubscription, remainingDays.total]);
+    // Цена за оставшиеся дни по текущему комбо
+    return remainingDays.remaining * (origCombo?.price || 0);
+  }, [existingSubscription, remainingDays.remaining]);
 
-  const priceDifference = totalPrice - originalPrice;
+  // Новая цена за оставшиеся дни при изменении комбо
+  const newPriceForRemaining = useMemo(() => {
+    if (!existingSubscription) return 0;
+    // Цена за оставшиеся дни по новому комбо
+    return remainingDays.remaining * selectedCombo.price;
+  }, [existingSubscription, remainingDays.remaining, selectedCombo.price]);
+
+  // Разница в стоимости при смене комбо (только для оставшихся дней!)
+  const priceDifference = newPriceForRemaining - originalPriceForRemaining;
 
   const handleCancelSubscription = async () => {
     if (!existingSubscription) return;
@@ -736,17 +775,28 @@ export function ManageLunchDialog({
                       </span>
                     </div>
                   </div>
-                  <div className="mt-3 pt-3 border-t border-border/50 flex items-baseline gap-2">
-                    <span className="text-2xl font-bold text-amber-600">{calculatedDays}</span>
-                    <span className="text-sm text-muted-foreground">
-                      дней доставки
-                    </span>
-                  </div>
-                  <div className="mt-2 h-2 rounded-full bg-muted overflow-hidden">
-                    <div 
-                      className="h-full bg-amber-500 rounded-full transition-all"
-                      style={{ width: `${Math.min(100, (calculatedDays / 20) * 100)}%` }}
-                    />
+                  {/* Прогресс подписки */}
+                  <div className="mt-3 pt-3 border-t border-border/50 space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Прогресс:</span>
+                      <span className="font-medium">
+                        {existingSubscription?.completedOrdersCount ?? (remainingDays.total - remainingDays.remaining)} / {remainingDays.total} дней
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-muted overflow-hidden">
+                      <div 
+                        className="h-full bg-emerald-500 rounded-full transition-all"
+                        style={{ 
+                          width: `${remainingDays.total > 0 
+                            ? ((existingSubscription?.completedOrdersCount ?? (remainingDays.total - remainingDays.remaining)) / remainingDays.total) * 100 
+                            : 0}%` 
+                        }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Доставлено: {existingSubscription?.completedOrdersCount ?? (remainingDays.total - remainingDays.remaining)}</span>
+                      <span className="text-amber-600 font-medium">Осталось: {remainingDays.remaining}</span>
+                    </div>
                   </div>
                 </div>
               </section>
@@ -772,31 +822,43 @@ export function ManageLunchDialog({
                 </div>
               </section>
 
-              {/* Price Recalculation */}
+              {/* Price Recalculation - FIXED: показываем стоимость за ОСТАВШИЕСЯ дни */}
               <section className="rounded-xl border-2 border-amber-500/30 bg-gradient-to-br from-amber-50 to-amber-50/30 dark:from-amber-950/30 dark:to-transparent p-5">
                 <div className="flex items-center gap-2 mb-4">
                   <Calculator className="h-4 w-4 text-amber-600" />
-                  <h3 className="font-semibold">Пересчёт стоимости</h3>
+                  <h3 className="font-semibold">Стоимость оставшихся дней</h3>
                 </div>
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Было</span>
-                    <span className="font-medium">{originalPrice.toLocaleString()} TJS</span>
+                    <span className="text-muted-foreground">
+                      Текущий комбо ({existingSubscription?.comboType})
+                    </span>
+                    <span className="font-medium">{originalPriceForRemaining.toLocaleString()} TJS</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground text-sm">Станет</span>
-                    <span className="text-2xl font-bold">{totalPrice.toLocaleString()} TJS</span>
+                    <span className="text-muted-foreground text-sm">
+                      Новый комбо ({comboType})
+                    </span>
+                    <span className="text-2xl font-bold">{newPriceForRemaining.toLocaleString()} TJS</span>
                   </div>
+                  <p className="text-xs text-muted-foreground pt-1">
+                    {remainingDays.remaining} дней × {selectedCombo.price} TJS
+                  </p>
                   {priceDifference !== 0 && (
                     <div className={cn(
-                      "pt-3 mt-3 border-t text-sm",
+                      "pt-3 mt-3 border-t text-sm font-medium",
                       priceDifference > 0 ? "text-orange-600" : "text-emerald-600"
                     )}>
                       {priceDifference > 0 
-                        ? `→ Доплата: +${priceDifference.toLocaleString()} TJS`
-                        : `→ Возврат: ${Math.abs(priceDifference).toLocaleString()} TJS`
+                        ? `→ Доплата за ${remainingDays.remaining} дней: +${priceDifference.toLocaleString()} TJS`
+                        : `→ Возврат за ${remainingDays.remaining} дней: ${Math.abs(priceDifference).toLocaleString()} TJS`
                       }
                     </div>
+                  )}
+                  {priceDifference === 0 && existingSubscription?.comboType === comboType && (
+                    <p className="text-xs text-muted-foreground pt-2 border-t mt-2">
+                      Комбо не изменён — доплата не требуется
+                    </p>
                   )}
                 </div>
               </section>
@@ -813,14 +875,17 @@ export function ManageLunchDialog({
                       <p className="text-sm text-muted-foreground mt-0.5">
                         Возврат за {remainingDays.remaining} неиспользованных дней
                       </p>
+                      <p className="text-sm font-medium text-emerald-600 mt-1">
+                        ≈ {originalPriceForRemaining.toLocaleString()} TJS к возврату
+                      </p>
                     </div>
                     <Button 
                       variant="destructive" 
                       size="sm"
                       onClick={handleCancelSubscription}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || remainingDays.remaining === 0}
                     >
-                      Отменить подписку
+                      {remainingDays.remaining === 0 ? "Нечего отменять" : "Отменить подписку"}
                     </Button>
                   </div>
                 </div>
@@ -839,11 +904,11 @@ export function ManageLunchDialog({
             </Button>
             <Button 
               onClick={handleSubmit} 
-              disabled={isSubmitting}
+              disabled={isSubmitting || existingSubscription?.comboType === comboType}
               className="flex-1 sm:flex-none bg-amber-600 hover:bg-amber-700 text-white"
             >
               {isSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Сохранить
+              {existingSubscription?.comboType === comboType ? "Без изменений" : "Сохранить"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -930,7 +995,17 @@ export function ManageLunchDialog({
                   {step === 3 && (
                     <>
                       <span className="text-muted-foreground">По графику:</span>
-                      <span className="font-semibold">{scheduleTypeFilteredEmployees.length}</span>
+                      {/* FIXED: Для CUSTOM показываем подсказку если дни не выбраны */}
+                      {scheduleType === "CUSTOM" && customDates.length === 0 ? (
+                        <span className="text-muted-foreground/70 text-xs">выберите дни</span>
+                      ) : (
+                        <span className={cn(
+                          "font-semibold",
+                          scheduleTypeFilteredEmployees.length === 0 && "text-destructive"
+                        )}>
+                          {scheduleTypeFilteredEmployees.length}
+                        </span>
+                      )}
                       <ChevronRight className="h-3 w-3 text-muted-foreground" />
                       <span className="text-muted-foreground">По смене:</span>
                       <Badge className={cn(
@@ -1107,15 +1182,25 @@ export function ManageLunchDialog({
                         <p className="text-sm text-muted-foreground">{opt.desc}</p>
                       </div>
                       <div className="flex items-center gap-2">
+                        {/* Счётчик сотрудников для bulk mode */}
                         {mode === "bulk" && (
                           <span className={cn(
                             "text-xs px-2 py-0.5 rounded-full",
-                            opt.count > 0 ? "bg-muted text-muted-foreground" : "bg-destructive/10 text-destructive"
+                            // Для CUSTOM без выбранных дат показываем нейтрально
+                            opt.value === "CUSTOM" && customDates.length === 0
+                              ? "bg-muted/50 text-muted-foreground/70"
+                              : opt.count > 0 
+                                ? "bg-muted text-muted-foreground" 
+                                : "bg-destructive/10 text-destructive"
                           )}>
-                            {opt.count} сотр.
+                            {opt.value === "CUSTOM" && customDates.length === 0 
+                              ? "выберите дни ↓"
+                              : `${opt.count} сотр.`
+                            }
                           </span>
                         )}
-                        {scheduleType === opt.value && opt.value !== "CUSTOM" && (
+                        {/* Badge с количеством дней когда выбран тип графика */}
+                        {scheduleType === opt.value && calculatedDays > 0 && (
                           <Badge className="bg-amber-500 text-white">
                             {calculatedDays} дней
                           </Badge>
@@ -1250,7 +1335,7 @@ export function ManageLunchDialog({
                 )}
 
                 {scheduleType === "CUSTOM" && startDate && endDate && (
-                  <div className="mt-4 pt-4 border-t">
+                  <div className="mt-4 pt-4 border-t space-y-4">
                     <DaySelector
                       startDate={startDate}
                       endDate={endDate}
@@ -1258,6 +1343,20 @@ export function ManageLunchDialog({
                       onDatesChange={setCustomDates}
                       employeeWorkingDays={workingDays}
                     />
+                    
+                    {/* Предупреждение если выбраны только нерабочие дни */}
+                    {mode === "bulk" && customDates.length > 0 && scheduleTypeFilteredEmployees.length === 0 && (
+                      <Alert variant="destructive" className="mt-4">
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription>
+                          <strong>Нет сотрудников для выбранных дней.</strong><br/>
+                          Выбранные дни ({customDates.map(d => 
+                            ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'][d.getDay()]
+                          ).filter((v, i, a) => a.indexOf(v) === i).join(', ')}) 
+                          не совпадают с рабочими днями сотрудников.
+                        </AlertDescription>
+                      </Alert>
+                    )}
                   </div>
                 )}
               </div>
@@ -1361,7 +1460,12 @@ export function ManageLunchDialog({
                       </div>
                       <div className="flex justify-between pt-2 border-t">
                         <span className="text-muted-foreground">Дней доставки</span>
-                        <Badge className="bg-amber-500 text-white">{calculatedDays}</Badge>
+                        <Badge className="bg-amber-500 text-white">
+                          {mode === "bulk" && selectedEmployeeIds.length > 0 
+                            ? `${bulkCalculatedData.totalDays} (сумм.)`
+                            : calculatedDays
+                          }
+                        </Badge>
                       </div>
                     </div>
                   </div>
@@ -1487,8 +1591,10 @@ export function ManageLunchDialog({
                         {totalPrice.toLocaleString()} <span className="text-xl font-semibold text-muted-foreground">TJS</span>
                       </p>
                       <p className="text-sm text-muted-foreground mt-1">
-                        {calculatedDays} дней × {selectedCombo.price} TJS
-                        {mode === "bulk" && selectedEmployeeIds.length > 0 && ` × ${selectedEmployeeIds.length} сотр.`}
+                        {mode === "bulk" && selectedEmployeeIds.length > 0 
+                          ? `${bulkCalculatedData.totalDays} дней (суммарно) × ${selectedCombo.price} TJS`
+                          : `${calculatedDays} дней × ${selectedCombo.price} TJS`
+                        }
                       </p>
                     </div>
                   </div>

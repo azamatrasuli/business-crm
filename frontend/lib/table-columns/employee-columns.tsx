@@ -229,7 +229,7 @@ export function createEmployeeColumns(actions: EmployeeColumnActions = {}): Colu
                       <UtensilsCrossed className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Управлять обедами</TooltipContent>
+                  <TooltipContent>Назначить обеды</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}

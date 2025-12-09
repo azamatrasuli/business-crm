@@ -43,10 +43,12 @@ import { parseError } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import { isFeatureEnabled } from '@/lib/features.config'
 import { CreateEmployeeDialog } from '@/components/features/employees/create-employee-dialog'
+import { EditEmployeeDialog } from '@/components/features/employees/edit-employee-dialog'
 import { ManageLunchDialog } from '@/components/features/meals/manage-lunch-dialog'
 import { ManageCompensationDialog } from '@/components/features/meals/manage-compensation-dialog'
 import { debounce } from 'lodash-es'
-import type { Employee } from '@/lib/api/employees'
+import type { Employee, EmployeeDetail } from '@/lib/api/employees'
+import { employeesApi } from '@/lib/api/employees'
 import { DataTable } from '@/components/ui/data-table'
 import type { ColumnDef } from '@tanstack/react-table'
 
@@ -140,6 +142,9 @@ export default function EmployeesPage() {
   const [lunchDialogOpen, setLunchDialogOpen] = useState(false)
   const [compensationDialogOpen, setCompensationDialogOpen] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [employeeToEdit, setEmployeeToEdit] = useState<EmployeeDetail | null>(null)
+  const [editLoading, setEditLoading] = useState(false)
   const hasFetched = useRef(false)
 
   useEffect(() => {
@@ -263,6 +268,26 @@ export default function EmployeesPage() {
     event.stopPropagation()
     router.push(`/employees/${id}`)
   }, [router])
+
+  // Handler для открытия модалки редактирования профиля
+  const handleEditEmployee = useCallback(async (event: React.MouseEvent, employee: Employee) => {
+    event.stopPropagation()
+    if (!employee.isActive) return
+    
+    setEditLoading(true)
+    try {
+      // Загружаем полные данные сотрудника
+      const employeeDetail = await employeesApi.getEmployee(employee.id)
+      setEmployeeToEdit(employeeDetail)
+      setEditDialogOpen(true)
+    } catch (error) {
+      const appError = parseError(error)
+      logger.error('Failed to load employee for editing', error instanceof Error ? error : new Error(appError.message))
+      toast.error('Не удалось загрузить данные сотрудника', { description: appError.message })
+    } finally {
+      setEditLoading(false)
+    }
+  }, [])
 
   const handleManageLunch = useCallback((event: React.MouseEvent, employee: Employee) => {
     event.stopPropagation()
@@ -464,17 +489,17 @@ export default function EmployeesPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={(event) => handleNameClick(event, employee.id)}
+                      onClick={(event) => handleEditEmployee(event, employee)}
                       aria-label="Редактировать профиль"
-                      disabled={!employee.isActive}
+                      disabled={!employee.isActive || editLoading}
                     >
                       <Pencil className="h-4 w-4" />
                     </Button>
                   </span>
                 </TooltipTrigger>
-                {!employee.isActive && (
-                  <TooltipContent>Сотрудник деактивирован</TooltipContent>
-                )}
+                <TooltipContent>
+                  {!employee.isActive ? 'Сотрудник деактивирован' : 'Редактировать профиль'}
+                </TooltipContent>
               </Tooltip>
             </TooltipProvider>
             <TooltipProvider>
@@ -573,7 +598,7 @@ export default function EmployeesPage() {
         )
       },
     },
-  ], [handleManageLunch, handleManageCompensation, handleNameClick, openActivationDialog, sortConfig, toggleSort, getProjectName])
+  ], [handleManageLunch, handleManageCompensation, handleNameClick, handleEditEmployee, editLoading, openActivationDialog, sortConfig, toggleSort, getProjectName])
 
   const confirmActivationChange = async () => {
     if (!activationContext) return
@@ -807,6 +832,22 @@ export default function EmployeesPage() {
           onSuccess={() => {
             fetchEmployees(currentPage)
             setSelectedEmployee(null) // Reset selected employee to avoid stale data
+          }}
+        />
+      )}
+
+      {/* Edit Employee Dialog */}
+      {employeeToEdit && (
+        <EditEmployeeDialog
+          open={editDialogOpen}
+          onOpenChange={(open) => {
+            setEditDialogOpen(open)
+            if (!open) setEmployeeToEdit(null)
+          }}
+          employee={employeeToEdit}
+          onSuccess={() => {
+            fetchEmployees(currentPage)
+            setEmployeeToEdit(null)
           }}
         />
       )}
