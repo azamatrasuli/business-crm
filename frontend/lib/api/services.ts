@@ -18,7 +18,8 @@ export interface LunchSubscription {
   // Backend returns Russian statuses: "Активна", "Приостановлена", "Завершена"
   status: string
   totalDays: number
-  totalAmount: number
+  // NOTE: Backend returns 'totalPrice', not 'totalAmount'
+  totalPrice: number
   createdAt: string
   updatedAt: string
 }

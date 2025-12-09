@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
+using YallaBusinessAdmin.Application.Common.Errors;
 using YallaBusinessAdmin.Application.Common.Models;
 using YallaBusinessAdmin.Application.Subscriptions;
 using YallaBusinessAdmin.Application.Subscriptions.Dtos;
@@ -130,6 +131,40 @@ public class SubscriptionsService : ISubscriptionsService
         if (employee.Project == null)
         {
             throw new InvalidOperationException("Невозможно создать подписку: сотрудник не привязан к проекту");
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // VALIDATION: Cannot create subscription for past dates
+        // ═══════════════════════════════════════════════════════════════
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        if (request.StartDate.HasValue && request.StartDate.Value < today)
+        {
+            throw new BusinessRuleException(
+                ErrorCodes.SUB_PAST_DATE_NOT_ALLOWED,
+                "Нельзя создать подписку на прошедшие даты");
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // VALIDATION: Project must have sufficient budget
+        // Calculate required budget based on dates and combo type
+        // ═══════════════════════════════════════════════════════════════
+        var validationStartDate = request.StartDate ?? today;
+        var validationEndDate = request.EndDate ?? validationStartDate.AddMonths(1);
+        var validationTotalDays = WorkingDaysHelper.CountWorkingDays(employee.WorkingDays, validationStartDate, validationEndDate);
+        var validationPrice = request.ComboType switch
+        {
+            "Комбо 25" => 25m,
+            "Комбо 35" => 35m,
+            _ => 25m
+        };
+        var requiredBudget = validationPrice * validationTotalDays;
+        var availableBudget = employee.Project.Budget + employee.Project.OverdraftLimit;
+        
+        if (requiredBudget > availableBudget)
+        {
+            throw new InvalidOperationException(
+                $"Недостаточно бюджета для создания подписки. " +
+                $"Требуется: {requiredBudget:N0} TJS, доступно: {availableBudget:N0} TJS");
         }
 
         // Check if subscription already exists (including soft-deleted)
@@ -341,6 +376,7 @@ public class SubscriptionsService : ISubscriptionsService
 
         // FIX: Рассчитываем сумму возврата за отменённые заказы
         var refundAmount = futureOrders.Sum(o => o.Price);
+        var cancelledCount = futureOrders.Count;
 
         foreach (var order in futureOrders)
         {
@@ -353,6 +389,23 @@ public class SubscriptionsService : ISubscriptionsService
         {
             subscription.Employee.Project.Budget += refundAmount;
             subscription.Employee.Project.UpdatedAt = DateTime.UtcNow;
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // FIX: Update TotalPrice to reflect actual delivered orders
+        // TotalPrice = original - cancelled amount
+        // ═══════════════════════════════════════════════════════════════
+        subscription.TotalPrice -= refundAmount;
+        subscription.TotalDays -= cancelledCount;
+
+        // ═══════════════════════════════════════════════════════════════
+        // FIX: Reset Employee.ServiceType since no active lunch subscription
+        // This allows employee to switch to COMPENSATION if needed
+        // ═══════════════════════════════════════════════════════════════
+        if (subscription.Employee != null)
+        {
+            subscription.Employee.ServiceType = null;
+            subscription.Employee.UpdatedAt = DateTime.UtcNow;
         }
 
         await _context.SaveChangesAsync(cancellationToken);
@@ -436,13 +489,59 @@ public class SubscriptionsService : ISubscriptionsService
                 continue;
             }
 
-            // Parse dates from request (ISO format: YYYY-MM-DD)
-            var startDate = !string.IsNullOrEmpty(request.StartDate)
+            // ═══════════════════════════════════════════════════════════════
+            // VALIDATION: Check budget (early validation before date parsing)
+            // ═══════════════════════════════════════════════════════════════
+            var earlyStartDate = !string.IsNullOrEmpty(request.StartDate)
                 ? DateOnly.ParseExact(request.StartDate, "yyyy-MM-dd", CultureInfo.InvariantCulture)
                 : DateOnly.FromDateTime(DateTime.Today);
+            var earlyEndDate = !string.IsNullOrEmpty(request.EndDate)
+                ? DateOnly.ParseExact(request.EndDate, "yyyy-MM-dd", CultureInfo.InvariantCulture)
+                : earlyStartDate.AddMonths(1);
+            
+            int estimatedDays;
+            if (request.ScheduleType == "CUSTOM" && request.CustomDays != null && request.CustomDays.Count > 0)
+            {
+                var today = DateOnly.FromDateTime(DateTime.Today);
+                estimatedDays = request.CustomDays.Select(d => DateOnly.Parse(d)).Count(d => d >= today);
+            }
+            else
+            {
+                estimatedDays = WorkingDaysHelper.CountWorkingDays(employee.WorkingDays, earlyStartDate, earlyEndDate);
+            }
+            
+            var comboPrice = request.ComboType switch
+            {
+                "Комбо 25" => 25m,
+                "Комбо 35" => 35m,
+                _ => 25m
+            };
+            var requiredBudget = comboPrice * estimatedDays;
+            var availableBudget = employee.Project.Budget + employee.Project.OverdraftLimit;
+            
+            if (requiredBudget > availableBudget)
+            {
+                errors.Add(new { employeeId = employee.Id.ToString(), message = $"{employee.FullName} (недостаточно бюджета: требуется {requiredBudget:N0}, доступно {availableBudget:N0} TJS)" });
+                continue;
+            }
+
+            // Parse dates from request (ISO format: YYYY-MM-DD)
+            var todayForValidation = DateOnly.FromDateTime(DateTime.Today);
+            var startDate = !string.IsNullOrEmpty(request.StartDate)
+                ? DateOnly.ParseExact(request.StartDate, "yyyy-MM-dd", CultureInfo.InvariantCulture)
+                : todayForValidation;
             var endDate = !string.IsNullOrEmpty(request.EndDate)
                 ? DateOnly.ParseExact(request.EndDate, "yyyy-MM-dd", CultureInfo.InvariantCulture)
                 : startDate.AddMonths(1);
+
+            // ═══════════════════════════════════════════════════════════════
+            // VALIDATION: Cannot create subscription for past dates
+            // ═══════════════════════════════════════════════════════════════
+            if (startDate < todayForValidation)
+            {
+                errors.Add(new { employeeId = employee.Id.ToString(), message = $"{employee.FullName} (нельзя создать подписку на прошедшие даты)" });
+                continue;
+            }
 
             // Calculate total days based on schedule type
             // CRITICAL FIX: For CUSTOM, use the actual custom days count, not working days!
@@ -591,6 +690,13 @@ public class SubscriptionsService : ISubscriptionsService
                 // FIX: Также обновляем активные заказы (как в UpdateAsync)
                 if (oldComboType != request.ComboType)
                 {
+                    var oldPrice = oldComboType switch
+                    {
+                        "Комбо 25" => 25m,
+                        "Комбо 35" => 35m,
+                        _ => 25m
+                    };
+                    
                     var newPrice = request.ComboType switch
                     {
                         "Комбо 25" => 25m,
@@ -604,12 +710,29 @@ public class SubscriptionsService : ISubscriptionsService
                                    o.OrderDate >= DateTime.UtcNow.Date)
                         .ToListAsync(cancellationToken);
 
+                    var futureOrdersCount = activeOrders.Count;
+
                     foreach (var order in activeOrders)
                     {
                         order.ComboType = request.ComboType;
                         order.Price = newPrice;
                         order.UpdatedAt = DateTime.UtcNow;
                         ordersUpdated++;
+                    }
+
+                    // ═══════════════════════════════════════════════════════════════
+                    // FIX: Recalculate TotalPrice (consistent with UpdateAsync)
+                    // TotalPrice = (completed days * old price) + (remaining days * new price)
+                    // ═══════════════════════════════════════════════════════════════
+                    if (futureOrdersCount > 0)
+                    {
+                        var priceDifference = (newPrice - oldPrice) * futureOrdersCount;
+                        subscription.TotalPrice += priceDifference;
+                    }
+                    else if (subscription.TotalDays > 0)
+                    {
+                        // Fallback: if no future orders, recalculate from scratch
+                        subscription.TotalPrice = newPrice * subscription.TotalDays;
                     }
                 }
             }
@@ -725,20 +848,40 @@ public class SubscriptionsService : ISubscriptionsService
             .ToListAsync(cancellationToken);
 
         var paused = 0;
+        var ordersPaused = 0;
 
         foreach (var subscription in subscriptions)
         {
             subscription.IsActive = false;
+            subscription.Status = "Приостановлена";
+            subscription.PausedAt = DateTime.UtcNow;
             subscription.UpdatedAt = DateTime.UtcNow;
             paused++;
+
+            // ═══════════════════════════════════════════════════════════════
+            // FIX: Also pause all future active orders (consistent with PauseAsync)
+            // ═══════════════════════════════════════════════════════════════
+            var futureOrders = await _context.Orders
+                .Where(o => o.EmployeeId == subscription.EmployeeId && 
+                           o.Status == OrderStatus.Active &&
+                           o.OrderDate >= DateTime.UtcNow.Date)
+                .ToListAsync(cancellationToken);
+
+            foreach (var order in futureOrders)
+            {
+                order.Status = OrderStatus.Paused;
+                order.UpdatedAt = DateTime.UtcNow;
+                ordersPaused++;
+            }
         }
 
         await _context.SaveChangesAsync(cancellationToken);
 
         return new
         {
-            message = $"Приостановлено {paused} подписок",
-            paused
+            message = $"Приостановлено {paused} подписок и {ordersPaused} заказов",
+            paused,
+            ordersPaused
         };
     }
 
@@ -749,20 +892,50 @@ public class SubscriptionsService : ISubscriptionsService
             .ToListAsync(cancellationToken);
 
         var resumed = 0;
+        var ordersResumed = 0;
 
         foreach (var subscription in subscriptions)
         {
+            // ═══════════════════════════════════════════════════════════════
+            // FIX: Calculate paused days and extend subscription (consistent with ResumeAsync)
+            // ═══════════════════════════════════════════════════════════════
+            if (subscription.PausedAt.HasValue && subscription.EndDate.HasValue)
+            {
+                var pausedDays = (DateTime.UtcNow - subscription.PausedAt.Value).Days;
+                subscription.PausedDaysCount += pausedDays;
+                subscription.EndDate = subscription.EndDate.Value.AddDays(pausedDays);
+            }
+
             subscription.IsActive = true;
+            subscription.Status = "Активна";
+            subscription.PausedAt = null;
             subscription.UpdatedAt = DateTime.UtcNow;
             resumed++;
+
+            // ═══════════════════════════════════════════════════════════════
+            // FIX: Also resume all paused orders (consistent with ResumeAsync)
+            // ═══════════════════════════════════════════════════════════════
+            var pausedOrders = await _context.Orders
+                .Where(o => o.EmployeeId == subscription.EmployeeId && 
+                           o.Status == OrderStatus.Paused &&
+                           o.OrderDate >= DateTime.UtcNow.Date)
+                .ToListAsync(cancellationToken);
+
+            foreach (var order in pausedOrders)
+            {
+                order.Status = OrderStatus.Active;
+                order.UpdatedAt = DateTime.UtcNow;
+                ordersResumed++;
+            }
         }
 
         await _context.SaveChangesAsync(cancellationToken);
 
         return new
         {
-            message = $"Возобновлено {resumed} подписок",
-            resumed
+            message = $"Возобновлено {resumed} подписок и {ordersResumed} заказов",
+            resumed,
+            ordersResumed
         };
     }
 

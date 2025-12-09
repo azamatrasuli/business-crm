@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using YallaBusinessAdmin.Application.Common.Errors;
 using YallaBusinessAdmin.Application.Common.Models;
 using YallaBusinessAdmin.Application.Dashboard;
 using YallaBusinessAdmin.Application.Dashboard.Dtos;
@@ -192,11 +193,37 @@ public sealed class OrderManagementService : IOrderManagementService
         var orders = await _context.Orders
             .Include(o => o.Employee)
                 .ThenInclude(e => e!.Budget)
+            .Include(o => o.Project) // Need project for cutoff check
             .Where(o => request.OrderIds.Contains(o.Id) && o.CompanyId == companyId)
             .ToListAsync(cancellationToken);
 
         var company = await _context.Companies
             .FirstOrDefaultAsync(c => c.Id == companyId, cancellationToken);
+
+        // ═══════════════════════════════════════════════════════════════
+        // CUTOFF VALIDATION: Check cutoff time for actions on today's orders
+        // Business rule: Cannot cancel/pause/modify orders after cutoff time
+        // ═══════════════════════════════════════════════════════════════
+        var actionLower = request.Action.ToLower();
+        if (actionLower is "cancel" or "pause" or "changecombo")
+        {
+            var todayOrders = orders.Where(o => o.OrderDate.Date == DateTime.UtcNow.Date).ToList();
+            if (todayOrders.Count > 0)
+            {
+                // Get cutoff from first order's project (all orders in bulk should be same project typically)
+                var projectWithCutoff = todayOrders.FirstOrDefault()?.Project;
+                if (projectWithCutoff != null)
+                {
+                    if (TimezoneHelper.IsCutoffPassed(projectWithCutoff.CutoffTime, projectWithCutoff.Timezone))
+                    {
+                        throw new BusinessRuleException(
+                            ErrorCodes.ORDER_CUTOFF_PASSED,
+                            $"Время для изменения заказов на сегодня истекло в {projectWithCutoff.CutoffTime}. " +
+                            $"Заказы на завтра и далее можно изменять.");
+                    }
+                }
+            }
+        }
 
         var updated = 0;
         var refundedAmount = 0m;
@@ -213,6 +240,38 @@ public sealed class OrderManagementService : IOrderManagementService
             else
             {
                 skipped.Add(result.SkipReason!);
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // UPDATE SUBSCRIPTION TOTALPRICE when combo is changed
+        // TotalPrice should reflect actual sum of order prices
+        // ═══════════════════════════════════════════════════════════════
+        if (actionLower == "changecombo" && updated > 0)
+        {
+            var affectedEmployeeIds = orders
+                .Where(o => o.EmployeeId.HasValue)
+                .Select(o => o.EmployeeId!.Value)
+                .Distinct()
+                .ToList();
+
+            foreach (var employeeId in affectedEmployeeIds)
+            {
+                var subscription = await _context.LunchSubscriptions
+                    .FirstOrDefaultAsync(s => s.EmployeeId == employeeId && s.IsActive, cancellationToken);
+
+                if (subscription != null)
+                {
+                    // Recalculate TotalPrice as sum of all future order prices
+                    var totalPrice = await _context.Orders
+                        .Where(o => o.EmployeeId == employeeId &&
+                                   (o.Status == OrderStatus.Active || o.Status == OrderStatus.Frozen) &&
+                                   o.OrderDate >= DateTime.UtcNow.Date)
+                        .SumAsync(o => o.Price, cancellationToken);
+
+                    subscription.TotalPrice = totalPrice;
+                    subscription.UpdatedAt = DateTime.UtcNow;
+                }
             }
         }
 

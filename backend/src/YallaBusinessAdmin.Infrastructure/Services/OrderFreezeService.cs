@@ -1,10 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using YallaBusinessAdmin.Application.Common.Errors;
 using YallaBusinessAdmin.Application.Orders;
 using YallaBusinessAdmin.Application.Orders.Dtos;
 using YallaBusinessAdmin.Domain.Entities;
 using YallaBusinessAdmin.Domain.Enums;
 using YallaBusinessAdmin.Infrastructure.Persistence;
+using YallaBusinessAdmin.Infrastructure.Services.Dashboard;
 
 namespace YallaBusinessAdmin.Infrastructure.Services;
 
@@ -30,6 +32,7 @@ public class OrderFreezeService : IOrderFreezeService
     {
         var order = await _context.Orders
             .Include(o => o.Employee)
+            .Include(o => o.Project) // Need project for cutoff check
             .FirstOrDefaultAsync(o => o.Id == orderId && o.CompanyId == companyId, cancellationToken);
 
         if (order == null)
@@ -41,16 +44,33 @@ public class OrderFreezeService : IOrderFreezeService
         if (!order.CanBeFrozen)
             throw new InvalidOperationException("Этот заказ нельзя заморозить. Можно замораживать только активные заказы на текущий или будущий день.");
 
+        // ═══════════════════════════════════════════════════════════════
+        // CUTOFF VALIDATION: Cannot freeze today's order after cutoff time
+        // ═══════════════════════════════════════════════════════════════
+        if (order.OrderDate.Date == DateTime.UtcNow.Date && order.Project != null)
+        {
+            if (TimezoneHelper.IsCutoffPassed(order.Project.CutoffTime, order.Project.Timezone))
+            {
+                throw new BusinessRuleException(
+                    ErrorCodes.ORDER_CUTOFF_PASSED,
+                    $"Время для заморозки заказов на сегодня истекло в {order.Project.CutoffTime}. " +
+                    $"Заказы на завтра и далее можно заморозить.");
+            }
+        }
+
         // Check freeze limit
         var orderDate = DateOnly.FromDateTime(order.OrderDate);
         if (!await ValidateFreezeLimitAsync(order.EmployeeId.Value, orderDate, cancellationToken))
         {
-            throw new InvalidOperationException($"Превышен лимит заморозок ({MaxFreezesPerWeek} в неделю). Попробуйте на следующей неделе.");
+            throw new BusinessRuleException(
+                ErrorCodes.FREEZE_LIMIT_EXCEEDED,
+                $"Превышен лимит заморозок ({MaxFreezesPerWeek} в неделю). Попробуйте на следующей неделе.");
         }
 
         // Get employee's subscription
+        // NOTE: Using only IsActive check (Status is derived from IsActive)
         var subscription = await _context.LunchSubscriptions
-            .Where(s => s.EmployeeId == order.EmployeeId && s.IsActive && s.Status == "Активна")
+            .Where(s => s.EmployeeId == order.EmployeeId && s.IsActive)
             .FirstOrDefaultAsync(cancellationToken);
 
         if (subscription == null)
@@ -88,6 +108,7 @@ public class OrderFreezeService : IOrderFreezeService
         var order = await _context.Orders
             .Include(o => o.Employee)
             .Include(o => o.ReplacementOrder)
+            .Include(o => o.Project) // Need project for cutoff check
             .FirstOrDefaultAsync(o => o.Id == orderId && o.CompanyId == companyId, cancellationToken);
 
         if (order == null)
@@ -98,6 +119,20 @@ public class OrderFreezeService : IOrderFreezeService
 
         if (!order.CanBeUnfrozen)
             throw new InvalidOperationException("Этот заказ нельзя разморозить. Можно размораживать только замороженные заказы на текущий или будущий день.");
+
+        // ═══════════════════════════════════════════════════════════════
+        // CUTOFF VALIDATION: Cannot unfreeze today's order after cutoff time
+        // ═══════════════════════════════════════════════════════════════
+        if (order.OrderDate.Date == DateTime.UtcNow.Date && order.Project != null)
+        {
+            if (TimezoneHelper.IsCutoffPassed(order.Project.CutoffTime, order.Project.Timezone))
+            {
+                throw new BusinessRuleException(
+                    ErrorCodes.ORDER_CUTOFF_PASSED,
+                    $"Время для разморозки заказов на сегодня истекло в {order.Project.CutoffTime}. " +
+                    $"Заказы на завтра и далее можно разморозить.");
+            }
+        }
 
         // Get employee's subscription
         var subscription = await _context.LunchSubscriptions
@@ -146,13 +181,32 @@ public class OrderFreezeService : IOrderFreezeService
         CancellationToken cancellationToken = default)
     {
         var employee = await _context.Employees
+            .Include(e => e.Project) // Need project for cutoff check
             .FirstOrDefaultAsync(e => e.Id == request.EmployeeId && e.CompanyId == companyId, cancellationToken);
 
         if (employee == null)
             throw new KeyNotFoundException("Сотрудник не найден");
 
+        // ═══════════════════════════════════════════════════════════════
+        // CUTOFF VALIDATION: Check if cutoff passed for today's orders
+        // We'll skip today's orders in the loop if cutoff has passed
+        // ═══════════════════════════════════════════════════════════════
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var cutoffPassedForToday = false;
+        if (request.StartDate <= today && employee.Project != null)
+        {
+            cutoffPassedForToday = TimezoneHelper.IsCutoffPassed(employee.Project.CutoffTime, employee.Project.Timezone);
+            if (cutoffPassedForToday)
+            {
+                _logger.LogInformation(
+                    "Cutoff passed, today's orders will be skipped for employee {EmployeeId}",
+                    request.EmployeeId);
+            }
+        }
+
         // Get all orders in the period
         var ordersInPeriod = await _context.Orders
+            .Include(o => o.Project) // Need project for individual cutoff checks
             .Where(o => o.EmployeeId == request.EmployeeId && 
                         o.CompanyId == companyId &&
                         o.Status == OrderStatus.Active &&
@@ -164,8 +218,9 @@ public class OrderFreezeService : IOrderFreezeService
             throw new InvalidOperationException("Нет активных заказов в указанном периоде");
 
         // Get subscription
+        // NOTE: Using only IsActive check (Status is derived from IsActive)
         var subscription = await _context.LunchSubscriptions
-            .Where(s => s.EmployeeId == request.EmployeeId && s.IsActive && s.Status == "Активна")
+            .Where(s => s.EmployeeId == request.EmployeeId && s.IsActive)
             .FirstOrDefaultAsync(cancellationToken);
 
         if (subscription == null)
@@ -177,6 +232,20 @@ public class OrderFreezeService : IOrderFreezeService
         foreach (var order in ordersInPeriod)
         {
             var orderDate = DateOnly.FromDateTime(order.OrderDate);
+            
+            // ═══════════════════════════════════════════════════════════════
+            // CUTOFF VALIDATION: Skip today's orders if cutoff passed
+            // ═══════════════════════════════════════════════════════════════
+            if (order.OrderDate.Date == DateTime.UtcNow.Date && order.Project != null)
+            {
+                if (TimezoneHelper.IsCutoffPassed(order.Project.CutoffTime, order.Project.Timezone))
+                {
+                    _logger.LogWarning(
+                        "Skipping order {OrderId} - cutoff time passed for today's order",
+                        order.Id);
+                    continue;
+                }
+            }
             
             // Check freeze limit for this week
             if (!await ValidateFreezeLimitAsync(request.EmployeeId, orderDate, cancellationToken))
