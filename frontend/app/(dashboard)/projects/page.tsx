@@ -4,6 +4,7 @@ import { useEffect, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { useProjectsStore } from "@/stores/projects-store"
 import { useAuthStore } from "@/stores/auth-store"
+import { getCompanyStatusConfig } from "@/lib/constants/entity-statuses"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -27,6 +28,7 @@ import {
 } from "lucide-react"
 import type { ColumnDef } from "@tanstack/react-table"
 import type { ProjectListItem } from "@/lib/api/projects"
+import { hasValidAddress } from "@/lib/api/projects"
 
 export default function ProjectsPage() {
   const router = useRouter()
@@ -62,6 +64,9 @@ export default function ProjectsPage() {
     const spentLunch = projects.reduce((sum, p) => sum + (p.spentLunch || 0), 0)
     const spentCompensation = projects.reduce((sum, p) => sum + (p.spentCompensation || 0), 0)
     
+    // Count projects without delivery address - critical issue!
+    const projectsWithoutAddress = projects.filter(p => !hasValidAddress(p))
+    
     return { 
       total: projects.length, 
       totalBudget, 
@@ -72,7 +77,9 @@ export default function ProjectsPage() {
       totalCompensation,
       spentLunch,
       spentCompensation,
-      budgetUsedPercent: totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0
+      budgetUsedPercent: totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0,
+      projectsWithoutAddressCount: projectsWithoutAddress.length,
+      projectsWithoutAddress: projectsWithoutAddress.map(p => p.name)
     }
   }, [projects])
 
@@ -121,24 +128,42 @@ export default function ProjectsPage() {
           onSort={toggleSort}
         />
       ),
-      cell: ({ row }) => (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex items-start gap-2 max-w-[180px] cursor-help">
-                <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                <p className="truncate text-sm">{row.original.addressName || 'Не указан'}</p>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-[300px]">
-              <p className="font-medium">{row.original.addressName}</p>
-              {row.original.addressFullAddress && (
-                <p className="text-xs text-muted-foreground mt-1">{row.original.addressFullAddress}</p>
-              )}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      ),
+      cell: ({ row }) => {
+        const hasAddress = hasValidAddress(row.original)
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-start gap-2 max-w-[180px] cursor-help">
+                  <MapPin className={`h-4 w-4 flex-shrink-0 mt-0.5 ${hasAddress ? 'text-muted-foreground' : 'text-red-500'}`} />
+                  <div className="flex flex-col">
+                    <p className={`truncate text-sm ${!hasAddress ? 'text-red-500 font-medium' : ''}`}>
+                      {row.original.addressName || 'Не указан'}
+                    </p>
+                    {!hasAddress && (
+                      <span className="text-[10px] text-red-500">⚠️ Нет адреса доставки</span>
+                    )}
+                  </div>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[300px]">
+                {hasAddress ? (
+                  <>
+                    <p className="font-medium">{row.original.addressName}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{row.original.addressFullAddress}</p>
+                  </>
+                ) : (
+                  <div className="text-red-600">
+                    <p className="font-medium">⚠️ Адрес доставки не указан</p>
+                    <p className="text-xs mt-1">Невозможно создать заказы для этого проекта.</p>
+                    <p className="text-xs">Укажите адрес в настройках проекта.</p>
+                  </div>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )
+      },
     },
     {
       id: 'employees',
@@ -318,11 +343,14 @@ export default function ProjectsPage() {
     {
       accessorKey: 'status',
       header: 'Статус',
-      cell: ({ row }) => (
-        <Badge variant={row.original.status === 'ACTIVE' ? 'default' : 'secondary'}>
-          {row.original.status === 'ACTIVE' ? 'Активен' : 'Неактивен'}
-        </Badge>
-      ),
+      cell: ({ row }) => {
+        const statusConfig = getCompanyStatusConfig(row.original.status)
+        return (
+          <Badge variant={statusConfig.variant} className={statusConfig.className}>
+            {statusConfig.label}
+          </Badge>
+        )
+      },
     },
   ], [sortConfig, toggleSort])
 
@@ -352,6 +380,23 @@ export default function ProjectsPage() {
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Warning: Projects without delivery address */}
+      {stats.projectsWithoutAddressCount > 0 && (
+        <Alert variant="destructive" className="bg-red-50 border-red-200 text-red-800 dark:bg-red-950/30 dark:border-red-900 dark:text-red-400">
+          <MapPin className="h-4 w-4" />
+          <AlertDescription className="ml-2">
+            <span className="font-semibold">
+              ⚠️ {stats.projectsWithoutAddressCount} {stats.projectsWithoutAddressCount === 1 ? 'проект' : stats.projectsWithoutAddressCount < 5 ? 'проекта' : 'проектов'} без адреса доставки
+            </span>
+            <span className="block text-sm mt-1">
+              Невозможно создавать заказы для проектов без указанного адреса. 
+              Проекты: {stats.projectsWithoutAddress.slice(0, 5).join(', ')}
+              {stats.projectsWithoutAddressCount > 5 && ` и ещё ${stats.projectsWithoutAddressCount - 5}`}
+            </span>
+          </AlertDescription>
         </Alert>
       )}
 

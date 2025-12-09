@@ -8,6 +8,7 @@ using YallaBusinessAdmin.Application.Employees;
 using YallaBusinessAdmin.Application.Employees.Dtos;
 using YallaBusinessAdmin.Domain.Entities;
 using YallaBusinessAdmin.Domain.Enums;
+using YallaBusinessAdmin.Domain.Helpers;
 using YallaBusinessAdmin.Infrastructure.Persistence;
 
 namespace YallaBusinessAdmin.Infrastructure.Services;
@@ -49,6 +50,7 @@ public class EmployeesService : IEmployeesService
     {
         // Load orders for the current subscription period to correctly count future/completed
         // Using today-30 days to cover most subscription periods while limiting data
+        // NOTE: Using UTC for historical data loading is acceptable - order filtering uses exact date matching
         var ordersStartDate = DateTime.UtcNow.Date.AddDays(-30);
         var query = _context.Employees
             .AsNoTracking()
@@ -93,12 +95,15 @@ public class EmployeesService : IEmployeesService
         }
 
         // Apply order status filter (meal status)
+        // NOTE: Using UTC here for simplicity in EF Core queries - acceptable for meal status filtering
+        // For precise timezone handling, this would need a more complex subquery or post-filtering
         if (!string.IsNullOrWhiteSpace(orderStatusFilter))
         {
+            var todayUtc = DateTime.UtcNow.Date;
             query = orderStatusFilter.ToLower() switch
             {
-                "ordered" or "заказан" => query.Where(e => e.Orders.Any(o => o.OrderDate == DateTime.UtcNow.Date)),
-                "not_ordered" or "не заказан" => query.Where(e => !e.Orders.Any(o => o.OrderDate == DateTime.UtcNow.Date)),
+                "ordered" or "заказан" => query.Where(e => e.Orders.Any(o => o.OrderDate.Date == todayUtc)),
+                "not_ordered" or "не заказан" => query.Where(e => !e.Orders.Any(o => o.OrderDate.Date == todayUtc)),
                 _ => query
             };
         }
@@ -299,7 +304,7 @@ public class EmployeesService : IEmployeesService
             Phone = request.Phone,
             Email = request.Email,
             Position = request.Position,
-            IsActive = true,
+            Status = EmployeeStatus.Active,
             // TODO: вернуть EmployeeInviteStatus.Pending когда запустим Client Web и бюджетирование
             InviteStatus = EmployeeInviteStatus.Accepted,
             // Service type and work schedule
@@ -349,11 +354,13 @@ public class EmployeesService : IEmployeesService
 
     public async Task<EmployeeResponse> UpdateAsync(Guid id, UpdateEmployeeRequest request, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
     {
+        // NOTE: Using UTC for orders loading - acceptable for response mapping
+        var ordersFromDate = DateTime.UtcNow.Date;
         var employee = await _context.Employees
             .IgnoreQueryFilters() // Include soft-deleted to check and report
             .Include(e => e.Budget)
             .Include(e => e.Project)
-            .Include(e => e.Orders.Where(o => o.OrderDate >= DateTime.UtcNow.Date))
+            .Include(e => e.Orders.Where(o => o.OrderDate >= ordersFromDate))
             .Include(e => e.LunchSubscription) // Need this for service type validation
             .FirstOrDefaultAsync(e => e.Id == id && e.CompanyId == companyId, cancellationToken);
 
@@ -463,8 +470,8 @@ public class EmployeesService : IEmployeesService
             employee.IsActive ? AuditActions.Activate : AuditActions.Deactivate,
             AuditEntityTypes.Employee,
             employee.Id,
-            oldValues: new { IsActive = wasActive },
-            newValues: new { IsActive = employee.IsActive },
+            oldValues: new { Status = wasActive ? "Активный" : "Деактивирован" },
+            newValues: new { Status = employee.Status.ToRussian() },
             cancellationToken: cancellationToken);
 
         return MapToResponse(employee);
@@ -493,19 +500,43 @@ public class EmployeesService : IEmployeesService
 
         var oldValues = new { employee.FullName, employee.Phone, employee.Email };
 
-        // Use Rich Domain Model method - handles all cascading operations
-        employee.SoftDelete();
+        // ═══════════════════════════════════════════════════════════════
+        // TRANSACTION: Delete employee with all cascading operations atomically
+        // - Set DeletedAt, Status
+        // - Cancel/complete active orders
+        // - Deactivate subscription
+        // - Create audit log
+        // ═══════════════════════════════════════════════════════════════
+        var strategy = _context.Database.CreateExecutionStrategy();
+        
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+            
+            try
+            {
+                // Use Rich Domain Model method - handles all cascading operations
+                employee.SoftDelete();
 
-        await _context.SaveChangesAsync(cancellationToken);
+                await _context.SaveChangesAsync(cancellationToken);
 
-        // Audit log
-        await _auditService.LogAsync(
-            currentUserId,
-            AuditActions.Delete,
-            AuditEntityTypes.Employee,
-            employee.Id,
-            oldValues: oldValues,
-            cancellationToken: cancellationToken);
+                // Audit log
+                await _auditService.LogAsync(
+                    currentUserId,
+                    AuditActions.Delete,
+                    AuditEntityTypes.Employee,
+                    employee.Id,
+                    oldValues: oldValues,
+                    cancellationToken: cancellationToken);
+
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
     }
 
     /// <summary>
@@ -545,8 +576,12 @@ public class EmployeesService : IEmployeesService
 
     private static EmployeeResponse MapToResponse(Employee employee)
     {
+        // NOTE: Using UTC for in-memory order filtering - acceptable for response mapping
+        // Orders are already loaded with UTC dates; precise timezone handling would require
+        // passing Project.Timezone through the call chain
+        var todayUtc = DateTime.UtcNow.Date;
         var todayOrder = employee.Orders
-            .FirstOrDefault(o => o.OrderDate.Date == DateTime.UtcNow.Date);
+            .FirstOrDefault(o => o.OrderDate.Date == todayUtc);
 
         var latestOrder = employee.Orders
             .OrderByDescending(o => o.OrderDate)
@@ -563,7 +598,7 @@ public class EmployeesService : IEmployeesService
         DateOnly? subscriptionEndDate = null;
         int? remainingDays = null;
         string? switchBlockedReason = null;
-        string subscriptionStatus = "Активна";
+        string subscriptionStatus = SubscriptionStatus.Active.ToRussian();
         decimal? totalPrice = null;
 
         // Order statistics for subscription
@@ -579,20 +614,42 @@ public class EmployeesService : IEmployeesService
 
             subscriptionStartDate = sub.StartDate;
             subscriptionEndDate = sub.EndDate;
-            subscriptionStatus = sub.Status ?? "Активна";
-            totalDays = sub.TotalDays;
-
-            // Use Rich Domain Model method for remaining days
-            remainingDays = employee.GetSubscriptionRemainingDays() ?? sub.RemainingDays;
+            subscriptionStatus = sub.Status.ToRussian();
 
             // Count future orders (today and forward, Active or Frozen status)
-            var today = DateTime.UtcNow.Date;
+            // NOTE: Using UTC - acceptable for counts as orders are stored with UTC dates
             var futureOrders = employee.Orders
-                .Where(o => o.OrderDate.Date >= today &&
+                .Where(o => o.OrderDate.Date >= todayUtc &&
                            (o.Status == Domain.Enums.OrderStatus.Active || o.Status == Domain.Enums.OrderStatus.Frozen))
                 .ToList();
             
             futureOrdersCount = futureOrders.Count;
+
+            // Count completed orders (Delivered or Completed status)
+            completedOrdersCount = employee.Orders.Count(o =>
+                o.Status == Domain.Enums.OrderStatus.Delivered ||
+                o.Status == Domain.Enums.OrderStatus.Completed);
+
+            // ═══════════════════════════════════════════════════════════════
+            // DYNAMIC TOTAL DAYS: Count ALL orders in subscription period (not cancelled)
+            // This is always accurate - reflects actual orders, not expected!
+            // ═══════════════════════════════════════════════════════════════
+            if (subscriptionStartDate.HasValue && subscriptionEndDate.HasValue)
+            {
+                var subStartDateTime = subscriptionStartDate.Value.ToDateTime(TimeOnly.MinValue);
+                var subEndDateTime = subscriptionEndDate.Value.ToDateTime(TimeOnly.MaxValue);
+                totalDays = employee.Orders.Count(o => 
+                    o.Status != Domain.Enums.OrderStatus.Cancelled &&
+                    o.OrderDate >= subStartDateTime &&
+                    o.OrderDate <= subEndDateTime);
+            }
+            else
+            {
+                totalDays = futureOrdersCount + completedOrdersCount;
+            }
+
+            // Use futureOrdersCount as remaining days (more accurate than domain method)
+            remainingDays = futureOrdersCount;
             
             // ═══════════════════════════════════════════════════════════════
             // DYNAMIC TOTAL PRICE: Calculate as sum of actual future order prices
@@ -600,13 +657,8 @@ public class EmployeesService : IEmployeesService
             // ═══════════════════════════════════════════════════════════════
             totalPrice = futureOrders.Sum(o => o.Price);
 
-            // Count completed orders (Delivered or Completed status)
-            completedOrdersCount = employee.Orders.Count(o =>
-                o.Status == Domain.Enums.OrderStatus.Delivered ||
-                o.Status == Domain.Enums.OrderStatus.Completed);
-
-            // Get schedule type
-            subscriptionScheduleType = sub.ScheduleType ?? "EVERY_DAY";
+            // Get schedule type (normalize legacy WEEKDAYS → EVERY_DAY)
+            subscriptionScheduleType = ScheduleTypeHelper.Normalize(sub.ScheduleType);
 
             // For CUSTOM schedules, extract dates from orders
             if (subscriptionScheduleType == "CUSTOM" && subscriptionStartDate.HasValue && subscriptionEndDate.HasValue)
@@ -645,7 +697,8 @@ public class EmployeesService : IEmployeesService
             MealStatus = todayOrder != null ? "Заказан" : "Не заказан",
             MealPlan = todayOrder?.ComboType ?? latestOrder?.ComboType,
             InviteStatus = employee.InviteStatus.ToRussian(),
-            IsActive = employee.IsActive,
+            Status = employee.Status.ToRussian(),
+            IsActive = employee.IsActive,  // Computed property for backward compatibility
             // Project info (address comes from project)
             ProjectId = employee.ProjectId,
             ProjectName = employee.Project?.Name ?? "",

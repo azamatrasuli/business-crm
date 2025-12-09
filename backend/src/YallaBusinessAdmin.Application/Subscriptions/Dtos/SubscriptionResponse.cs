@@ -7,8 +7,12 @@ public class SubscriptionResponse
     public string EmployeeName { get; set; } = string.Empty;
     public string EmployeePhone { get; set; } = string.Empty;
     public string ComboType { get; set; } = string.Empty;
-    public Guid? DeliveryAddressId { get; set; }
-    public string? DeliveryAddressName { get; set; }
+    
+    // Address is now derived from Project (one project = one address)
+    public Guid? ProjectId { get; set; }
+    public string? ProjectName { get; set; }
+    public string? DeliveryAddress { get; set; }
+    
     public bool IsActive { get; set; }
     
     // Subscription period & pricing

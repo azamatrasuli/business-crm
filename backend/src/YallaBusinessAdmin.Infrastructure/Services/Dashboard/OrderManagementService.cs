@@ -37,19 +37,30 @@ public sealed class OrderManagementService : IOrderManagementService
         string? dateFilter,
         string? addressFilter,
         string? typeFilter,
+        string? serviceTypeFilter = null,
+        string? comboTypeFilter = null,
         Guid? projectId = null,
         CancellationToken cancellationToken = default)
     {
         var results = new List<OrderResponse>();
 
-        // Get LUNCH orders
-        var lunchOrders = await GetLunchOrdersAsync(
-            companyId, projectId, search, statusFilter, dateFilter, addressFilter, typeFilter,
-            cancellationToken);
-        results.AddRange(lunchOrders);
+        // Determine which service types to include based on filter
+        var includeLunch = string.IsNullOrWhiteSpace(serviceTypeFilter) || 
+                           serviceTypeFilter.Equals("LUNCH", StringComparison.OrdinalIgnoreCase);
+        var includeCompensation = string.IsNullOrWhiteSpace(serviceTypeFilter) || 
+                                   serviceTypeFilter.Equals("COMPENSATION", StringComparison.OrdinalIgnoreCase);
 
-        // Get COMPENSATION transactions
-        if (typeFilter?.ToLower() != "guest")
+        // Get LUNCH orders (skip if serviceType filter is COMPENSATION only)
+        if (includeLunch)
+        {
+            var lunchOrders = await GetLunchOrdersAsync(
+                companyId, projectId, search, statusFilter, dateFilter, addressFilter, typeFilter, comboTypeFilter,
+                cancellationToken);
+            results.AddRange(lunchOrders);
+        }
+
+        // Get COMPENSATION transactions (skip if serviceType is LUNCH only or type is guest)
+        if (includeCompensation && typeFilter?.ToLower() != "guest")
         {
             var compTransactions = await GetCompensationTransactionsAsync(
                 companyId, projectId, search, dateFilter, cancellationToken);
@@ -88,14 +99,22 @@ public sealed class OrderManagementService : IOrderManagementService
             .FirstOrDefaultAsync(p => p.Id == targetProjectId.Value && p.CompanyId == companyId, cancellationToken)
             ?? throw new KeyNotFoundException("Проект не найден");
 
-        ValidateCutoffTime(project.CutoffTime, project.Timezone);
-
         var price = ComboPricingConstants.GetPrice(request.ComboType);
         var totalCost = price * request.Quantity;
 
         ValidateBudget(project.Budget, project.OverdraftLimit, totalCost);
 
         var orderDate = ParseOrderDate(request.Date);
+        
+        // ═══════════════════════════════════════════════════════════════
+        // CUTOFF VALIDATION: Only check cutoff if order is for today
+        // Business rule: Cannot create orders for today after cutoff time
+        // Future dates are always allowed
+        // ═══════════════════════════════════════════════════════════════
+        if (TimezoneHelper.IsToday(orderDate, project.Timezone))
+        {
+            ValidateCutoffTime(project.CutoffTime, project.Timezone);
+        }
         var orders = CreateGuestOrders(request, companyId, targetProjectId.Value, price, orderDate, project.CurrencyCode);
 
         foreach (var order in orders)
@@ -147,6 +166,12 @@ public sealed class OrderManagementService : IOrderManagementService
         var createdOrders = new List<Order>();
         var skippedEmployees = new List<string>();
 
+        // ═══════════════════════════════════════════════════════════════
+        // CUTOFF VALIDATION: Check if assigning meals for today after cutoff
+        // Business rule: Cannot create orders for today after cutoff time
+        // IMPORTANT: Must check cutoff for each employee's project timezone!
+        // ═══════════════════════════════════════════════════════════════
+        
         foreach (var employee in employees)
         {
             var validationResult = ValidateEmployeeForMealAssignment(employee, price, orderDate);
@@ -154,6 +179,18 @@ public sealed class OrderManagementService : IOrderManagementService
             {
                 skippedEmployees.Add($"{employee.FullName} ({validationResult.Reason})");
                 continue;
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // CUTOFF VALIDATION: Check cutoff for this employee's project
+            // ═══════════════════════════════════════════════════════════════
+            if (employee.Project != null && TimezoneHelper.IsToday(orderDate, employee.Project.Timezone))
+            {
+                if (TimezoneHelper.IsCutoffPassed(employee.Project.CutoffTime, employee.Project.Timezone))
+                {
+                    skippedEmployees.Add($"{employee.FullName} (время заказа на сегодня истекло в {employee.Project.CutoffTime})");
+                    continue;
+                }
             }
 
             var existingOrder = await _context.Orders
@@ -203,22 +240,21 @@ public sealed class OrderManagementService : IOrderManagementService
         // ═══════════════════════════════════════════════════════════════
         // CUTOFF VALIDATION: Check cutoff time for actions on today's orders
         // Business rule: Cannot cancel/pause/modify orders after cutoff time
+        // IMPORTANT: Use project's timezone for "today" comparison!
         // ═══════════════════════════════════════════════════════════════
         var actionLower = request.Action.ToLower();
         if (actionLower is "cancel" or "pause" or "changecombo")
         {
-            var todayOrders = orders.Where(o => o.OrderDate.Date == DateTime.UtcNow.Date).ToList();
-            if (todayOrders.Count > 0)
+            // Check each order against its project's timezone and cutoff
+            foreach (var order in orders)
             {
-                // Get cutoff from first order's project (all orders in bulk should be same project typically)
-                var projectWithCutoff = todayOrders.FirstOrDefault()?.Project;
-                if (projectWithCutoff != null)
+                if (order.Project != null && TimezoneHelper.IsToday(order.OrderDate, order.Project.Timezone))
                 {
-                    if (TimezoneHelper.IsCutoffPassed(projectWithCutoff.CutoffTime, projectWithCutoff.Timezone))
+                    if (TimezoneHelper.IsCutoffPassed(order.Project.CutoffTime, order.Project.Timezone))
                     {
                         throw new BusinessRuleException(
                             ErrorCodes.ORDER_CUTOFF_PASSED,
-                            $"Время для изменения заказов на сегодня истекло в {projectWithCutoff.CutoffTime}. " +
+                            $"Время для изменения заказов на сегодня истекло в {order.Project.CutoffTime}. " +
                             $"Заказы на завтра и далее можно изменять.");
                     }
                 }
@@ -263,6 +299,7 @@ public sealed class OrderManagementService : IOrderManagementService
         string? dateFilter,
         string? addressFilter,
         string? typeFilter,
+        string? comboTypeFilter,
         CancellationToken cancellationToken)
     {
         var query = _context.Orders
@@ -297,6 +334,12 @@ public sealed class OrderManagementService : IOrderManagementService
                 "employee" => query.Where(o => !o.IsGuestOrder),
                 _ => query
             };
+        }
+
+        // Apply combo type filter at DB level
+        if (!string.IsNullOrWhiteSpace(comboTypeFilter))
+        {
+            query = query.Where(o => o.ComboType == comboTypeFilter);
         }
 
         var allOrders = await query.ToListAsync(cancellationToken);
@@ -384,7 +427,7 @@ public sealed class OrderManagementService : IOrderManagementService
             EmployeeName = ct.Employee?.FullName ?? "Сотрудник",
             EmployeePhone = ct.Employee?.Phone,
             Date = ct.TransactionDate.ToString("yyyy-MM-dd"),
-            Status = "Завершен",
+            Status = OrderStatus.Delivered.ToRussian(),  // Compensation transactions are always delivered
             Address = ct.RestaurantName ?? "",
             ComboType = "",
             Amount = ct.TotalAmount,
@@ -591,9 +634,20 @@ public sealed class OrderManagementService : IOrderManagementService
         var newPrice = ComboPricingConstants.GetPrice(newComboType);
         var priceDiff = newPrice - oldPrice;
 
-        if (priceDiff != 0 && order.Employee?.Budget != null && !order.IsGuestOrder)
+        if (priceDiff != 0)
         {
-            order.Employee.Budget.TotalBudget -= priceDiff;
+            if (order.IsGuestOrder && order.Project != null)
+            {
+                // Guest order: deduct/refund from Project budget
+                // priceDiff > 0 means upgrade (need to charge more), priceDiff < 0 means downgrade (refund)
+                order.Project.Budget -= priceDiff;
+                order.Project.UpdatedAt = DateTime.UtcNow;
+            }
+            else if (order.Employee?.Budget != null)
+            {
+                // Employee order: deduct/refund from Employee budget
+                order.Employee.Budget.TotalBudget -= priceDiff;
+            }
         }
 
         order.ChangeComboType(newComboType);
@@ -613,15 +667,14 @@ public sealed class OrderManagementService : IOrderManagementService
 
         decimal refundAmount = 0;
 
-        if (order.Employee?.Budget != null && !order.IsGuestOrder)
+        if (order.IsGuestOrder && order.Project != null)
         {
-            order.Employee.Budget.TotalBudget += order.Price;
-        }
-        else if (order.IsGuestOrder && company != null)
-        {
-            company.Budget += order.Price;
+            // Guest order: refund to Project budget (same source as creation)
+            order.Project.Budget += order.Price;
+            order.Project.UpdatedAt = DateTime.UtcNow;
             refundAmount = order.Price;
 
+            // Create transaction record for audit trail
             var transaction = new CompanyTransaction
             {
                 Id = Guid.NewGuid(),
@@ -629,11 +682,16 @@ public sealed class OrderManagementService : IOrderManagementService
                 Type = TransactionType.Refund,
                 Amount = order.Price,
                 DailyOrderId = order.Id,
-                BalanceAfter = company.Budget,
-                Description = $"Возврат за отмененный заказ: {order.GuestName ?? order.Employee?.FullName}",
+                BalanceAfter = order.Project.Budget,
+                Description = $"Возврат за отмененный гостевой заказ: {order.GuestName}",
                 CreatedAt = DateTime.UtcNow
             };
             await _context.CompanyTransactions.AddAsync(transaction, cancellationToken);
+        }
+        else if (order.Employee?.Budget != null)
+        {
+            // Employee order: refund to Employee budget
+            order.Employee.Budget.TotalBudget += order.Price;
         }
 
         order.Cancel();

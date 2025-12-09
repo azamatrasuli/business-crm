@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, Pencil, Phone, Mail, FolderKanban, CheckCircle2, Clock, XCircle, Ban } from 'lucide-react'
 import type { EmployeeDetail } from '@/lib/api/employees'
+import { INVITE_STATUS } from '@/lib/constants/entity-statuses'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -28,19 +29,22 @@ interface EmployeeHeaderProps {
 
 function getInviteStatusConfig(status: string | undefined) {
   switch (status) {
-    case 'Принято':
+    case INVITE_STATUS.ACCEPTED:
+    case 'Принято':  // Legacy
       return {
         variant: 'default' as const,
         className: 'bg-emerald-500/10 text-emerald-600 border-emerald-200',
         icon: CheckCircle2,
       }
-    case 'Ожидает':
+    case INVITE_STATUS.PENDING:
+    case 'Ожидает':  // Legacy
       return {
         variant: 'secondary' as const,
         className: 'bg-amber-500/10 text-amber-600 border-amber-200',
         icon: Clock,
       }
-    case 'Отклонено':
+    case INVITE_STATUS.REJECTED:
+    case 'Отклонено':  // Legacy
       return {
         variant: 'destructive' as const,
         className: 'bg-red-500/10 text-red-600 border-red-200',

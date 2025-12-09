@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using YallaBusinessAdmin.Application.Compensation;
 using YallaBusinessAdmin.Application.Compensation.Dtos;
+using YallaBusinessAdmin.Infrastructure.Services.Dashboard;
 
 namespace YallaBusinessAdmin.Api.Controllers;
 
@@ -82,7 +83,9 @@ public class CompensationController : ControllerBase
         [FromQuery] string? date = null,
         CancellationToken cancellationToken = default)
     {
-        var targetDate = DateOnly.FromDateTime(DateTime.UtcNow);
+        // FIXED: Use local timezone for default date instead of UTC
+        // This ensures "today" matches the user's business day
+        var targetDate = TimezoneHelper.GetLocalTodayDate(null); // Uses Asia/Dushanbe default
         if (!string.IsNullOrEmpty(date) && DateOnly.TryParse(date, out var parsedDate))
             targetDate = parsedDate;
 

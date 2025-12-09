@@ -19,6 +19,8 @@ public interface IOrderManagementService
     /// <param name="dateFilter">Optional date filter (yyyy-MM-dd format).</param>
     /// <param name="addressFilter">Optional address/project filter.</param>
     /// <param name="typeFilter">Optional type filter (guest/employee).</param>
+    /// <param name="serviceTypeFilter">Optional service type filter (LUNCH/COMPENSATION).</param>
+    /// <param name="comboTypeFilter">Optional combo type filter (Комбо 25/Комбо 35).</param>
     /// <param name="projectId">Optional project identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Paged result of orders.</returns>
@@ -31,6 +33,8 @@ public interface IOrderManagementService
         string? dateFilter,
         string? addressFilter,
         string? typeFilter,
+        string? serviceTypeFilter = null,
+        string? comboTypeFilter = null,
         Guid? projectId = null,
         CancellationToken cancellationToken = default);
 

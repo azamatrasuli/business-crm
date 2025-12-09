@@ -431,45 +431,58 @@ export function FilterBuilder({
             {/* Add New Filter Form */}
             {pendingFilter ? (
               <div className="space-y-3 rounded-lg border border-dashed border-primary/30 bg-primary/5 p-3">
-                <div className="grid gap-2">
-                  {/* Field Selection */}
-                  <Select
-                    value={pendingFilter.fieldId}
-                    onValueChange={handleFieldChange}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Выберите поле" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {fields.map((field) => (
-                        <SelectItem key={field.id} value={field.id}>
-                          {field.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  {/* Operator Selection */}
-                  {currentField && currentField.operators.length > 1 && (
+                <div className="grid gap-3">
+                  {/* Field Selection with label */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Фильтровать по:</label>
                     <Select
-                      value={pendingFilter.operator}
-                      onValueChange={(value) => handleOperatorChange(value as FilterOperator)}
+                      value={pendingFilter.fieldId}
+                      onValueChange={handleFieldChange}
                     >
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Условие" />
+                        <SelectValue placeholder="Выберите поле" />
                       </SelectTrigger>
                       <SelectContent>
-                        {currentField.operators.map((op) => (
-                          <SelectItem key={op} value={op}>
-                            {operatorLabels[op]}
+                        {fields.map((field) => (
+                          <SelectItem key={field.id} value={field.id}>
+                            {field.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  {/* Operator Selection */}
+                  {currentField && currentField.operators.length > 1 && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-muted-foreground">Условие:</label>
+                      <Select
+                        value={pendingFilter.operator}
+                        onValueChange={(value) => handleOperatorChange(value as FilterOperator)}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Условие" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {currentField.operators.map((op) => (
+                            <SelectItem key={op} value={op}>
+                              {operatorLabels[op]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   )}
 
-                  {/* Value Input */}
-                  {renderValueInput}
+                  {/* Value Input with label */}
+                  {renderValueInput && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-muted-foreground">
+                        Значение {currentField?.label ? `"${currentField.label}"` : ''}:
+                      </label>
+                      {renderValueInput}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2">

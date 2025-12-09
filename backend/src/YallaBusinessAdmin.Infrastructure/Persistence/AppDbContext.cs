@@ -48,8 +48,8 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Name).HasColumnName("name").IsRequired();
             entity.Property(e => e.Status).HasColumnName("status")
                 .HasConversion(
-                    v => v.ToDatabase(),
-                    v => CompanyStatusExtensions.FromDatabase(v));
+                    v => v.ToRussian(),
+                    v => CompanyStatusExtensions.FromRussian(v));
             entity.Property(e => e.Budget).HasColumnName("budget").HasPrecision(15, 2);
             entity.Property(e => e.OverdraftLimit).HasColumnName("overdraft_limit").HasPrecision(15, 2);
             entity.Property(e => e.CurrencyCode).HasColumnName("currency_code").HasMaxLength(3);
@@ -83,8 +83,8 @@ public class AppDbContext : DbContext
             entity.Property(e => e.CurrencyCode).HasColumnName("currency_code").HasMaxLength(3);
             entity.Property(e => e.Status).HasColumnName("status")
                 .HasConversion(
-                    v => v.ToDatabase(),
-                    v => CompanyStatusExtensions.FromDatabase(v));
+                    v => v.ToRussian(),
+                    v => CompanyStatusExtensions.FromRussian(v));
             entity.Property(e => e.Timezone).HasColumnName("timezone").HasMaxLength(50);
             entity.Property(e => e.CutoffTime).HasColumnName("cutoff_time");
             entity.Property(e => e.ServiceTypes).HasColumnName("service_types");
@@ -168,7 +168,13 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Phone).HasColumnName("phone").IsRequired();
             entity.Property(e => e.Email).HasColumnName("email"); // Email is optional
             entity.Property(e => e.Position).HasColumnName("position");
-            entity.Property(e => e.IsActive).HasColumnName("is_active");
+            // Status maps to is_active boolean column with conversion
+            // TODO: Add migration to create 'status' text column, then switch mapping
+            entity.Property(e => e.Status).HasColumnName("is_active")
+                .HasConversion(
+                    v => v.ToBool(),  // EmployeeStatus -> bool for DB
+                    v => EmployeeStatusExtensions.FromBool(v));  // bool from DB -> EmployeeStatus
+            entity.Ignore(e => e.IsActive);  // Computed property, not stored
             entity.Property(e => e.InviteStatus).HasColumnName("invite_status")
                 .HasConversion(
                     v => v.ToRussian(),
@@ -301,7 +307,10 @@ public class AppDbContext : DbContext
             entity.Property(e => e.EndDate).HasColumnName("end_date");
             entity.Property(e => e.TotalDays).HasColumnName("total_days").HasDefaultValue(0);
             entity.Property(e => e.TotalPrice).HasColumnName("total_price").HasPrecision(10, 2).HasDefaultValue(0);
-            entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(50).HasDefaultValue("Активна");
+            entity.Property(e => e.Status).HasColumnName("status").HasMaxLength(50)
+                .HasConversion(
+                    v => v.ToRussian(),
+                    v => SubscriptionStatusExtensions.FromRussian(v));
             entity.Property(e => e.ScheduleType).HasColumnName("schedule_type").HasMaxLength(50).HasDefaultValue("EVERY_DAY");
             entity.Property(e => e.PausedAt).HasColumnName("paused_at");
             entity.Property(e => e.PausedDaysCount).HasColumnName("paused_days_count").HasDefaultValue(0);

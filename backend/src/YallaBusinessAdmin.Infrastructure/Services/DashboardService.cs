@@ -62,12 +62,14 @@ public sealed class DashboardService : IDashboardService
         string? dateFilter,
         string? addressFilter,
         string? typeFilter,
+        string? serviceTypeFilter = null,
+        string? comboTypeFilter = null,
         Guid? projectId = null,
         CancellationToken cancellationToken = default)
     {
         return _orderService.GetOrdersAsync(
             companyId, page, pageSize, search, statusFilter, dateFilter, addressFilter, typeFilter,
-            projectId, cancellationToken);
+            serviceTypeFilter, comboTypeFilter, projectId, cancellationToken);
     }
 
     /// <inheritdoc />

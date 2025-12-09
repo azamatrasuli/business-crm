@@ -6,6 +6,30 @@ public record UpdateProjectRequest(
     [StringLength(200, MinimumLength = 1)]
     string? Name = null,
     
+    // ═══════════════════════════════════════════════════════════════
+    // ADDRESS FIELDS
+    // Note: Address can be updated to fill in missing data.
+    // For complete address change, consider creating a new project.
+    // ═══════════════════════════════════════════════════════════════
+    
+    /// <summary>Short name for the address (e.g., "Главный офис")</summary>
+    [StringLength(255)]
+    string? AddressName = null,
+    
+    /// <summary>Full delivery address (e.g., "ул. Рудаки 14, Душанбе")</summary>
+    [StringLength(500)]
+    string? AddressFullAddress = null,
+    
+    /// <summary>Latitude for geo location (optional)</summary>
+    double? AddressLatitude = null,
+    
+    /// <summary>Longitude for geo location (optional)</summary>
+    double? AddressLongitude = null,
+    
+    // ═══════════════════════════════════════════════════════════════
+    // FINANCE & SETTINGS
+    // ═══════════════════════════════════════════════════════════════
+    
     decimal? Budget = null,
     decimal? OverdraftLimit = null,
     

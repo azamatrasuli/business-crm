@@ -411,7 +411,9 @@ export default function EmployeeDetailPage() {
         return dateA - dateB
       },
       status: (a, b) => {
-        const order = { 'Активен': 3, 'На паузе': 2, 'Заморожен': 1, 'Завершен': 0 }
+        // Priority: Active > Paused > Frozen > Delivered/Completed
+        // NOTE: 'На паузе' is DEPRECATED legacy alias for 'Приостановлен'
+        const order = { 'Активен': 5, 'Приостановлен': 4, 'На паузе': 4, 'Заморожен': 3, 'Выходной': 2, 'Доставлен': 1, 'Выполнен': 1, 'Завершен': 1, 'Отменён': 0 }
         return (order[a.status as keyof typeof order] || 0) - (order[b.status as keyof typeof order] || 0)
       },
     })
@@ -422,9 +424,12 @@ export default function EmployeeDetailPage() {
     switch (status) {
       case 'Активен':
         return 'default'
-      case 'На паузе':
+      case 'Приостановлен':
+      case 'На паузе':  // DEPRECATED legacy alias
         return 'secondary'
       case 'Завершен':
+      case 'Выполнен':
+      case 'Доставлен':
         return 'outline'
       case 'Заморожен':
         return 'secondary'
@@ -440,11 +445,14 @@ export default function EmployeeDetailPage() {
         return { className: 'bg-emerald-500/10 text-emerald-600 border-emerald-200' }
       case 'Активна':
         return { className: 'bg-emerald-500/10 text-emerald-600 border-emerald-200' }
-      case 'На паузе':
+      case 'Приостановлен':
+      case 'На паузе':  // DEPRECATED legacy alias
         return { className: 'bg-amber-500/10 text-amber-600 border-amber-200' }
       case 'Завершен':
       case 'Завершена':
-        return { className: 'bg-muted text-muted-foreground border-muted' }
+      case 'Выполнен':
+      case 'Доставлен':
+        return { className: 'bg-gray-500/10 text-gray-600 border-gray-200' }
       case 'Заморожен':
         return { className: 'bg-blue-500/10 text-blue-600 border-blue-200' }
       default:
@@ -664,15 +672,16 @@ export default function EmployeeDetailPage() {
           )
         }
         
-        // Завершённые заказы
-        if (order.status === 'Завершен') {
+        // Завершённые/доставленные заказы
+        const isDeliveredOrder = order.status === 'Завершен' || order.status === 'Выполнен' || order.status === 'Доставлен'
+        if (isDeliveredOrder) {
           return (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="text-emerald-500 text-xs px-2 py-1 bg-emerald-50 dark:bg-emerald-950 rounded">✓ Завершён</span>
+                  <span className="text-emerald-500 text-xs px-2 py-1 bg-emerald-50 dark:bg-emerald-950 rounded">✓ Доставлен</span>
                 </TooltipTrigger>
-                <TooltipContent>Заказ завершён</TooltipContent>
+                <TooltipContent>Заказ доставлен</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           )
@@ -680,7 +689,7 @@ export default function EmployeeDetailPage() {
         
         // COMPENSATION заказы
         if (isCompensation) {
-          const canEdit = !isPastOrder && order.status !== 'Завершен'
+          const canEdit = !isPastOrder && !isDeliveredOrder
           const canCancel = isTodayOrder || isFutureOrder
           
           return (
@@ -735,7 +744,8 @@ export default function EmployeeDetailPage() {
         const canFreeze = isTodayOrder && order.status === 'Активен'
         const canUnfreeze = order.status === 'Заморожен'
         // NOTE: Pause/Resume removed for individual orders - use subscription-level pause instead
-        const canResume = order.status === 'На паузе' // Keep for backward compat display
+        // 'На паузе' is DEPRECATED, use 'Приостановлен'
+        const canResume = order.status === 'Приостановлен' || order.status === 'На паузе'
         const canCancel = isTodayOrder || isFutureOrder
         
         return (
@@ -788,14 +798,14 @@ export default function EmployeeDetailPage() {
               </TooltipProvider>
             )}
             
-            {/* Статус "На паузе" - показываем только индикатор */}
+            {/* Статус "Приостановлен" - показываем только индикатор */}
             {canResume && (
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span>
                       <Badge variant="outline" className="text-orange-600 border-orange-300">
-                        На паузе
+                        Приостановлен
                       </Badge>
                     </span>
                   </TooltipTrigger>
@@ -1741,8 +1751,10 @@ export default function EmployeeDetailPage() {
               const canFreeze = !isCompensation && isTodayOrder && order.status === 'Активен'
               const canUnfreeze = !isCompensation && order.status === 'Заморожен'
               // NOTE: Pause/Resume removed for individual orders - use subscription-level pause instead
-              const isPaused = !isCompensation && order.status === 'На паузе'
-              const canCancel = (isTodayOrder || isFutureOrder) && order.status !== 'Завершен'
+              // 'На паузе' is DEPRECATED, use 'Приостановлен'
+              const isPaused = !isCompensation && (order.status === 'Приостановлен' || order.status === 'На паузе')
+              const isOrderDelivered = order.status === 'Завершен' || order.status === 'Выполнен' || order.status === 'Доставлен'
+              const canCancel = (isTodayOrder || isFutureOrder) && !isOrderDelivered
               
               return (
                 <div 
@@ -1859,8 +1871,8 @@ export default function EmployeeDetailPage() {
                       </div>
                     )}
 
-                    {/* Actions */}
-                    {!isPastOrder && order.status !== 'Завершен' && (
+                    {/* Actions - hide for delivered/completed orders */}
+                    {!isPastOrder && !(order.status === 'Завершен' || order.status === 'Выполнен' || order.status === 'Доставлен') && (
                       <div className="pt-3 border-t space-y-2">
                         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
                           Действия
@@ -1940,7 +1952,7 @@ export default function EmployeeDetailPage() {
                           {isPaused && (
                             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-50 dark:bg-orange-950/30 text-orange-600">
                               <PauseCircle className="h-3.5 w-3.5" />
-                              <span className="text-xs font-medium">На паузе</span>
+                              <span className="text-xs font-medium">Приостановлен</span>
                             </div>
                           )}
                         </div>
@@ -1973,11 +1985,11 @@ export default function EmployeeDetailPage() {
                       </div>
                     )}
                     
-                    {order.status === 'Завершен' && !isPastOrder && (
+                    {(order.status === 'Завершен' || order.status === 'Выполнен' || order.status === 'Доставлен') && !isPastOrder && (
                       <div className="pt-3 border-t">
                         <div className="flex items-center justify-center gap-2 py-2 text-emerald-600">
                           <CheckCircle2 className="h-4 w-4" />
-                          <span className="text-sm font-medium">Заказ успешно завершён</span>
+                          <span className="text-sm font-medium">Заказ успешно доставлен</span>
                         </div>
                       </div>
                     )}

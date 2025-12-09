@@ -164,3 +164,68 @@ export function getNextDay(date: Date | string): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 12, 0, 0)
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Server Timezone Support
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Server timezone - Asia/Dushanbe (UTC+5)
+ * IMPORTANT: Use these functions when comparing dates with server data
+ * to ensure consistent behavior regardless of browser timezone.
+ */
+export const SERVER_TIMEZONE = 'Asia/Dushanbe'
+
+/**
+ * Get current date/time in server timezone (Asia/Dushanbe).
+ * Use this instead of `new Date()` for timezone-consistent date operations.
+ */
+export function getServerNow(): Date {
+  // Get current date/time in server timezone
+  const now = new Date()
+  const serverTime = new Date(now.toLocaleString('en-US', { timeZone: SERVER_TIMEZONE }))
+  return serverTime
+}
+
+/**
+ * Get today's date at start of day in server timezone.
+ * Use this instead of `startOfDay(new Date())` for timezone-consistent comparisons.
+ */
+export function getServerToday(): Date {
+  const serverNow = getServerNow()
+  return startOfDay(serverNow)
+}
+
+/**
+ * Get today's date in server timezone as ISO string (YYYY-MM-DD).
+ */
+export function getServerTodayISO(): string {
+  return formatISODate(getServerNow())
+}
+
+/**
+ * Check if a date is before today in server timezone.
+ */
+export function isBeforeServerToday(date: Date | string | null | undefined): boolean {
+  if (!date) return false
+  const d = typeof date === 'string' ? parseLocalDate(date) : date
+  return isBefore(startOfDay(d), getServerToday())
+}
+
+/**
+ * Check if a date is today in server timezone.
+ */
+export function isServerToday(date: Date | string | null | undefined): boolean {
+  if (!date) return false
+  const d = typeof date === 'string' ? parseLocalDate(date) : date
+  return isEqual(startOfDay(d), getServerToday())
+}
+
+/**
+ * Check if a date is after today in server timezone.
+ */
+export function isAfterServerToday(date: Date | string | null | undefined): boolean {
+  if (!date) return false
+  const d = typeof date === 'string' ? parseLocalDate(date) : date
+  return isAfter(startOfDay(d), getServerToday())
+}
+

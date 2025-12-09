@@ -13,7 +13,9 @@ import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import { toast } from 'sonner'
 import { formatISODate } from '@/lib/utils/date'
+import { INVITE_STATUS } from '@/lib/constants/entity-statuses'
 import { DEFAULT_WORKING_DAYS, getEffectiveWorkingDays, countWorkingDaysInRange } from '@/lib/constants/employee'
+import { useBusinessConfig } from './use-business-config'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -103,6 +105,10 @@ export function useCompensationForm({
 }: UseCompensationFormProps): UseCompensationFormReturn {
   const isEditing = Boolean(existingCompensation)
 
+  // Business config for dynamic minDays validation
+  const { config: businessConfig } = useBusinessConfig()
+  const minSubscriptionDays = businessConfig.subscription.minDays
+
   // Step management
   const [step, setStep] = useState(1)
 
@@ -185,7 +191,8 @@ export function useCompensationForm({
 
   const canProceedStep1 = dailyLimit > 0 && (mode !== 'individual' || individualValidation.isValid)
   // FIXED: Use calculated WORKING days, not calendar days
-  const canProceedStep2 = Boolean(startDate && endDate && workingDays >= 5)
+  // Uses dynamic minDays from business config instead of hardcoded value
+  const canProceedStep2 = Boolean(startDate && endDate && workingDays >= minSubscriptionDays)
   const canProceedStep3 = mode === 'individual' || selectedEmployeeIds.length > 0
 
   const canProceed = useMemo(() => {
@@ -209,7 +216,7 @@ export function useCompensationForm({
     () =>
       employees.filter((e) => {
         if (!e.isActive) return false
-        if (e.inviteStatus !== 'Принято') return false
+        if (e.inviteStatus !== INVITE_STATUS.ACCEPTED && e.inviteStatus !== 'Принято') return false
         if (e.activeCompensationId) return false
         if (e.serviceType !== 'COMPENSATION') return false
         return true

@@ -9,6 +9,7 @@ import { useEmployeesStore } from '@/stores/employees-store'
 import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import { getEffectiveWorkingDays, isWorkingDay, DEFAULT_WORKING_DAYS } from '@/lib/constants/employee'
+import { INVITE_STATUS, ORDER_STATUS } from '@/lib/constants/entity-statuses'
 import {
   Dialog,
   DialogBody,
@@ -94,7 +95,7 @@ export function AssignMealsDialog({ open, onOpenChange }: AssignMealsDialogProps
     () => employees.filter((employee) => {
       // Basic requirements
       if (!employee.isActive) return false
-      if (employee.inviteStatus !== 'Принято') return false
+      if (employee.inviteStatus !== INVITE_STATUS.ACCEPTED) return false
       if (!employee.projectId) return false // Must have a project for address
       
       // ServiceType must be LUNCH
@@ -310,7 +311,7 @@ export function AssignMealsDialog({ open, onOpenChange }: AssignMealsDialogProps
                           <p className="font-medium">
                             {eligibleEmployees.length === 0
                               ? (() => {
-                                  const activeAccepted = employees.filter(e => e.isActive && e.inviteStatus === 'Принято')
+                                  const activeAccepted = employees.filter(e => e.isActive && e.inviteStatus === INVITE_STATUS.ACCEPTED)
                                   if (activeAccepted.length === 0) return 'Нет активных сотрудников с принятыми приглашениями'
                                   const withProject = activeAccepted.filter(e => e.projectId)
                                   if (withProject.length === 0) return 'Нет сотрудников с назначенным проектом'
@@ -359,7 +360,7 @@ export function AssignMealsDialog({ open, onOpenChange }: AssignMealsDialogProps
                                     <p className="font-medium">{employee.fullName}</p>
                                     <p className="text-xs text-muted-foreground">{employee.phone}</p>
                                     <p className="text-xs text-muted-foreground mt-1">
-                                      {employee.mealStatus === 'Активен'
+                                      {(employee.mealStatus === ORDER_STATUS.ACTIVE || employee.mealStatus === 'Активен')
                                         ? `Текущая подписка: ${employee.mealPlan || 'не указана'}`
                                         : 'Подписка не назначена'}
                                     </p>
@@ -369,7 +370,7 @@ export function AssignMealsDialog({ open, onOpenChange }: AssignMealsDialogProps
                                       </p>
                                     )}
                                   </div>
-                                  {employee.mealStatus === 'Активен' && employee.mealPlan && (
+                                  {(employee.mealStatus === ORDER_STATUS.ACTIVE || employee.mealStatus === 'Активен') && employee.mealPlan && (
                                     <Badge variant="outline" className="flex-shrink-0">
                                       {employee.mealPlan}
                                     </Badge>

@@ -62,5 +62,63 @@ public static class TimezoneHelper
         var cutoffToday = localNow.Date.Add(cutoffTime.ToTimeSpan());
         return localNow > cutoffToday;
     }
+    
+    /// <summary>
+    /// Gets today's date in the specified timezone.
+    /// IMPORTANT: Use this instead of DateTime.UtcNow.Date when comparing with order dates!
+    /// </summary>
+    /// <param name="timezone">The timezone identifier.</param>
+    /// <returns>Today's date in the specified timezone.</returns>
+    public static DateTime GetLocalToday(string? timezone)
+    {
+        var localNow = ToLocalTime(DateTime.UtcNow, timezone);
+        return localNow.Date;
+    }
+    
+    /// <summary>
+    /// Gets today's date as DateOnly in the specified timezone.
+    /// </summary>
+    /// <param name="timezone">The timezone identifier.</param>
+    /// <returns>Today's date as DateOnly.</returns>
+    public static DateOnly GetLocalTodayDate(string? timezone)
+    {
+        return DateOnly.FromDateTime(GetLocalToday(timezone));
+    }
+    
+    /// <summary>
+    /// Checks if the given date is "today" in the specified timezone.
+    /// </summary>
+    /// <param name="orderDate">The order date to check.</param>
+    /// <param name="timezone">The timezone identifier.</param>
+    /// <returns>True if the date is today in the specified timezone.</returns>
+    public static bool IsToday(DateTime orderDate, string? timezone)
+    {
+        var localToday = GetLocalToday(timezone);
+        return orderDate.Date == localToday;
+    }
+    
+    /// <summary>
+    /// Checks if the given date is in the past (before today) in the specified timezone.
+    /// </summary>
+    /// <param name="orderDate">The order date to check.</param>
+    /// <param name="timezone">The timezone identifier.</param>
+    /// <returns>True if the date is in the past.</returns>
+    public static bool IsPastDate(DateTime orderDate, string? timezone)
+    {
+        var localToday = GetLocalToday(timezone);
+        return orderDate.Date < localToday;
+    }
+    
+    /// <summary>
+    /// Checks if the given date is today or in the future in the specified timezone.
+    /// </summary>
+    /// <param name="orderDate">The order date to check.</param>
+    /// <param name="timezone">The timezone identifier.</param>
+    /// <returns>True if the date is today or future.</returns>
+    public static bool IsTodayOrFuture(DateTime orderDate, string? timezone)
+    {
+        var localToday = GetLocalToday(timezone);
+        return orderDate.Date >= localToday;
+    }
 }
 

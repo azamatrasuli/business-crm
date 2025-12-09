@@ -109,18 +109,99 @@ export const SHIFT_TYPE_LABELS = {
   [SHIFT_TYPES.NIGHT]: 'Ночная',
 } as const
 
+/**
+ * Order statuses - synced with PostgreSQL enum order_status
+ * @deprecated Use ORDER_STATUS from '@/lib/constants/entity-statuses' instead
+ */
 export const ORDER_STATUSES = {
   ACTIVE: 'Активен',
-  PAUSED: 'На паузе',
+  PAUSED: 'Приостановлен',
+  FROZEN: 'Заморожен',
+  DAY_OFF: 'Выходной',
+  DELIVERED: 'Доставлен',
+  COMPLETED: 'Выполнен',  // Legacy DB value
   CANCELLED: 'Отменён',
-  COMPLETED: 'Завершен',
+  // DEPRECATED: Legacy UI values - kept for backward compatibility only
+  PAUSED_LEGACY: 'На паузе',      // Use PAUSED ('Приостановлен') instead
+  COMPLETED_LEGACY: 'Завершен',   // Use COMPLETED ('Выполнен') instead
 } as const
+
+// Re-export status helpers from entity-statuses (preferred)
+export {
+  ORDER_STATUS,
+  isOrderActive,
+  isOrderPaused,
+  isOrderFrozen,
+  isOrderCancelled,
+  isOrderDelivered,
+  isOrderTerminal,
+  canModifyOrder,
+  getOrderStatusConfig,
+  SUBSCRIPTION_STATUS,
+  isSubscriptionActive,
+  isSubscriptionPaused,
+  isSubscriptionCompleted,
+  isSubscriptionTerminal,
+  canResumeSubscription,
+  getSubscriptionStatusConfig,
+  INVITE_STATUS,
+  getInviteStatusConfig,
+} from './entity-statuses'
+
+// Re-export dictionaries (единый источник данных для справочников и фильтров)
+export {
+  // Статусы заказов
+  ORDER_STATUSES as ORDER_STATUS_VALUES,
+  ORDER_STATUS_OPTIONS,
+  // Типы заказчиков
+  ORDER_TYPES,
+  ORDER_TYPE_OPTIONS,
+  // Типы комбо
+  COMBO_TYPES as COMBO_TYPE_VALUES,
+  COMBO_TYPE_OPTIONS,
+  COMBO_METADATA,
+  getComboPrice,
+  // Типы услуг
+  SERVICE_TYPES as SERVICE_TYPE_VALUES,
+  SERVICE_TYPE_OPTIONS,
+  // Статусы подписок
+  SUBSCRIPTION_STATUSES,
+  SUBSCRIPTION_STATUS_OPTIONS,
+  // Статусы сотрудников
+  EMPLOYEE_STATUSES,
+  EMPLOYEE_STATUS_OPTIONS,
+  // Статусы приглашений
+  INVITE_STATUSES,
+  INVITE_STATUS_OPTIONS,
+  // Типы смен
+  SHIFT_TYPES as SHIFT_TYPE_VALUES,
+  SHIFT_TYPE_OPTIONS,
+  // Периоды бюджета
+  BUDGET_PERIODS as BUDGET_PERIOD_VALUES,
+  BUDGET_PERIOD_OPTIONS,
+  // Типы расписания
+  SCHEDULE_TYPES,
+  SCHEDULE_TYPE_OPTIONS,
+  // Дни недели
+  WEEKDAYS,
+  WEEKDAY_OPTIONS,
+  // Утилиты
+  toFilterOptions,
+  getLabelByValue,
+  getDescriptionByValue,
+  type FilterOption,
+} from './dictionaries'
 
 export const ORDER_STATUS_COLORS = {
   [ORDER_STATUSES.ACTIVE]: 'bg-green-100 text-green-800',
   [ORDER_STATUSES.PAUSED]: 'bg-yellow-100 text-yellow-800',
-  [ORDER_STATUSES.CANCELLED]: 'bg-red-100 text-red-800',
+  [ORDER_STATUSES.FROZEN]: 'bg-blue-100 text-blue-800',
+  [ORDER_STATUSES.DAY_OFF]: 'bg-gray-100 text-gray-600',
+  [ORDER_STATUSES.DELIVERED]: 'bg-green-100 text-green-800',
   [ORDER_STATUSES.COMPLETED]: 'bg-gray-100 text-gray-800',
+  [ORDER_STATUSES.CANCELLED]: 'bg-red-100 text-red-800',
+  [ORDER_STATUSES.PAUSED_LEGACY]: 'bg-yellow-100 text-yellow-800',
+  [ORDER_STATUSES.COMPLETED_LEGACY]: 'bg-gray-100 text-gray-800',
 } as const
 
 export const USER_ROLES = {

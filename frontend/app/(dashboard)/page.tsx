@@ -4,6 +4,14 @@ import { useEffect, useMemo, useState, useCallback, useRef, Suspense } from 'rea
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { ORDER_STATUS, getOrderStatusConfig } from '@/lib/constants/entity-statuses'
+import { 
+  ORDER_STATUS_OPTIONS, 
+  ORDER_TYPE_OPTIONS, 
+  COMBO_TYPE_OPTIONS, 
+  SERVICE_TYPE_OPTIONS,
+  toFilterOptions 
+} from '@/lib/constants/dictionaries'
 import { useHomeStore } from '@/stores/home-store'
 import { useProjectsStore } from '@/stores/projects-store'
 import { useAuthStore } from '@/stores/auth-store'
@@ -201,9 +209,16 @@ function HomePageContent() {
         return dateA - dateB
       },
       // Custom comparator for status ordering
+      // Uses centralized ORDER_STATUS constants (Russian strings)
       status: (a, b) => {
-        const order = { 'Активен': 3, 'На паузе': 2, 'Завершен': 1 }
-        return (order[a.status as keyof typeof order] || 0) - (order[b.status as keyof typeof order] || 0)
+        const order: Record<string, number> = { 
+          [ORDER_STATUS.ACTIVE]: 4,
+          [ORDER_STATUS.PAUSED]: 3,
+          [ORDER_STATUS.FROZEN]: 2, 
+          [ORDER_STATUS.DELIVERED]: 1,
+          [ORDER_STATUS.CANCELLED]: 0
+        }
+        return (order[a.status] || 0) - (order[b.status] || 0)
       },
     })
   }, [orders, sortConfig])
@@ -337,20 +352,9 @@ function HomePageContent() {
   )
 
   const getStatusColor = useCallback((status: string) => {
-    switch (status) {
-      case 'Активен':
-        return 'default'
-      case 'На паузе':
-        return 'secondary'
-      case 'Завершен':
-        return 'outline'
-      case 'Заморожен':
-        return 'secondary'
-      case 'Запланирован':
-        return 'outline'
-      default:
-        return 'outline'
-    }
+    // Use centralized status config
+    const config = getOrderStatusConfig(status)
+    return config.variant || 'outline'
   }, [])
 
   // Handler: Быстрое редактирование ланча из таблицы (комбо/адрес)
@@ -876,8 +880,13 @@ function HomePageContent() {
           )
         }
         
-        // Завершённые заказы
-        if (order.status === 'Завершен') {
+        // Завершённые/доставленные заказы (all terminal delivery states)
+        const isDeliveredStatus = order.status === ORDER_STATUS.DELIVERED || 
+                                   order.status === ORDER_STATUS.COMPLETED || 
+                                   order.status === 'Завершен' || 
+                                   order.status === 'Выполнен' ||
+                                   order.status === 'Доставлен'
+        if (isDeliveredStatus) {
           return (
             <TooltipProvider>
               <Tooltip>
@@ -894,7 +903,7 @@ function HomePageContent() {
         
         // COMPENSATION заказы - кнопки в ряд
         if (isCompensation) {
-          const canEdit = !isPastOrder && order.status !== 'Завершен'
+          const canEdit = !isPastOrder && !isDeliveredStatus
           const canCancel = !actionDisabled && (isTodayOrder || isFutureOrder)
           
           return (
@@ -950,7 +959,7 @@ function HomePageContent() {
           return (
             <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
               {/* Пауза / Возобновить */}
-              {order.status === 'Активен' && (
+              {(order.status === ORDER_STATUS.ACTIVE || order.status === 'Активен') && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -972,7 +981,8 @@ function HomePageContent() {
                   </Tooltip>
                 </TooltipProvider>
               )}
-              {order.status === 'На паузе' && (
+              {/* 'На паузе' is DEPRECATED, use 'Приостановлен' */}
+              {(order.status === ORDER_STATUS.PAUSED || order.status === 'Приостановлен' || order.status === 'На паузе') && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -1022,10 +1032,11 @@ function HomePageContent() {
         
         // LUNCH для сотрудников — кнопки в ряд как на странице сотрудников
         const canEdit = !actionDisabled && isEmployee
-        const canFreeze = isTodayOrder && !actionDisabled && isEmployee && order.status === 'Активен'
-        const canUnfreeze = order.status === 'Заморожен' && !actionDisabled && isEmployee
+        const canFreeze = isTodayOrder && !actionDisabled && isEmployee && (order.status === ORDER_STATUS.ACTIVE || order.status === 'Активен')
+        const canUnfreeze = (order.status === ORDER_STATUS.FROZEN || order.status === 'Заморожен') && !actionDisabled && isEmployee
         // NOTE: Pause/Resume removed for individual orders - use subscription-level pause instead
-        const canResume = order.status === 'На паузе' && !actionDisabled && isEmployee // Keep for backward compat
+        // 'На паузе' is DEPRECATED, use 'Приостановлен'
+        const canResume = (order.status === ORDER_STATUS.PAUSED || order.status === 'Приостановлен' || order.status === 'На паузе') && !actionDisabled && isEmployee
         const canCancel = !actionDisabled && isEmployee
         
         return (
@@ -1170,41 +1181,60 @@ function HomePageContent() {
   }
 
   // Dynamic filter fields based on projects (date is now in the dedicated date picker)
+  // Все опции берутся из единого источника: lib/constants/dictionaries.ts
   const orderFilterFields = useMemo<FilterField[]>(() => {
     const projectOptions = Array.isArray(projects) ? projects : []
-    return [
+    const fields: FilterField[] = [
       {
         id: 'status',
-        label: 'Статус',
+        label: 'Статус заказа',
         type: 'select',
         operators: ['equals'],
-        options: [
-          { value: 'Активен', label: 'Активен' },
-          { value: 'На паузе', label: 'На паузе' },
-          { value: 'Завершен', label: 'Завершен' },
-        ],
+        options: toFilterOptions(ORDER_STATUS_OPTIONS),
       },
       {
         id: 'type',
-        label: 'Тип заказа',
+        label: 'Тип заказчика',
         type: 'select',
         operators: ['equals'],
-        options: [
-          { value: 'Сотрудник', label: 'Сотрудник' },
-          { value: 'Гость', label: 'Гость' },
-        ],
+        options: toFilterOptions(ORDER_TYPE_OPTIONS),
       },
       {
+        id: 'comboType',
+        label: 'Тип комбо-обеда',
+        type: 'select',
+        operators: ['equals'],
+        options: toFilterOptions(COMBO_TYPE_OPTIONS),
+      },
+    ]
+
+    // Add serviceType filter only if compensation feature is enabled
+    if (isFeatureEnabled('compensation')) {
+      fields.push({
+        id: 'serviceType',
+        label: 'Тип услуги',
+        type: 'select',
+        operators: ['equals'],
+        options: toFilterOptions(SERVICE_TYPE_OPTIONS),
+      })
+    }
+
+    // Add project filter (only useful for HQ users with multiple projects)
+    // Проекты загружаются динамически из API
+    if (projectOptions.length > 1) {
+      fields.push({
         id: 'projectId',
-        label: 'Проект (адрес)',
+        label: 'Локация доставки',
         type: 'select',
         operators: ['equals'],
         options: projectOptions.map((proj) => ({ 
           value: proj.id, 
           label: `${proj.name} — ${proj.addressName || proj.addressFullAddress}` 
         })),
-      },
-    ]
+      })
+    }
+
+    return fields
   }, [projects])
 
   const handleFiltersChange = useCallback((filters: ActiveFilter[]) => {
@@ -1325,7 +1355,7 @@ function HomePageContent() {
             </CardContent>
           </Card>
 
-          {/* На паузе */}
+          {/* Приостановлено */}
           <Card className="relative overflow-hidden border border-orange-500/20 py-0">
             <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 via-amber-500/5 to-transparent" />
             <CardContent className="relative p-3">
@@ -1333,7 +1363,7 @@ function HomePageContent() {
                 <div className="rounded bg-orange-500/10 p-1">
                   <PauseCircle className="h-3 w-3 text-orange-500" />
                 </div>
-                <span className="text-xs text-muted-foreground">На паузе</span>
+                <span className="text-xs text-muted-foreground">Приостановлено</span>
               </div>
               <p className="text-lg font-bold">{dashboard.pausedOrders + dashboard.pausedGuestOrders}</p>
               <p className="text-[10px] text-muted-foreground">
@@ -1434,10 +1464,33 @@ function HomePageContent() {
           </div>
         </div>
 
+        {/* Active date filter badge */}
+        {selectedDate && (
+          <Badge 
+            variant="secondary" 
+            className="gap-1.5 pl-2.5 pr-1.5 py-1.5 text-sm font-normal bg-blue-500/10 text-blue-600 border-blue-200 dark:bg-blue-500/20 dark:text-blue-400 dark:border-blue-700"
+          >
+            <Calendar className="h-3.5 w-3.5" />
+            <span className="font-medium">Дата:</span>
+            <span className="opacity-80">{format(parseLocalDate(selectedDate), 'dd.MM.yyyy')}</span>
+            <button
+              type="button"
+              onClick={showAllOrders}
+              className="ml-0.5 rounded-full p-0.5 hover:bg-blue-500/20 transition-colors"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </Badge>
+        )}
+
         <FilterBuilder
           fields={orderFilterFields}
-          activeFilters={activeFilters}
-          onFiltersChange={handleFiltersChange}
+          activeFilters={activeFilters.filter(f => f.fieldId !== 'date')}
+          onFiltersChange={(filters) => {
+            // Preserve date filter when other filters change
+            const dateFilter = activeFilters.find(f => f.fieldId === 'date')
+            handleFiltersChange(dateFilter ? [...filters, dateFilter] : filters)
+          }}
         />
 
         {/* Кнопка редактирования — disabled пока не выбраны заказы */}

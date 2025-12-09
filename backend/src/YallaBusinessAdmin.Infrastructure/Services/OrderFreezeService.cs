@@ -6,6 +6,7 @@ using YallaBusinessAdmin.Application.Orders;
 using YallaBusinessAdmin.Application.Orders.Dtos;
 using YallaBusinessAdmin.Domain.Entities;
 using YallaBusinessAdmin.Domain.Enums;
+using YallaBusinessAdmin.Domain.Helpers;
 using YallaBusinessAdmin.Infrastructure.Persistence;
 using YallaBusinessAdmin.Infrastructure.Services.Dashboard;
 
@@ -41,16 +42,20 @@ public class OrderFreezeService : IOrderFreezeService
         if (order == null)
             throw new KeyNotFoundException("Заказ не найден");
 
-        if (order.EmployeeId == null)
-            throw new InvalidOperationException("Гостевые заказы нельзя замораживать");
+        // Guest orders cannot be frozen (no subscription to extend)
+        if (order.IsGuestOrder)
+            throw new BusinessRuleException(
+                ErrorCodes.ORDER_GUEST_CANNOT_FREEZE,
+                "Гостевые заказы нельзя замораживать. Заморозка доступна только для заказов сотрудников с активной подпиской.");
 
         if (!order.CanBeFrozen)
             throw new InvalidOperationException("Этот заказ нельзя заморозить. Можно замораживать только активные заказы на текущий или будущий день.");
 
         // ═══════════════════════════════════════════════════════════════
         // CUTOFF VALIDATION: Cannot freeze today's order after cutoff time
+        // IMPORTANT: Use project's timezone for "today" comparison!
         // ═══════════════════════════════════════════════════════════════
-        if (order.OrderDate.Date == DateTime.UtcNow.Date && order.Project != null)
+        if (order.Project != null && TimezoneHelper.IsToday(order.OrderDate, order.Project.Timezone))
         {
             if (TimezoneHelper.IsCutoffPassed(order.Project.CutoffTime, order.Project.Timezone))
             {
@@ -80,28 +85,51 @@ public class OrderFreezeService : IOrderFreezeService
         if (subscription == null)
             throw new InvalidOperationException("У сотрудника нет активной подписки");
 
-        // Freeze the order
-        order.Freeze(request.Reason);
-
-        // Extend subscription by 1 day
-        subscription.ExtendByFrozenOrder();
-
-        // Create replacement order at the end of subscription
-        var replacementOrder = await CreateReplacementOrderAsync(order, subscription, cancellationToken);
-        order.ReplacementOrderId = replacementOrder.Id;
-
-        await _context.SaveChangesAsync(cancellationToken);
-
-        _logger.LogInformation(
-            "Order {OrderId} frozen for employee {EmployeeId}. Subscription extended to {NewEndDate}. Replacement order {ReplacementId} created.",
-            order.Id, order.EmployeeId, subscription.EndDate, replacementOrder.Id);
-
-        return new FreezeOrderResponse
+        // ═══════════════════════════════════════════════════════════════
+        // TRANSACTION: Freeze operation must be atomic
+        // - Freeze order
+        // - Extend subscription
+        // - Create replacement order
+        // ═══════════════════════════════════════════════════════════════
+        var strategy = _context.Database.CreateExecutionStrategy();
+        
+        return await strategy.ExecuteAsync(async () =>
         {
-            Order = MapToResponse(order),
-            ReplacementOrder = MapToResponse(replacementOrder),
-            Subscription = MapToSubscriptionInfo(subscription)
-        };
+            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+            
+            try
+            {
+                // Freeze the order
+                order.Freeze(request.Reason);
+
+                // Extend subscription by 1 day
+                subscription.ExtendByFrozenOrder();
+
+                // Create replacement order at the end of subscription
+                var replacementOrder = await CreateReplacementOrderAsync(order, subscription, cancellationToken);
+                order.ReplacementOrderId = replacementOrder.Id;
+
+                await _context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                _logger.LogInformation(
+                    "Order {OrderId} frozen for employee {EmployeeId}. Subscription extended to {NewEndDate}. Replacement order {ReplacementId} created.",
+                    order.Id, order.EmployeeId, subscription.EndDate, replacementOrder.Id);
+
+                var totalDays = await CalculateDynamicTotalDaysAsync(order.EmployeeId!.Value, subscription.StartDate, subscription.EndDate, cancellationToken);
+                return new FreezeOrderResponse
+                {
+                    Order = MapToResponse(order),
+                    ReplacementOrder = MapToResponse(replacementOrder),
+                    Subscription = MapToSubscriptionInfo(subscription, totalDays)
+                };
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
     }
 
     public async Task<FreezeOrderResponse> UnfreezeOrderAsync(
@@ -118,16 +146,20 @@ public class OrderFreezeService : IOrderFreezeService
         if (order == null)
             throw new KeyNotFoundException("Заказ не найден");
 
-        if (order.EmployeeId == null)
-            throw new InvalidOperationException("Гостевые заказы нельзя размораживать");
+        // Guest orders cannot be unfrozen (they shouldn't be frozen in the first place)
+        if (order.IsGuestOrder)
+            throw new BusinessRuleException(
+                ErrorCodes.ORDER_GUEST_CANNOT_FREEZE,
+                "Гостевые заказы нельзя размораживать.");
 
         if (!order.CanBeUnfrozen)
             throw new InvalidOperationException("Этот заказ нельзя разморозить. Можно размораживать только замороженные заказы на текущий или будущий день.");
 
         // ═══════════════════════════════════════════════════════════════
         // CUTOFF VALIDATION: Cannot unfreeze today's order after cutoff time
+        // IMPORTANT: Use project's timezone for "today" comparison!
         // ═══════════════════════════════════════════════════════════════
-        if (order.OrderDate.Date == DateTime.UtcNow.Date && order.Project != null)
+        if (order.Project != null && TimezoneHelper.IsToday(order.OrderDate, order.Project.Timezone))
         {
             if (TimezoneHelper.IsCutoffPassed(order.Project.CutoffTime, order.Project.Timezone))
             {
@@ -146,37 +178,60 @@ public class OrderFreezeService : IOrderFreezeService
         if (subscription == null)
             throw new InvalidOperationException("У сотрудника нет активной подписки");
 
-        // Delete replacement order if exists
-        if (order.ReplacementOrderId.HasValue)
+        // ═══════════════════════════════════════════════════════════════
+        // TRANSACTION: Unfreeze operation must be atomic
+        // - Delete replacement order
+        // - Unfreeze order
+        // - Shrink subscription
+        // ═══════════════════════════════════════════════════════════════
+        var strategy = _context.Database.CreateExecutionStrategy();
+        
+        return await strategy.ExecuteAsync(async () =>
         {
-            var replacementOrder = await _context.Orders
-                .FirstOrDefaultAsync(o => o.Id == order.ReplacementOrderId, cancellationToken);
+            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
             
-            if (replacementOrder != null)
+            try
             {
-                _context.Orders.Remove(replacementOrder);
+                // Delete replacement order if exists
+                if (order.ReplacementOrderId.HasValue)
+                {
+                    var replacementOrder = await _context.Orders
+                        .FirstOrDefaultAsync(o => o.Id == order.ReplacementOrderId, cancellationToken);
+                    
+                    if (replacementOrder != null)
+                    {
+                        _context.Orders.Remove(replacementOrder);
+                    }
+                }
+
+                // Unfreeze the order
+                order.Unfreeze();
+                order.ReplacementOrderId = null;
+
+                // Shrink subscription by 1 day
+                subscription.ShrinkByUnfrozenOrder();
+
+                await _context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                _logger.LogInformation(
+                    "Order {OrderId} unfrozen for employee {EmployeeId}. Subscription shrunk to {NewEndDate}.",
+                    order.Id, order.EmployeeId, subscription.EndDate);
+
+                var totalDays = await CalculateDynamicTotalDaysAsync(order.EmployeeId!.Value, subscription.StartDate, subscription.EndDate, cancellationToken);
+                return new FreezeOrderResponse
+                {
+                    Order = MapToResponse(order),
+                    ReplacementOrder = null,
+                    Subscription = MapToSubscriptionInfo(subscription, totalDays)
+                };
             }
-        }
-
-        // Unfreeze the order
-        order.Unfreeze();
-        order.ReplacementOrderId = null;
-
-        // Shrink subscription by 1 day
-        subscription.ShrinkByUnfrozenOrder();
-
-        await _context.SaveChangesAsync(cancellationToken);
-
-        _logger.LogInformation(
-            "Order {OrderId} unfrozen for employee {EmployeeId}. Subscription shrunk to {NewEndDate}.",
-            order.Id, order.EmployeeId, subscription.EndDate);
-
-        return new FreezeOrderResponse
-        {
-            Order = MapToResponse(order),
-            ReplacementOrder = null,
-            Subscription = MapToSubscriptionInfo(subscription)
-        };
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
     }
 
     public async Task<FreezePeriodResponse> FreezePeriodAsync(
@@ -194,8 +249,10 @@ public class OrderFreezeService : IOrderFreezeService
         // ═══════════════════════════════════════════════════════════════
         // CUTOFF VALIDATION: Check if cutoff passed for today's orders
         // We'll skip today's orders in the loop if cutoff has passed
+        // IMPORTANT: Use project's timezone for "today" comparison!
         // ═══════════════════════════════════════════════════════════════
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var periodTimezone = employee.Project?.Timezone;
+        var today = TimezoneHelper.GetLocalTodayDate(periodTimezone);
         var cutoffPassedForToday = false;
         if (request.StartDate <= today && employee.Project != null)
         {
@@ -233,66 +290,90 @@ public class OrderFreezeService : IOrderFreezeService
         // Get freeze limit from business config
         var maxFreezesPerWeek = await _configService.GetIntAsync(ConfigKeys.SubscriptionMaxFreezesPerWeek, 2, cancellationToken);
 
-        var frozenOrders = new List<Order>();
-        var replacementOrders = new List<Order>();
-
-        foreach (var order in ordersInPeriod)
+        // ═══════════════════════════════════════════════════════════════
+        // TRANSACTION: Period freeze must be atomic
+        // - Freeze multiple orders
+        // - Extend subscription for each frozen order
+        // - Create replacement orders
+        // ═══════════════════════════════════════════════════════════════
+        var strategy = _context.Database.CreateExecutionStrategy();
+        
+        return await strategy.ExecuteAsync(async () =>
         {
-            var orderDate = DateOnly.FromDateTime(order.OrderDate);
+            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
             
-            // ═══════════════════════════════════════════════════════════════
-            // CUTOFF VALIDATION: Skip today's orders if cutoff passed
-            // ═══════════════════════════════════════════════════════════════
-            if (order.OrderDate.Date == DateTime.UtcNow.Date && order.Project != null)
+            try
             {
-                if (TimezoneHelper.IsCutoffPassed(order.Project.CutoffTime, order.Project.Timezone))
+                var frozenOrders = new List<Order>();
+                var replacementOrders = new List<Order>();
+
+                foreach (var order in ordersInPeriod)
                 {
-                    _logger.LogWarning(
-                        "Skipping order {OrderId} - cutoff time passed for today's order",
-                        order.Id);
-                    continue;
+                    var orderDate = DateOnly.FromDateTime(order.OrderDate);
+                    
+                    // ═══════════════════════════════════════════════════════════════
+                    // CUTOFF VALIDATION: Skip today's orders if cutoff passed
+                    // IMPORTANT: Use project's timezone for "today" comparison!
+                    // ═══════════════════════════════════════════════════════════════
+                    if (order.Project != null && TimezoneHelper.IsToday(order.OrderDate, order.Project.Timezone))
+                    {
+                        if (TimezoneHelper.IsCutoffPassed(order.Project.CutoffTime, order.Project.Timezone))
+                        {
+                            _logger.LogWarning(
+                                "Skipping order {OrderId} - cutoff time passed for today's order",
+                                order.Id);
+                            continue;
+                        }
+                    }
+                    
+                    // Check freeze limit for this week
+                    if (!await ValidateFreezeLimitAsync(request.EmployeeId, orderDate, maxFreezesPerWeek, cancellationToken))
+                    {
+                        _logger.LogWarning(
+                            "Freeze limit reached for employee {EmployeeId} on {Date}. Stopping period freeze.",
+                            request.EmployeeId, orderDate);
+                        break;
+                    }
+
+                    if (!order.CanBeFrozen)
+                        continue;
+
+                    // Freeze the order
+                    order.Freeze(request.Reason);
+
+                    // Extend subscription
+                    subscription.ExtendByFrozenOrder();
+
+                    // Create replacement order
+                    var replacementOrder = await CreateReplacementOrderAsync(order, subscription, cancellationToken);
+                    order.ReplacementOrderId = replacementOrder.Id;
+
+                    frozenOrders.Add(order);
+                    replacementOrders.Add(replacementOrder);
                 }
+
+                await _context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+
+                _logger.LogInformation(
+                    "Period freeze completed for employee {EmployeeId}. {Count} orders frozen. New end date: {EndDate}",
+                    request.EmployeeId, frozenOrders.Count, subscription.EndDate);
+
+                var totalDays = await CalculateDynamicTotalDaysAsync(request.EmployeeId, subscription.StartDate, subscription.EndDate, cancellationToken);
+                return new FreezePeriodResponse
+                {
+                    FrozenOrders = frozenOrders.Select(MapToResponse).ToList(),
+                    ReplacementOrders = replacementOrders.Select(MapToResponse).ToList(),
+                    Subscription = MapToSubscriptionInfo(subscription, totalDays),
+                    FrozenDaysCount = frozenOrders.Count
+                };
             }
-            
-            // Check freeze limit for this week
-            if (!await ValidateFreezeLimitAsync(request.EmployeeId, orderDate, maxFreezesPerWeek, cancellationToken))
+            catch
             {
-                _logger.LogWarning(
-                    "Freeze limit reached for employee {EmployeeId} on {Date}. Stopping period freeze.",
-                    request.EmployeeId, orderDate);
-                break;
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
             }
-
-            if (!order.CanBeFrozen)
-                continue;
-
-            // Freeze the order
-            order.Freeze(request.Reason);
-
-            // Extend subscription
-            subscription.ExtendByFrozenOrder();
-
-            // Create replacement order
-            var replacementOrder = await CreateReplacementOrderAsync(order, subscription, cancellationToken);
-            order.ReplacementOrderId = replacementOrder.Id;
-
-            frozenOrders.Add(order);
-            replacementOrders.Add(replacementOrder);
-        }
-
-        await _context.SaveChangesAsync(cancellationToken);
-
-        _logger.LogInformation(
-            "Period freeze completed for employee {EmployeeId}. {Count} orders frozen. New end date: {EndDate}",
-            request.EmployeeId, frozenOrders.Count, subscription.EndDate);
-
-        return new FreezePeriodResponse
-        {
-            FrozenOrders = frozenOrders.Select(MapToResponse).ToList(),
-            ReplacementOrders = replacementOrders.Select(MapToResponse).ToList(),
-            Subscription = MapToSubscriptionInfo(subscription),
-            FrozenDaysCount = frozenOrders.Count
-        };
+        });
     }
 
     public async Task<EmployeeFreezeInfoResponse> GetEmployeeFreezeInfoAsync(
@@ -306,8 +387,9 @@ public class OrderFreezeService : IOrderFreezeService
         if (employee == null)
             throw new KeyNotFoundException("Сотрудник не найден");
 
-        // Get current week bounds
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        // Get current week bounds using local timezone
+        // This ensures freeze count is accurate for the business week
+        var today = TimezoneHelper.GetLocalTodayDate(null);
         var weekStart = today.AddDays(-(int)today.DayOfWeek + (int)DayOfWeek.Monday);
         if (today.DayOfWeek == DayOfWeek.Sunday)
             weekStart = weekStart.AddDays(-7);
@@ -338,6 +420,13 @@ public class OrderFreezeService : IOrderFreezeService
         var maxFreezesPerWeek = await _configService.GetIntAsync(ConfigKeys.SubscriptionMaxFreezesPerWeek, 2, cancellationToken);
         var remainingFreezes = Math.Max(0, maxFreezesPerWeek - freezesThisWeek);
 
+        // Calculate dynamic TotalDays for subscription info
+        int? subscriptionTotalDays = null;
+        if (subscription != null)
+        {
+            subscriptionTotalDays = await CalculateDynamicTotalDaysAsync(employeeId, subscription.StartDate, subscription.EndDate, cancellationToken);
+        }
+
         return new EmployeeFreezeInfoResponse
         {
             EmployeeId = employeeId,
@@ -347,7 +436,7 @@ public class OrderFreezeService : IOrderFreezeService
             CanFreeze = remainingFreezes > 0,
             RemainingFreezes = remainingFreezes,
             FrozenOrders = frozenOrders.Select(MapToResponse).ToList(),
-            Subscription = subscription != null ? MapToSubscriptionInfo(subscription) : null,
+            Subscription = subscription != null ? MapToSubscriptionInfo(subscription, subscriptionTotalDays!.Value) : null,
             WeekStart = weekStart,
             WeekEnd = weekEnd
         };
@@ -414,7 +503,7 @@ public class OrderFreezeService : IOrderFreezeService
         LunchSubscription subscription,
         CancellationToken cancellationToken)
     {
-        // Find the next available working day after the current subscription end date
+        // Find the employee to get working days configuration
         var employee = await _context.Employees
             .Include(e => e.Project)
             .FirstOrDefaultAsync(e => e.Id == originalOrder.EmployeeId, cancellationToken);
@@ -422,8 +511,56 @@ public class OrderFreezeService : IOrderFreezeService
         if (employee == null)
             throw new InvalidOperationException("Сотрудник не найден");
 
-        // Replacement order date is the new end date of subscription
-        var replacementDate = subscription.EndDate!.Value;
+        // ═══════════════════════════════════════════════════════════════
+        // CRITICAL FIX: Find next available date without existing order
+        // The subscription.EndDate has already been extended by 1 day
+        // We need to check if there's already an order on that date
+        // ═══════════════════════════════════════════════════════════════
+        var candidateDate = subscription.EndDate!.Value;
+        const int maxSearchDays = 365; // Safety limit to prevent infinite loop
+        
+        // Get all existing orders for this employee from candidate date onwards
+        var existingOrderDatesList = await _context.Orders
+            .Where(o => o.EmployeeId == originalOrder.EmployeeId
+                     && (o.Status == OrderStatus.Active || o.Status == OrderStatus.Frozen)
+                     && o.OrderDate >= candidateDate.ToDateTime(TimeOnly.MinValue))
+            .Select(o => DateOnly.FromDateTime(o.OrderDate))
+            .ToListAsync(cancellationToken);
+        var existingOrderDates = existingOrderDatesList.ToHashSet();
+
+        // Find the first available working day that doesn't have an existing order
+        var replacementDate = candidateDate;
+        var daysSearched = 0;
+        
+        while (daysSearched < maxSearchDays)
+        {
+            // Check if this date is a working day and doesn't have an existing order
+            if (WorkingDaysHelper.IsWorkingDay(employee.WorkingDays, replacementDate) &&
+                !existingOrderDates.Contains(replacementDate))
+            {
+                break; // Found a valid date
+            }
+            
+            replacementDate = replacementDate.AddDays(1);
+            daysSearched++;
+        }
+
+        if (daysSearched >= maxSearchDays)
+        {
+            throw new InvalidOperationException(
+                $"Не удалось найти свободную дату для заменяющего заказа в течение {maxSearchDays} дней");
+        }
+
+        // If we had to skip to a later date, update the subscription EndDate accordingly
+        if (replacementDate != candidateDate)
+        {
+            _logger.LogInformation(
+                "Replacement order date adjusted from {Original} to {Adjusted} due to existing order collision for employee {EmployeeId}",
+                candidateDate, replacementDate, originalOrder.EmployeeId);
+            
+            // Update subscription EndDate to the actual replacement date
+            subscription.EndDate = replacementDate;
+        }
         
         // Create the replacement order
         var replacementOrder = new Order
@@ -472,7 +609,7 @@ public class OrderFreezeService : IOrderFreezeService
         };
     }
 
-    private static SubscriptionInfo MapToSubscriptionInfo(LunchSubscription subscription)
+    private static SubscriptionInfo MapToSubscriptionInfo(LunchSubscription subscription, int totalDays)
     {
         return new SubscriptionInfo
         {
@@ -480,8 +617,27 @@ public class OrderFreezeService : IOrderFreezeService
             OriginalEndDate = subscription.OriginalEndDate,
             EndDate = subscription.EndDate,
             FrozenDaysCount = subscription.FrozenDaysCount,
-            TotalDays = subscription.TotalDays
+            TotalDays = totalDays
         };
+    }
+
+    /// <summary>
+    /// Calculates actual TotalDays as count of all orders in subscription period.
+    /// </summary>
+    private async Task<int> CalculateDynamicTotalDaysAsync(Guid employeeId, DateOnly? startDate, DateOnly? endDate, CancellationToken cancellationToken)
+    {
+        if (!startDate.HasValue || !endDate.HasValue)
+            return 0;
+
+        var startDateTime = startDate.Value.ToDateTime(TimeOnly.MinValue);
+        var endDateTime = endDate.Value.ToDateTime(TimeOnly.MaxValue);
+
+        return await _context.Orders
+            .Where(o => o.EmployeeId == employeeId &&
+                       o.Status != OrderStatus.Cancelled &&
+                       o.OrderDate >= startDateTime &&
+                       o.OrderDate <= endDateTime)
+            .CountAsync(cancellationToken);
     }
 }
 

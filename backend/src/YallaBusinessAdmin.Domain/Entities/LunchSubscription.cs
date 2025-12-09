@@ -1,3 +1,5 @@
+using YallaBusinessAdmin.Domain.Enums;
+
 namespace YallaBusinessAdmin.Domain.Entities;
 
 /// <summary>
@@ -34,8 +36,8 @@ public class LunchSubscription
     /// <summary>Общая стоимость подписки</summary>
     public decimal TotalPrice { get; set; }
 
-    /// <summary>Статус: Активна, Приостановлена, Завершена</summary>
-    public string Status { get; set; } = "Активна";
+    /// <summary>Статус: Активна, Приостановлена</summary>
+    public SubscriptionStatus Status { get; set; } = SubscriptionStatus.Active;
 
     /// <summary>Тип графика: EVERY_DAY, EVERY_OTHER_DAY, CUSTOM</summary>
     public string ScheduleType { get; set; } = "EVERY_DAY";
@@ -66,19 +68,36 @@ public class LunchSubscription
     // ═══════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// Checks if the subscription is currently paused.
+    /// Checks if the subscription is currently paused (temporarily).
     /// </summary>
-    public bool IsPaused => Status == "Приостановлена" || PausedAt.HasValue;
+    public bool IsPaused => Status == SubscriptionStatus.Paused || PausedAt.HasValue;
+    
+    /// <summary>
+    /// Checks if the subscription is completed/deactivated (permanently).
+    /// </summary>
+    public bool IsCompleted => Status == SubscriptionStatus.Completed;
 
     /// <summary>
-    /// Checks if the subscription has expired.
+    /// Checks if the subscription has expired based on UTC date.
+    /// NOTE: Uses UTC - may be off by 1 day in local timezone (Asia/Dushanbe UTC+5).
+    /// For critical timezone-accurate checks, use TimezoneHelper in service layer.
     /// </summary>
     public bool IsExpired => EndDate.HasValue && EndDate.Value < DateOnly.FromDateTime(DateTime.UtcNow);
 
     /// <summary>
-    /// Gets the remaining days in the subscription.
+    /// DEPRECATED: Returns calendar days until EndDate, NOT actual remaining orders!
+    /// Use EmployeesService.futureOrdersCount or count Orders directly for accurate remaining days.
+    /// This property counts all calendar days (including weekends and holidays).
     /// </summary>
-    public int RemainingDays
+    /// <remarks>
+    /// KNOWN ISSUES:
+    /// 1. Uses UTC - may be off by 1 day in local timezone (Asia/Dushanbe UTC+5)
+    /// 2. Counts calendar days, not actual orders
+    /// For accurate "remaining days", query Orders table:
+    /// <c>orders.Count(o =&gt; o.EmployeeId == employeeId &amp;&amp; o.Status != Cancelled &amp;&amp; o.OrderDate &gt;= today)</c>
+    /// </remarks>
+    [Obsolete("Use futureOrdersCount from API response. This returns calendar days, not actual order count.")]
+    public int RemainingDaysCalendar
     {
         get
         {
@@ -90,23 +109,25 @@ public class LunchSubscription
 
     /// <summary>
     /// Checks if the subscription can be paused.
-    /// Business rule: Can pause only active subscriptions.
+    /// Business rule: Can pause only active subscriptions that are not completed.
     /// </summary>
-    public bool CanBePaused => IsActive && !IsPaused && !IsExpired;
+    public bool CanBePaused => IsActive && !IsPaused && !IsCompleted && !IsExpired;
 
     /// <summary>
     /// Checks if the subscription can be resumed.
-    /// Business rule: Can resume only paused subscriptions that haven't expired.
+    /// Business rule: Can resume only paused (not completed) subscriptions that haven't expired.
+    /// Completed subscriptions cannot be resumed - must create a new subscription.
     /// </summary>
-    public bool CanBeResumed => IsPaused && !IsExpired;
+    public bool CanBeResumed => IsPaused && !IsCompleted && !IsExpired;
 
     /// <summary>
-    /// Deactivates the subscription.
+    /// Deactivates the subscription permanently (sets status to Completed).
+    /// Use Pause() for temporary pause.
     /// </summary>
     public void Deactivate()
     {
         IsActive = false;
-        Status = "Завершена";
+        Status = SubscriptionStatus.Completed;  // Permanent deactivation
         UpdatedAt = DateTime.UtcNow;
     }
 
@@ -122,7 +143,7 @@ public class LunchSubscription
         }
 
         PausedAt = DateTime.UtcNow;
-        Status = "Приостановлена";
+        Status = SubscriptionStatus.Paused;
         UpdatedAt = DateTime.UtcNow;
     }
 
@@ -146,29 +167,27 @@ public class LunchSubscription
         }
 
         PausedAt = null;
-        Status = "Активна";
+        Status = SubscriptionStatus.Active;
         UpdatedAt = DateTime.UtcNow;
     }
 
     /// <summary>
-    /// Extends the subscription by the specified number of days.
+    /// Extends the subscription end date by the specified number of days.
+    /// NOTE: TotalDays is calculated dynamically based on actual orders - no manual update needed.
     /// </summary>
     /// <param name="days">Number of days to extend.</param>
+    /// <exception cref="InvalidOperationException">Thrown when EndDate is not set.</exception>
     public void ExtendByDays(int days)
     {
         if (days <= 0)
             throw new ArgumentException("Количество дней должно быть положительным", nameof(days));
 
-        if (EndDate.HasValue)
-        {
-            EndDate = EndDate.Value.AddDays(days);
-        }
-        else
-        {
-            EndDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(days);
-        }
+        if (!EndDate.HasValue)
+            throw new InvalidOperationException("Cannot extend subscription without EndDate set. Set EndDate first.");
 
-        TotalDays += days;
+        EndDate = EndDate.Value.AddDays(days);
+
+        // NOTE: TotalDays is NOT updated here - it's calculated dynamically from actual orders
         UpdatedAt = DateTime.UtcNow;
     }
 
@@ -234,16 +253,42 @@ public class LunchSubscription
     /// <summary>
     /// Factory method to create a new subscription.
     /// </summary>
+    /// <param name="employeeId">Employee ID</param>
+    /// <param name="companyId">Company ID</param>
+    /// <param name="projectId">Project ID (determines delivery address)</param>
+    /// <param name="comboType">'Комбо 25' or 'Комбо 35'</param>
+    /// <param name="startDate">Subscription start date (inclusive)</param>
+    /// <param name="endDate">Subscription end date (inclusive) - should be calculated by caller based on working days</param>
+    /// <param name="totalDays">LEGACY: Total days count. Now dynamically calculated from Orders table.</param>
+    /// <param name="totalPrice">LEGACY: Total price. Now dynamically calculated from Orders table.</param>
+    /// <param name="scheduleType">EVERY_DAY, EVERY_OTHER_DAY, or CUSTOM</param>
+    /// <remarks>
+    /// IMPORTANT: EndDate should be the LAST day of the subscription (inclusive).
+    /// For example: StartDate=Dec 1, EndDate=Dec 5 means 5 days (1,2,3,4,5).
+    /// The caller is responsible for calculating EndDate based on:
+    /// - For EVERY_DAY: last working day after startDate for the desired period
+    /// - For CUSTOM: max date from custom days array
+    /// TotalDays and TotalPrice are stored for legacy compatibility but are
+    /// dynamically recalculated from Orders table when reading.
+    /// </remarks>
     public static LunchSubscription Create(
         Guid employeeId,
         Guid companyId,
         Guid projectId,
         string comboType,
         DateOnly startDate,
+        DateOnly endDate,
         int totalDays,
         decimal totalPrice,
         string scheduleType = "EVERY_DAY")
     {
+        // Validate dates
+        if (endDate < startDate)
+            throw new ArgumentException("End date cannot be before start date", nameof(endDate));
+            
+        // Normalize schedule type (WEEKDAYS → EVERY_DAY)
+        var normalizedScheduleType = Helpers.ScheduleTypeHelper.Normalize(scheduleType);
+        
         return new LunchSubscription
         {
             Id = Guid.NewGuid(),
@@ -253,11 +298,11 @@ public class LunchSubscription
             ComboType = comboType,
             IsActive = true,
             StartDate = startDate,
-            EndDate = startDate.AddDays(totalDays),
+            EndDate = endDate,
             TotalDays = totalDays,
             TotalPrice = totalPrice,
-            Status = "Активна",
-            ScheduleType = scheduleType,
+            Status = SubscriptionStatus.Active,
+            ScheduleType = normalizedScheduleType,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };

@@ -19,7 +19,13 @@ public class Employee
     public string Phone { get; set; } = string.Empty;
     public string? Email { get; set; }
     public string? Position { get; set; }
-    public bool IsActive { get; set; }
+    
+    /// <summary>Employee status: Активный, Деактивирован, Отпуск</summary>
+    public EmployeeStatus Status { get; set; } = EmployeeStatus.Active;
+    
+    /// <summary>Computed property for backward compatibility</summary>
+    public bool IsActive => Status == EmployeeStatus.Active;
+    
     public EmployeeInviteStatus InviteStatus { get; set; } = EmployeeInviteStatus.Accepted;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
@@ -104,20 +110,49 @@ public class Employee
     /// </summary>
     public void Activate()
     {
-        IsActive = true;
+        Status = EmployeeStatus.Active;
         UpdatedAt = DateTime.UtcNow;
     }
     
     /// <summary>
     /// Deactivates the employee and pauses all their active orders.
     /// </summary>
+    /// <remarks>
+    /// WARNING: Uses UTC for date comparison. For timezone-accurate handling,
+    /// the service layer should call this method with orders already loaded
+    /// using the correct timezone boundaries.
+    /// </remarks>
     public void Deactivate()
     {
-        IsActive = false;
+        Status = EmployeeStatus.Deactivated;
         UpdatedAt = DateTime.UtcNow;
         
         // Pause active orders
-        foreach (var order in Orders.Where(o => o.Status == OrderStatus.Active && o.OrderDate >= DateTime.UtcNow.Date))
+        // NOTE: Using UTC - service layer should ensure correct orders are loaded
+        var todayUtc = DateTime.UtcNow.Date;
+        foreach (var order in Orders.Where(o => o.Status == OrderStatus.Active && o.OrderDate >= todayUtc))
+        {
+            order.Pause();
+        }
+    }
+    
+    /// <summary>
+    /// Sets the employee on vacation.
+    /// </summary>
+    /// <remarks>
+    /// WARNING: Uses UTC for date comparison. For timezone-accurate handling,
+    /// the service layer should call this method with orders already loaded
+    /// using the correct timezone boundaries.
+    /// </remarks>
+    public void SetVacation()
+    {
+        Status = EmployeeStatus.Vacation;
+        UpdatedAt = DateTime.UtcNow;
+        
+        // Pause active orders while on vacation
+        // NOTE: Using UTC - service layer should ensure correct orders are loaded
+        var todayUtc = DateTime.UtcNow.Date;
+        foreach (var order in Orders.Where(o => o.Status == OrderStatus.Active && o.OrderDate >= todayUtc))
         {
             order.Pause();
         }
@@ -126,14 +161,21 @@ public class Employee
     /// <summary>
     /// Soft deletes the employee.
     /// </summary>
+    /// <remarks>
+    /// WARNING: Uses UTC for date comparison. For timezone-accurate handling,
+    /// the service layer should call this method with orders already loaded
+    /// using the correct timezone boundaries.
+    /// </remarks>
     public void SoftDelete()
     {
         DeletedAt = DateTime.UtcNow;
         UpdatedAt = DateTime.UtcNow;
-        IsActive = false;
+        Status = EmployeeStatus.Deactivated;
         
         // Cancel active orders
-        foreach (var order in Orders.Where(o => o.Status == OrderStatus.Active && o.OrderDate >= DateTime.UtcNow.Date))
+        // NOTE: Using UTC - service layer should ensure correct orders are loaded
+        var todayUtc = DateTime.UtcNow.Date;
+        foreach (var order in Orders.Where(o => o.Status == OrderStatus.Active && o.OrderDate >= todayUtc))
         {
             order.Complete();
         }
@@ -178,14 +220,46 @@ public class Employee
     }
     
     /// <summary>
-    /// Gets the remaining days in the lunch subscription.
+    /// DEPRECATED: Returns calendar days until subscription EndDate, NOT actual remaining orders!
+    /// Use futureOrdersCount from API response for accurate remaining days.
+    /// This counts all calendar days (including weekends and holidays).
     /// </summary>
-    public int? GetSubscriptionRemainingDays()
+    /// <remarks>
+    /// For accurate "remaining days" (actual future orders), the service layer counts:
+    /// <c>Orders.Count(o =&gt; o.Status != Cancelled &amp;&amp; o.OrderDate &gt;= today)</c>
+    /// WARNING: Uses UTC for date comparison. For timezone-accurate calculations,
+    /// use the service layer with TimezoneHelper.
+    /// </remarks>
+    [Obsolete("Use futureOrdersCount from API response. This returns calendar days, not actual order count.")]
+    public int? GetSubscriptionRemainingDaysCalendar()
     {
         if (!HasActiveLunchSubscription || LunchSubscription?.EndDate == null)
             return null;
-            
+        
+        // NOTE: Uses UTC, may be off by 1 day in local timezone (Asia/Dushanbe UTC+5)
+        // This method is deprecated - use GetFutureOrdersCount() or service layer for accurate counts
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         return Math.Max(0, LunchSubscription.EndDate.Value.DayNumber - today.DayNumber);
+    }
+    
+    /// <summary>
+    /// Gets the count of future active/frozen orders for this employee.
+    /// This is the accurate "remaining days" count.
+    /// REQUIRES: Orders navigation property to be loaded!
+    /// </summary>
+    /// <remarks>
+    /// WARNING: Uses UTC for date comparison. For timezone-accurate calculations,
+    /// use the service layer with TimezoneHelper.GetLocalToday(project.Timezone).
+    /// </remarks>
+    public int GetFutureOrdersCount()
+    {
+        if (Orders == null || !Orders.Any())
+            return 0;
+        
+        // NOTE: Using UTC - service layer should ensure correct orders are loaded
+        var todayUtc = DateTime.UtcNow.Date;
+        return Orders.Count(o => 
+            o.OrderDate.Date >= todayUtc &&
+            o.Status != Domain.Enums.OrderStatus.Cancelled);
     }
 }

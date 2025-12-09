@@ -90,14 +90,22 @@ export const homeApi = {
     status?: string,
     date?: string,
     projectId?: string,
-    type?: string
+    type?: string,
+    serviceType?: string,
+    comboType?: string
   ): Promise<OrdersResponse> {
     const params: Record<string, string | number> = { page, pageSize }
     if (search) params.search = search
     if (status) params.status = status
     if (date) params.date = date
-    if (projectId) params.projectId = projectId
-    if (type) params.type = type
+    // Backend expects 'address' param for project filtering (legacy naming)
+    if (projectId) params.address = projectId
+    // Backend expects 'employee' or 'guest', not Russian labels
+    if (type) {
+      params.type = type === 'Сотрудник' ? 'employee' : type === 'Гость' ? 'guest' : type
+    }
+    if (serviceType) params.serviceType = serviceType
+    if (comboType) params.comboType = comboType
 
     const response = await apiClient.get<OrdersResponse>('/home/orders', { params })
     return response.data

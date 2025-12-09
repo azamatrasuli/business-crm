@@ -11,6 +11,7 @@ import type { Order, ComboType } from '@/lib/api/home'
 import { freezeOrder } from '@/lib/api/orders'
 import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
+import { ORDER_STATUS } from '@/lib/constants/entity-statuses'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -86,12 +87,14 @@ export const ACTION_OPTIONS: ActionOption[] = [
     available: (orders) =>
       orders.some(
         (o) =>
-          o.status === 'Активен' && (o.serviceType === 'LUNCH' || !o.serviceType)
+          (o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен') && 
+          (o.serviceType === 'LUNCH' || !o.serviceType)
       ),
     getApplicableCount: (orders) =>
       orders.filter(
         (o) =>
-          o.status === 'Активен' && (o.serviceType === 'LUNCH' || !o.serviceType)
+          (o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен') && 
+          (o.serviceType === 'LUNCH' || !o.serviceType)
       ).length,
   },
   {
@@ -101,14 +104,17 @@ export const ACTION_OPTIONS: ActionOption[] = [
     color: 'text-emerald-600',
     bgColor: 'bg-emerald-50 dark:bg-emerald-950/30',
     available: (orders) =>
+      // 'На паузе' is DEPRECATED, use 'Приостановлен'
       orders.some(
         (o) =>
-          o.status === 'На паузе' && (o.serviceType === 'LUNCH' || !o.serviceType)
+          (o.status === ORDER_STATUS.PAUSED || o.status === 'Приостановлен' || o.status === 'На паузе') && 
+          (o.serviceType === 'LUNCH' || !o.serviceType)
       ),
     getApplicableCount: (orders) =>
       orders.filter(
         (o) =>
-          o.status === 'На паузе' && (o.serviceType === 'LUNCH' || !o.serviceType)
+          (o.status === ORDER_STATUS.PAUSED || o.status === 'Приостановлен' || o.status === 'На паузе') && 
+          (o.serviceType === 'LUNCH' || !o.serviceType)
       ).length,
   },
   {
@@ -121,12 +127,14 @@ export const ACTION_OPTIONS: ActionOption[] = [
       isToday &&
       orders.some(
         (o) =>
-          o.status === 'Активен' && (o.serviceType === 'LUNCH' || !o.serviceType)
+          (o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен') && 
+          (o.serviceType === 'LUNCH' || !o.serviceType)
       ),
     getApplicableCount: (orders) =>
       orders.filter(
         (o) =>
-          o.status === 'Активен' && (o.serviceType === 'LUNCH' || !o.serviceType)
+          (o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен') && 
+          (o.serviceType === 'LUNCH' || !o.serviceType)
       ).length,
   },
   {
@@ -136,9 +144,16 @@ export const ACTION_OPTIONS: ActionOption[] = [
     color: 'text-red-600',
     bgColor: 'bg-red-50 dark:bg-red-950/30',
     available: (orders) =>
-      orders.some((o) => o.status === 'Активен' || o.status === 'На паузе'),
+      // 'На паузе' is DEPRECATED, use 'Приостановлен'
+      orders.some((o) => 
+        o.status === ORDER_STATUS.ACTIVE || o.status === ORDER_STATUS.PAUSED ||
+        o.status === 'Активен' || o.status === 'Приостановлен' || o.status === 'На паузе'
+      ),
     getApplicableCount: (orders) =>
-      orders.filter((o) => o.status === 'Активен' || o.status === 'На паузе').length,
+      orders.filter((o) => 
+        o.status === ORDER_STATUS.ACTIVE || o.status === ORDER_STATUS.PAUSED ||
+        o.status === 'Активен' || o.status === 'Приостановлен' || o.status === 'На паузе'
+      ).length,
   },
 ]
 
@@ -186,26 +201,21 @@ export function useBulkEditForm({
     if (!actionConfig) return selectedOrders
 
     return selectedOrders.filter((order) => {
+      const isActive = order.status === ORDER_STATUS.ACTIVE || order.status === 'Активен'
+      // 'На паузе' is DEPRECATED, use 'Приостановлен'
+      const isPaused = order.status === ORDER_STATUS.PAUSED || order.status === 'Приостановлен' || order.status === 'На паузе'
+      
       switch (selectedAction) {
         case 'editCombo':
           return order.serviceType === 'LUNCH' || !order.serviceType
         case 'pause':
-          return (
-            order.status === 'Активен' &&
-            (order.serviceType === 'LUNCH' || !order.serviceType)
-          )
+          return isActive && (order.serviceType === 'LUNCH' || !order.serviceType)
         case 'resume':
-          return (
-            order.status === 'На паузе' &&
-            (order.serviceType === 'LUNCH' || !order.serviceType)
-          )
+          return isPaused && (order.serviceType === 'LUNCH' || !order.serviceType)
         case 'freeze':
-          return (
-            order.status === 'Активен' &&
-            (order.serviceType === 'LUNCH' || !order.serviceType)
-          )
+          return isActive && (order.serviceType === 'LUNCH' || !order.serviceType)
         case 'cancel':
-          return order.status === 'Активен' || order.status === 'На паузе'
+          return isActive || isPaused
         default:
           return false
       }

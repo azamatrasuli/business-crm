@@ -62,10 +62,12 @@ public class DashboardController : BaseApiController
     /// <param name="page">Page number (1-based).</param>
     /// <param name="pageSize">Items per page.</param>
     /// <param name="search">Search term for employee/guest name.</param>
-    /// <param name="status">Status filter (Активен, На паузе, Отменён, Завершен).</param>
+    /// <param name="status">Status filter (Активен, Приостановлен, Заморожен, Отменён, Доставлен).</param>
     /// <param name="date">Date filter (yyyy-MM-dd format).</param>
     /// <param name="address">Address/project filter (project ID).</param>
     /// <param name="type">Type filter: "employee" or "guest".</param>
+    /// <param name="serviceType">Service type filter: "LUNCH" or "COMPENSATION".</param>
+    /// <param name="comboType">Combo type filter: "Комбо 25" or "Комбо 35".</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Paged result of orders.</returns>
     [HttpGet("orders")]
@@ -79,6 +81,8 @@ public class DashboardController : BaseApiController
         [FromQuery] string? date = null,
         [FromQuery] string? address = null,
         [FromQuery] string? type = null,
+        [FromQuery] string? serviceType = null,
+        [FromQuery] string? comboType = null,
         CancellationToken cancellationToken = default)
     {
         var (companyId, errorResult) = RequireCompanyId();
@@ -86,7 +90,7 @@ public class DashboardController : BaseApiController
 
         var projectId = GetProjectId();
         var result = await _dashboardService.GetOrdersAsync(
-            companyId!.Value, page, pageSize, search, status, date, address, type, projectId, cancellationToken);
+            companyId!.Value, page, pageSize, search, status, date, address, type, serviceType, comboType, projectId, cancellationToken);
         return Ok(result);
     }
 

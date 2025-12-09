@@ -4,7 +4,8 @@ public class CreateSubscriptionRequest
 {
     public Guid EmployeeId { get; set; }
     public string ComboType { get; set; } = string.Empty;
-    public Guid? DeliveryAddressId { get; set; }
+    
+    // NOTE: Address is derived from Employee's Project - no DeliveryAddressId needed
     
     /// <summary>
     /// Start date of the subscription. Defaults to today if not specified.

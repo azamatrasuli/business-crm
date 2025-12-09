@@ -31,12 +31,12 @@ public class CompaniesService : ICompaniesService
             })
             .ToListAsync();
 
-        // Then map to DTO in memory (Status.ToDatabase() can't be translated to SQL)
+        // Then map to DTO in memory (Status.ToRussian() can't be translated to SQL)
         return rawData.Select(c => new CompanyListItem(
             c.Id,
             c.Name,
             c.Budget,
-            c.Status.ToDatabase(),
+            c.Status.ToRussian(),
             c.ProjectsCount,
             c.EmployeesCount
         ));
@@ -59,7 +59,7 @@ public class CompaniesService : ICompaniesService
             company.CurrencyCode,
             company.Timezone,
             company.CutoffTime,
-            company.Status.ToDatabase(),
+            company.Status.ToRussian(),
             company.CreatedAt
         );
     }

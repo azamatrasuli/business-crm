@@ -14,7 +14,8 @@ import { getErrorMessage } from './utils'
 interface EmployeesFilter {
   status: 'all' | 'active' | 'inactive'
   inviteStatus: 'all' | 'Принято' | 'Ожидает' | 'Отклонено'
-  mealStatus: 'all' | 'Активен' | 'На паузе' | 'Не заказан'
+  // NOTE: 'На паузе' is DEPRECATED, use 'Приостановлен'
+  mealStatus: 'all' | 'Активен' | 'Приостановлен' | 'На паузе' | 'Не заказан'
   minBudget: number | null
   maxBudget: number | null
   hasSubscription: boolean | null

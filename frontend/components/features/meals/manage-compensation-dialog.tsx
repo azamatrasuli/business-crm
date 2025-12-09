@@ -26,6 +26,7 @@ import { parseError, ErrorCodes } from "@/lib/errors";
 import { logger } from "@/lib/logger";
 import { servicesApi } from "@/lib/api/services";
 import type { Employee, EmployeeDetail } from "@/lib/api/employees";
+import { useBusinessConfig } from "@/lib/hooks/use-business-config";
 
 interface CompensationSummary {
   id: string;
@@ -55,6 +56,11 @@ export function ManageCompensationDialog({
   open, onOpenChange, mode, employee, employees = [], existingCompensation, onSuccess,
 }: ManageCompensationDialogProps) {
   const isEditing = Boolean(existingCompensation);
+  
+  // Business config for dynamic minDays validation
+  const { config: businessConfig } = useBusinessConfig();
+  const minSubscriptionDays = businessConfig.subscription.minDays;
+  
   const [dailyLimit, setDailyLimit] = useState("100");
   const [totalBudgetInput, setTotalBudgetInput] = useState("");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
@@ -153,11 +159,6 @@ export function ManageCompensationDialog({
   
   const totalCost = totalBudget * (mode === "bulk" ? selectedEmployeeIds.length : 1);
 
-  // FIXED: Use working days count for validation
-  const canSubmit = dailyLimitNum > 0 && startDate && endDate && workingDaysCount >= 5 && 
-    (mode === "individual" || selectedEmployeeIds.length > 0) && 
-    (mode !== "individual" || individualValidation.isValid);
-
   // В bulk режиме показываем только сотрудников:
   // 1. Активных с принятым приглашением
   // 2. С типом услуги COMPENSATION (настроенных на компенсацию)
@@ -184,21 +185,38 @@ export function ManageCompensationDialog({
     e.fullName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // CRITICAL FIX: Sync selectedEmployeeIds when available employees change
-  // Remove employees from selection if they no longer pass the filters
+  // ═══════════════════════════════════════════════════════════════
+  // IMPROVED: Don't auto-clear selection when filter changes
+  // Instead, calculate "invisible" selections and show UI warning if needed
+  // ═══════════════════════════════════════════════════════════════
   const validEmployeeIdsSet = useMemo(
     () => new Set(availableEmployees.map(e => e.id)),
     [availableEmployees]
   );
 
-  useEffect(() => {
-    if (mode !== "bulk") return;
-    
-    setSelectedEmployeeIds(prev => {
-      const filteredSelection = prev.filter(id => validEmployeeIdsSet.has(id));
-      return filteredSelection.length !== prev.length ? filteredSelection : prev;
-    });
-  }, [mode, validEmployeeIdsSet]);
+  // Count selected employees that are NOT in available list (e.g., serviceType changed)
+  const invisibleSelectionCount = useMemo(() => {
+    if (mode !== "bulk") return 0;
+    return selectedEmployeeIds.filter(id => !validEmployeeIdsSet.has(id)).length;
+  }, [mode, selectedEmployeeIds, validEmployeeIdsSet]);
+
+  // Count selected employees that ARE in available list
+  const visibleSelectionCount = useMemo(() => {
+    if (mode !== "bulk") return 0;
+    return selectedEmployeeIds.filter(id => validEmployeeIdsSet.has(id)).length;
+  }, [mode, selectedEmployeeIds, validEmployeeIdsSet]);
+
+  // Helper to clear only invisible selections
+  const clearInvisibleSelections = useCallback(() => {
+    setSelectedEmployeeIds(prev => prev.filter(id => validEmployeeIdsSet.has(id)));
+  }, [validEmployeeIdsSet]);
+
+  // FIXED: Use working days count for validation
+  // Uses dynamic minDays from business config instead of hardcoded value
+  // FIXED: Use visibleSelectionCount to only count valid employees (moved after visibleSelectionCount declaration)
+  const canSubmit = dailyLimitNum > 0 && startDate && endDate && workingDaysCount >= minSubscriptionDays && 
+    (mode === "individual" || visibleSelectionCount > 0) && 
+    (mode !== "individual" || individualValidation.isValid);
   
   // Определяем причину пустого списка с диагностикой
   const getEmptyReason = () => {
@@ -261,8 +279,13 @@ export function ManageCompensationDialog({
         });
         toast.success("Компенсация обновлена");
       } else {
+        // CRITICAL: Filter selectedEmployeeIds to only include valid employees
+        const filteredEmployeeIds = mode === "individual" && employee 
+          ? [employee.id] 
+          : selectedEmployeeIds.filter(id => validEmployeeIdsSet.has(id));
+        
         const result = await servicesApi.createCompensations({
-          employeeIds: mode === "individual" && employee ? [employee.id] : selectedEmployeeIds,
+          employeeIds: filteredEmployeeIds,
           dailyLimit: dailyLimitNum,
           startDate: formatDate(startDate),
           endDate: formatDate(endDate),
@@ -397,17 +420,17 @@ export function ManageCompensationDialog({
                 <h3 className="text-lg font-semibold">Выберите период</h3>
                 <p className={cn(
                   "text-sm font-medium",
-                  workingDaysCount >= 5 ? "text-emerald-600" : "text-destructive"
+                  workingDaysCount >= minSubscriptionDays ? "text-emerald-600" : "text-destructive"
                 )}>
                   {startDate && endDate ? (
                     <>
                       {format(startDate, "d MMMM", { locale: ru })} — {format(endDate, "d MMMM yyyy", { locale: ru })}
                       <span className="mx-2">•</span>
                       <span className="font-bold">{workingDaysCount} рабочих дней</span>
-                      {workingDaysCount < 5 && <span className="text-destructive ml-2">(мин. 5)</span>}
+                      {workingDaysCount < minSubscriptionDays && <span className="text-destructive ml-2">(мин. {minSubscriptionDays})</span>}
                     </>
                   ) : (
-                    <span className="text-muted-foreground">Минимум 5 дней</span>
+                    <span className="text-muted-foreground">Минимум {minSubscriptionDays} дней</span>
                   )}
                 </p>
               </div>

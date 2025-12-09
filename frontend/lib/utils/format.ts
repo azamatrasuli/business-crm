@@ -102,52 +102,48 @@ export function formatWorkSchedule(employee: {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Status Formatting
+// Re-exports from centralized entity-statuses for backward compatibility
 // ═══════════════════════════════════════════════════════════════════════════════
+
+import {
+  ORDER_STATUS,
+  SUBSCRIPTION_STATUS,
+  INVITE_STATUS,
+  getOrderStatusConfig,
+  getSubscriptionStatusConfig,
+  getInviteStatusConfig as getInviteStatusConfigFromConstants,
+} from '@/lib/constants/entity-statuses'
 
 export type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline'
 
 /**
  * Get status badge variant for order/subscription status.
+ * @deprecated Use getOrderStatusConfig or getSubscriptionStatusConfig from entity-statuses.ts
  */
 export function getStatusBadgeVariant(status?: string): BadgeVariant {
-  switch (status) {
-    case 'Активен':
-    case 'Активна':
-      return 'default'
-    case 'На паузе':
-    case 'Приостановлена':
-      return 'secondary'
-    case 'Завершен':
-    case 'Завершена':
-      return 'outline'
-    case 'Заморожен':
-      return 'secondary'
-    case 'Запланирован':
-      return 'outline'
-    default:
-      return 'outline'
+  // Check order statuses first
+  const orderConfig = getOrderStatusConfig(status)
+  if (orderConfig.label !== status && orderConfig.label !== 'Неизвестно') {
+    return orderConfig.variant
   }
+  // Check subscription statuses
+  const subConfig = getSubscriptionStatusConfig(status)
+  return subConfig.variant
 }
 
 /**
  * Get status badge styling config.
+ * Works for both order and subscription statuses.
  */
 export function getStatusConfig(status?: string): { className: string } {
-  switch (status) {
-    case 'Активен':
-    case 'Активна':
-      return { className: 'bg-emerald-500/10 text-emerald-600 border-emerald-200' }
-    case 'На паузе':
-    case 'Приостановлена':
-      return { className: 'bg-amber-500/10 text-amber-600 border-amber-200' }
-    case 'Завершен':
-    case 'Завершена':
-      return { className: 'bg-muted text-muted-foreground border-muted' }
-    case 'Заморожен':
-      return { className: 'bg-blue-500/10 text-blue-600 border-blue-200' }
-    default:
-      return { className: '' }
+  // Check order statuses
+  const orderConfig = getOrderStatusConfig(status)
+  if (orderConfig.className) {
+    return { className: orderConfig.className }
   }
+  // Check subscription statuses
+  const subConfig = getSubscriptionStatusConfig(status)
+  return { className: subConfig.className }
 }
 
 /**
@@ -158,32 +154,7 @@ export function getInviteStatusConfig(status?: string): {
   className: string
   label: string
 } {
-  switch (status) {
-    case 'Принято':
-      return {
-        variant: 'default',
-        className: 'bg-emerald-500/10 text-emerald-600 border-emerald-200',
-        label: 'Принято',
-      }
-    case 'Ожидает':
-      return {
-        variant: 'secondary',
-        className: 'bg-amber-500/10 text-amber-600 border-amber-200',
-        label: 'Ожидает',
-      }
-    case 'Отклонено':
-      return {
-        variant: 'destructive',
-        className: 'bg-red-500/10 text-red-600 border-red-200',
-        label: 'Отклонено',
-      }
-    default:
-      return {
-        variant: 'outline',
-        className: '',
-        label: 'Не приглашён',
-      }
-  }
+  return getInviteStatusConfigFromConstants(status)
 }
 
 /**

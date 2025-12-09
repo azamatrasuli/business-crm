@@ -24,6 +24,7 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import { useProjectsStore } from '@/stores/projects-store'
+import { EMPLOYEE_STATUS, INVITE_STATUS, ORDER_STATUS, getEmployeeStatusConfig } from '@/lib/constants/entity-statuses'
 import {
   Dialog,
   DialogContent,
@@ -76,17 +77,26 @@ const formatWorkingDays = (workingDays?: number[]) => {
   return workingDays.map(d => DAYS_SHORT[d]).join(', ')
 }
 
-// Цвет статуса услуги
+// Цвет статуса услуги (для подписок и заказов)
 const getServiceStatusColor = (status?: string) => {
   switch (status) {
     case 'Активна':
+    case ORDER_STATUS.ACTIVE:
     case 'Активен':
       return 'default'
     case 'Приостановлена':
-    case 'На паузе':
+    case ORDER_STATUS.PAUSED:
+    case 'Приостановлен':
+    case 'На паузе':  // DEPRECATED legacy alias
+      return 'secondary'
+    case ORDER_STATUS.FROZEN:
+    case 'Заморожен':
       return 'secondary'
     case 'Завершена':
+    case ORDER_STATUS.DELIVERED:
     case 'Завершен':
+    case 'Выполнен':
+    case 'Доставлен':
       return 'outline'
     default:
       return 'outline'
@@ -191,13 +201,13 @@ export default function EmployeesPage() {
     // Сотрудники без услуг (активные, но без ланча и компенсации)
     const withoutService = employees.filter((e) => 
       e.isActive && 
-      e.inviteStatus === 'Принято' &&
+      (e.inviteStatus === INVITE_STATUS.ACCEPTED || e.inviteStatus === 'Принято') &&
       !e.lunchSubscription && 
       !e.compensation
     ).length
     
     // Ожидают приглашения (требуют внимания сегодня)
-    const pendingInvites = employees.filter((e) => e.isActive && e.inviteStatus === 'Ожидает').length
+    const pendingInvites = employees.filter((e) => e.isActive && (e.inviteStatus === INVITE_STATUS.PENDING || e.inviteStatus === 'Ожидает')).length
     
     // Финансы: сумма бюджетов подписок
     const totalLunchBudget = employees.reduce((sum, e) => 
@@ -233,8 +243,9 @@ export default function EmployeesPage() {
   const handleToggleActivation = async (employee: Employee) => {
     try {
       await toggleEmployeeActive(employee.id)
+      const wasActive = employee.status === EMPLOYEE_STATUS.ACTIVE || employee.isActive
       toast.success(
-        `${employee.fullName} ${employee.isActive ? 'деактивирован' : 'активирован'}`
+        `${employee.fullName} ${wasActive ? 'деактивирован' : 'активирован'}`
       )
     } catch (error) {
       const appError = parseError(error)
@@ -253,13 +264,23 @@ export default function EmployeesPage() {
       isActive: (a, b) => (a.isActive ? 1 : 0) - (b.isActive ? 1 : 0),
       // Custom comparator for invite status (ordered: Принято > Ожидает > Отклонено)
       inviteStatus: (a, b) => {
-        const order = { 'Принято': 3, 'Ожидает': 2, 'Отклонено': 1 }
-        return (order[a.inviteStatus as keyof typeof order] || 0) - (order[b.inviteStatus as keyof typeof order] || 0)
+        // Use centralized constants (INVITE_STATUS values are Russian strings)
+        const order: Record<string, number> = { 
+          [INVITE_STATUS.ACCEPTED]: 3,
+          [INVITE_STATUS.PENDING]: 2,
+          [INVITE_STATUS.REJECTED]: 1
+        }
+        return (order[a.inviteStatus] || 0) - (order[b.inviteStatus] || 0)
       },
       // Custom comparator for meal status
       mealStatus: (a, b) => {
-        const order = { 'Активен': 3, 'На паузе': 2, 'Не заказан': 1 }
-        return (order[a.mealStatus as keyof typeof order] || 0) - (order[b.mealStatus as keyof typeof order] || 0)
+        // Use centralized constants (ORDER_STATUS values are Russian strings)
+        const order: Record<string, number> = { 
+          [ORDER_STATUS.ACTIVE]: 3,
+          [ORDER_STATUS.PAUSED]: 2,
+          'Не заказан': 1
+        }
+        return (order[a.mealStatus] || 0) - (order[b.mealStatus] || 0)
       },
     })
   }, [employees, sortConfig])
@@ -291,7 +312,7 @@ export default function EmployeesPage() {
 
   const handleManageLunch = useCallback((event: React.MouseEvent, employee: Employee) => {
     event.stopPropagation()
-    if (!employee.isActive || employee.inviteStatus !== 'Принято') return
+    if (!employee.isActive || (employee.inviteStatus !== INVITE_STATUS.ACCEPTED && employee.inviteStatus !== 'Принято')) return
     // Блокируем если сотрудник на проекте компенсации (взаимоисключающие услуги)
     if (employee.serviceType === 'COMPENSATION') return
     setSelectedEmployee(employee)
@@ -300,7 +321,7 @@ export default function EmployeesPage() {
 
   const handleManageCompensation = useCallback((event: React.MouseEvent, employee: Employee) => {
     event.stopPropagation()
-    if (!employee.isActive || employee.inviteStatus !== 'Принято') return
+    if (!employee.isActive || (employee.inviteStatus !== INVITE_STATUS.ACCEPTED && employee.inviteStatus !== 'Принято')) return
     // Блокируем если есть активный ланч или сотрудник на проекте ланча
     if (employee.activeLunchSubscriptionId || employee.serviceType === 'LUNCH') return
     setSelectedEmployee(employee)
@@ -328,13 +349,17 @@ export default function EmployeesPage() {
       ),
       cell: ({ row }) => {
         const employee = row.original
+        const statusConfig = getEmployeeStatusConfig(employee.status)
+        const statusColor = employee.status === EMPLOYEE_STATUS.ACTIVE 
+          ? 'bg-emerald-500' 
+          : employee.status === EMPLOYEE_STATUS.VACATION 
+            ? 'bg-amber-500' 
+            : 'bg-gray-400'
         return (
           <div className="flex items-center gap-2">
             <span
-              className={`h-2.5 w-2.5 rounded-full shrink-0 ${
-                employee.isActive ? 'bg-emerald-500' : 'bg-gray-400'
-              }`}
-              title={employee.isActive ? 'Активный' : 'Деактивирован'}
+              className={`h-2.5 w-2.5 rounded-full shrink-0 ${statusColor}`}
+              title={statusConfig.label}
             />
             <button
               type="button"
@@ -511,7 +536,7 @@ export default function EmployeesPage() {
                       size="icon"
                       onClick={(event) => handleManageLunch(event, employee)}
                       aria-label="Управлять обедом"
-                      disabled={!employee.isActive || employee.inviteStatus !== 'Принято' || employee.serviceType === 'COMPENSATION'}
+                      disabled={!employee.isActive || (employee.inviteStatus !== INVITE_STATUS.ACCEPTED && employee.inviteStatus !== 'Принято') || employee.serviceType === 'COMPENSATION'}
                       className="text-amber-600 hover:text-amber-700"
                     >
                       <UtensilsCrossed className="h-4 w-4" />
@@ -521,7 +546,7 @@ export default function EmployeesPage() {
                 <TooltipContent>
                   {!employee.isActive 
                     ? 'Сотрудник деактивирован' 
-                    : employee.inviteStatus !== 'Принято' 
+                    : (employee.inviteStatus !== INVITE_STATUS.ACCEPTED && employee.inviteStatus !== 'Принято')
                       ? 'Сотрудник ещё не принял приглашение' 
                       : employee.serviceType === 'COMPENSATION'
                         ? 'Сотрудник на компенсации'
@@ -542,7 +567,7 @@ export default function EmployeesPage() {
                       size="icon"
                       onClick={(event) => handleManageCompensation(event, employee)}
                       aria-label="Управлять компенсацией"
-                      disabled={!employee.isActive || employee.inviteStatus !== 'Принято' || Boolean(employee.activeLunchSubscriptionId) || employee.serviceType === 'LUNCH'}
+                      disabled={!employee.isActive || (employee.inviteStatus !== INVITE_STATUS.ACCEPTED && employee.inviteStatus !== 'Принято') || Boolean(employee.activeLunchSubscriptionId) || employee.serviceType === 'LUNCH'}
                       className="text-emerald-600 hover:text-emerald-700"
                     >
                       <Wallet className="h-4 w-4" />
@@ -552,8 +577,8 @@ export default function EmployeesPage() {
                 <TooltipContent>
                   {!employee.isActive 
                     ? 'Сотрудник деактивирован' 
-                    : employee.inviteStatus !== 'Принято' 
-                      ? 'Сотрудник ещё не принял приглашение' 
+                    : (employee.inviteStatus !== INVITE_STATUS.ACCEPTED && employee.inviteStatus !== 'Принято')
+                      ? 'Сотрудник ещё не принял приглашение'
                       : employee.activeLunchSubscriptionId || employee.serviceType === 'LUNCH'
                         ? 'Сотрудник на обедах'
                         : employee.serviceType === 'COMPENSATION'
@@ -573,15 +598,16 @@ export default function EmployeesPage() {
                       size="icon"
                       onClick={(event) => {
                         event.stopPropagation()
+                        const isCurrentlyActive = employee.status === EMPLOYEE_STATUS.ACTIVE || employee.isActive
                         openActivationDialog(
                           employee,
-                          employee.isActive ? 'deactivate' : 'activate'
+                          isCurrentlyActive ? 'deactivate' : 'activate'
                         )
                       }}
-                      className={employee.isActive ? 'text-orange-600' : 'text-green-600'}
-                      aria-label={employee.isActive ? 'Деактивировать' : 'Активировать'}
+                      className={(employee.status === EMPLOYEE_STATUS.ACTIVE || employee.isActive) ? 'text-orange-600' : 'text-green-600'}
+                      aria-label={(employee.status === EMPLOYEE_STATUS.ACTIVE || employee.isActive) ? 'Деактивировать' : 'Активировать'}
                     >
-                      {employee.isActive ? (
+                      {(employee.status === EMPLOYEE_STATUS.ACTIVE || employee.isActive) ? (
                         <Trash2 className="h-4 w-4" />
                       ) : (
                         <RotateCcw className="h-4 w-4" />
@@ -590,7 +616,7 @@ export default function EmployeesPage() {
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>
-                  {employee.isActive ? 'Деактивировать сотрудника' : 'Активировать сотрудника'}
+                  {(employee.status === EMPLOYEE_STATUS.ACTIVE || employee.isActive) ? 'Деактивировать сотрудника' : 'Активировать сотрудника'}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>

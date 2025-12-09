@@ -21,7 +21,7 @@ public class OrderResponse
     /// <summary>Order date in yyyy-MM-dd format.</summary>
     public string Date { get; set; } = string.Empty;
 
-    /// <summary>Order status in Russian (Активен, На паузе, Отменён, Завершен).</summary>
+    /// <summary>Order status in Russian (Активен, Приостановлен, Заморожен, Выходной, Доставлен, Выполнен, Отменён).</summary>
     public string Status { get; set; } = string.Empty;
 
     /// <summary>Delivery address from project (immutable).</summary>

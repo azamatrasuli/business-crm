@@ -62,6 +62,17 @@ public class DailyOrderGenerationJob : BackgroundService
         {
             try
             {
+                // ═══════════════════════════════════════════════════════════════
+                // SKIP projects without delivery address
+                // ═══════════════════════════════════════════════════════════════
+                if (string.IsNullOrWhiteSpace(project.AddressFullAddress))
+                {
+                    _logger.LogWarning(
+                        "Skipping project {ProjectName} (ID: {ProjectId}) - no delivery address configured",
+                        project.Name, project.Id);
+                    continue;
+                }
+
                 // Convert to project's timezone
                 var tz = TimeZoneInfo.FindSystemTimeZoneById(project.Timezone);
                 var projectNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
@@ -80,7 +91,7 @@ public class DailyOrderGenerationJob : BackgroundService
                     .Where(ls => 
                         ls.ProjectId == project.Id &&
                         ls.IsActive &&
-                        ls.Status == "Активна" &&
+                        ls.Status == SubscriptionStatus.Active &&
                         ls.Employee != null &&
                         ls.Employee.IsActive &&
                         ls.Employee.DeletedAt == null &&
@@ -99,16 +110,19 @@ public class DailyOrderGenerationJob : BackgroundService
                     // CRITICAL FIX: Skip CUSTOM schedule type subscriptions
                     // For CUSTOM, orders are created at subscription creation time with specific dates.
                     // We should NOT auto-generate daily orders for CUSTOM subscriptions.
-                    // (EVERY_OTHER_DAY is now converted to CUSTOM on frontend)
-                    if (subscription.ScheduleType == "CUSTOM")
+                    // Normalize schedule type to handle legacy WEEKDAYS → EVERY_DAY
+                    var normalizedScheduleType = ScheduleTypeHelper.Normalize(subscription.ScheduleType);
+                    if (normalizedScheduleType == ScheduleTypeHelper.Custom)
                     {
                         continue; // Custom schedules have pre-created orders
                     }
 
-                    // Check if today is a working day for this employee (uses default Mon-Fri if not set)
-                    if (!WorkingDaysHelper.IsWorkingDay(employee.WorkingDays, projectToday))
+                    // Check if today should have an order based on schedule type:
+                    // - EVERY_DAY: all working days (Mon-Fri or employee's schedule)
+                    // - EVERY_OTHER_DAY: Mon, Wed, Fri only (if they're working days)
+                    if (!WorkingDaysHelper.ShouldCreateOrderForDate(normalizedScheduleType, employee.WorkingDays, projectToday))
                     {
-                        continue; // Skip non-working days
+                        continue; // Skip days that don't match the schedule
                     }
 
                     // Check if order already exists for this employee today

@@ -3,6 +3,7 @@ import apiClient from './client'
 export type ShiftType = 'DAY' | 'NIGHT'
 export type ServiceType = 'LUNCH' | 'COMPENSATION'
 export type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6 // 0 = Sunday, 1 = Monday, etc.
+export type EmployeeStatusType = 'Активный' | 'Деактивирован' | 'Отпуск'
 
 export interface Employee {
   id: string
@@ -14,6 +15,9 @@ export interface Employee {
   mealStatus: string
   mealPlan?: string | null
   inviteStatus: string
+  /** Employee status: Активный, Деактивирован, Отпуск */
+  status?: EmployeeStatusType
+  /** @deprecated Use status instead - kept for backward compatibility */
   isActive: boolean
   creationScenario?: 'new_user' | 'existing_client_user'
   // Project info
@@ -44,10 +48,15 @@ export interface Employee {
     scheduleType: 'EVERY_DAY' | 'EVERY_OTHER_DAY' | 'CUSTOM'
     customDays?: string[]
     status: string
+    /** Sum of future order prices (dynamic) */
     totalPrice?: number
+    /** Remaining days = futureOrdersCount (real order count, not calendar days!) */
     remainingDays?: number
+    /** Total days = all non-cancelled orders in subscription period (dynamic) */
     totalDays?: number
+    /** Count of future orders (Active/Frozen) - this is the real "remaining days" */
     futureOrdersCount?: number
+    /** Count of completed/delivered orders */
     completedOrdersCount?: number
   } | null
   compensation?: {
@@ -84,10 +93,15 @@ export interface EmployeeDetail extends Employee {
     scheduleType: 'EVERY_DAY' | 'EVERY_OTHER_DAY' | 'CUSTOM'
     customDays?: string[]
     status: string
+    /** Sum of future order prices (dynamic) */
     totalPrice?: number
+    /** Remaining days = futureOrdersCount (real order count, not calendar days!) */
     remainingDays?: number
+    /** Total days = all non-cancelled orders in subscription period (dynamic) */
     totalDays?: number
+    /** Count of future orders (Active/Frozen) - this is the real "remaining days" */
     futureOrdersCount?: number
+    /** Count of completed/delivered orders */
     completedOrdersCount?: number
   } | null
   compensation?: {
@@ -107,7 +121,7 @@ export interface EmployeeDetail extends Employee {
 export interface CreateEmployeeRequest {
   fullName: string
   phone: string
-  email: string
+  email?: string // Optional - not all employees have email
   position?: string
   projectId?: string // Required by backend
   serviceType?: ServiceType
@@ -153,7 +167,7 @@ export interface EmployeeOrder {
   id: string
   date?: string
   type?: string // Сотрудник / Гость
-  status?: string // Активен / На паузе / Завершен / Заморожен
+  status?: string // Активен / Приостановлен / Заморожен / Выходной / Доставлен / Выполнен / Отменён (+ DEPRECATED legacy: На паузе, Завершен)
   amount?: number
   // Расширенные поля (как на Dashboard)
   serviceType?: 'LUNCH' | 'COMPENSATION' | null

@@ -58,8 +58,14 @@ public class Order
     // ═══════════════════════════════════════════════════════════════
     
     /// <summary>
-    /// Checks if the order is for today.
+    /// Checks if the order is for today (APPROXIMATE - uses UTC).
+    /// WARNING: For accurate timezone-aware checks, use TimezoneHelper.IsToday() in service layer.
     /// </summary>
+    /// <remarks>
+    /// This property uses UTC time and may not be accurate for edge cases near midnight.
+    /// Always use TimezoneHelper.IsToday(orderDate, project.Timezone) for business-critical validations.
+    /// </remarks>
+    [Obsolete("Use TimezoneHelper.IsToday() for timezone-accurate checks")]
     public bool IsForToday => OrderDate.Date == DateTime.UtcNow.Date;
     
     /// <summary>
@@ -73,21 +79,29 @@ public class Order
     public bool IsFrozen => Status == OrderStatus.Frozen;
     
     /// <summary>
-    /// Checks if the order is in the past.
+    /// Checks if the order is in the past (APPROXIMATE - uses UTC).
+    /// WARNING: For accurate timezone-aware checks, use TimezoneHelper.IsPastDate() in service layer.
     /// </summary>
-    public bool IsPastOrder => OrderDate.Date < DateTime.UtcNow.Date;
+    /// <remarks>
+    /// This property uses UTC time. It's conservative - an order that appears "past" in UTC
+    /// might still be "today" in a local timezone, which is safe for preventing modifications
+    /// to past orders but may block some valid operations near midnight.
+    /// </remarks>
+    public bool IsPastOrderUtc => OrderDate.Date < DateTime.UtcNow.Date;
     
     /// <summary>
     /// Checks if the order can be cancelled.
     /// Business rule: Can cancel only active orders for today or future.
+    /// NOTE: Uses UTC-based check. Service layer should add timezone-accurate cutoff validation.
     /// </summary>
-    public bool CanBeCancelled => IsActive && !IsPastOrder;
+    public bool CanBeCancelled => IsActive && !IsPastOrderUtc;
     
     /// <summary>
     /// Checks if the order can be modified.
     /// Business rule: Can modify only active orders for today or future.
+    /// NOTE: Uses UTC-based check. Service layer should add timezone-accurate cutoff validation.
     /// </summary>
-    public bool CanBeModified => IsActive && !IsPastOrder;
+    public bool CanBeModified => IsActive && !IsPastOrderUtc;
     
     /// <summary>
     /// Pauses the order.
@@ -141,13 +155,13 @@ public class Order
     /// Checks if the order can be frozen.
     /// Business rule: Can freeze only active orders for today or future.
     /// </summary>
-    public bool CanBeFrozen => IsActive && !IsPastOrder;
+    public bool CanBeFrozen => IsActive && !IsPastOrderUtc;
     
     /// <summary>
     /// Checks if the order can be unfrozen.
     /// Business rule: Can unfreeze only frozen orders for today or future.
     /// </summary>
-    public bool CanBeUnfrozen => IsFrozen && !IsPastOrder;
+    public bool CanBeUnfrozen => IsFrozen && !IsPastOrderUtc;
     
     /// <summary>
     /// Freezes the order (отмена обеда с переносом в конец подписки).

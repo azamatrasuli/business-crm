@@ -12,6 +12,11 @@ public class EmployeeResponse
     public string MealStatus { get; set; } = "Не заказан";
     public string? MealPlan { get; set; }
     public string InviteStatus { get; set; } = "Принято";
+    
+    /// <summary>Employee status: Активный, Деактивирован, Отпуск</summary>
+    public string Status { get; set; } = "Активный";
+    
+    /// <summary>Backward compatibility - computed from Status</summary>
     public bool IsActive { get; set; }
     
     /// <summary>Project information (REQUIRED - address comes from project)</summary>
@@ -87,8 +92,23 @@ public class LunchSubscriptionInfo
     public string Status { get; set; } = string.Empty;
     public string? StartDate { get; set; }
     public string? EndDate { get; set; }
+    
+    /// <summary>
+    /// Общая стоимость оставшихся (future) заказов.
+    /// Рассчитывается динамически: sum(future orders prices)
+    /// </summary>
     public decimal? TotalPrice { get; set; }
+    
+    /// <summary>
+    /// Количество оставшихся дней (= FutureOrdersCount).
+    /// Это реальное количество будущих заказов, не календарные дни!
+    /// </summary>
     public int? RemainingDays { get; set; }
+    
+    /// <summary>
+    /// Общее количество дней подписки (все заказы не отменённые).
+    /// Рассчитывается динамически из Orders таблицы.
+    /// </summary>
     public int? TotalDays { get; set; }
     
     /// <summary>Тип графика: EVERY_DAY, EVERY_OTHER_DAY, CUSTOM</summary>
@@ -97,7 +117,10 @@ public class LunchSubscriptionInfo
     /// <summary>Выбранные даты для CUSTOM графика</summary>
     public List<string>? CustomDays { get; set; }
     
-    /// <summary>Количество будущих заказов (включая сегодня)</summary>
+    /// <summary>
+    /// Количество будущих заказов (включая сегодня) со статусом Active/Frozen.
+    /// Это и есть реальное "оставшееся количество дней" для UI.
+    /// </summary>
     public int FutureOrdersCount { get; set; }
     
     /// <summary>Количество выполненных заказов (Доставлен/Завершен)</summary>

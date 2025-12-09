@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { format, addDays, differenceInDays, startOfDay } from "date-fns";
 import { ru } from "date-fns/locale";
 import { DateRange } from "react-day-picker";
@@ -35,6 +35,7 @@ import { DaySelector } from "./day-selector";
 import { servicesApi, type ScheduleType, type ComboType } from "@/lib/api/services";
 import { employeesApi, type Employee, type EmployeeDetail, type DayOfWeek } from "@/lib/api/employees";
 import { COMBO_OPTIONS_EXTENDED } from "@/lib/config";
+import { useBusinessConfig } from "@/lib/hooks/use-business-config";
 
 interface LunchSubscriptionSummary {
   id: string;
@@ -100,6 +101,10 @@ export function ManageLunchDialog({
   open, onOpenChange, mode, employee, employees: propEmployees = [], existingSubscription, onSuccess,
 }: ManageLunchDialogProps) {
   const isEditing = Boolean(existingSubscription);
+  
+  // Business config for dynamic minDays validation
+  const { config: businessConfig } = useBusinessConfig();
+  const minSubscriptionDays = businessConfig.subscription.minDays;
   
   // Debug: логируем данные подписки при открытии
   useEffect(() => {
@@ -285,70 +290,13 @@ export function ManageLunchDialog({
     return count;
   }, [isEditing, existingSubscription?.totalDays, startDate, endDate, scheduleType, customDates, workingDays]);
 
-  // For bulk mode: calculate total price based on each employee's individual working days
-  const bulkCalculatedData = useMemo(() => {
-    if (mode !== "bulk" || !startDate || !endDate || selectedEmployeeIds.length === 0) {
-      return { totalDays: 0, totalPrice: 0 };
-    }
-    
-    let totalDays = 0;
-    let totalPrice = 0;
-    
-    for (const empId of selectedEmployeeIds) {
-      const emp = employees.find(e => e.id === empId);
-      if (!emp) continue;
-      
-      const empWorkDays = getEffectiveWorkingDays(emp.workingDays);
-      let days = 0;
-      
-      if (scheduleType === "CUSTOM") {
-        // FIXED: Считаем только дни из customDates, которые совпадают с рабочими днями сотрудника
-        days = customDates.filter(date => 
-          empWorkDays.includes(date.getDay() as DayOfWeek)
-        ).length;
-      } else if (scheduleType === "EVERY_DAY") {
-        days = countWorkingDaysInRange(empWorkDays, startDate, endDate);
-      } else {
-        // EVERY_OTHER_DAY
-        let current = new Date(startDate);
-        while (current <= endDate) {
-          const dow = current.getDay() as DayOfWeek;
-          if ([1, 3, 5].includes(dow) && empWorkDays.includes(dow)) days++;
-          current = addDays(current, 1);
-        }
-      }
-      
-      totalDays += days;
-      totalPrice += days * selectedCombo.price;
-    }
-    
-    return { totalDays, totalPrice };
-  }, [mode, startDate, endDate, selectedEmployeeIds, employees, scheduleType, customDates, selectedCombo.price]);
-
-  // Total price: use bulk calculation for bulk mode, simple calculation for individual
-  // При редактировании берём цену из БД если комбо не изменилось
-  const totalPrice = useMemo(() => {
-    if (mode === "bulk") {
-      return bulkCalculatedData.totalPrice;
-    }
-    
-    // При редактировании с тем же комбо - показываем реальную цену из БД
-    if (isEditing && existingSubscription?.totalPrice !== undefined && 
-        existingSubscription.comboType === comboType) {
-      return existingSubscription.totalPrice;
-    }
-    
-    // Иначе пересчитываем
-    return calculatedDays * selectedCombo.price;
-  }, [mode, bulkCalculatedData.totalPrice, isEditing, existingSubscription?.totalPrice, existingSubscription?.comboType, comboType, calculatedDays, selectedCombo.price]);
-
   // В individual mode блокируем весь процесс если сотрудник не подходит
   const canProceedStep1 = Boolean(comboType) && (mode !== "individual" || individualValidation.isValid);
   // FIXED: Check calculated WORKING days, not calendar days
   // calculatedDays respects employee's working days schedule
-  const canProceedStep2 = startDate && endDate && calculatedDays >= 5;
-  // canProceedStep3 defined below after scheduleTypeFilteredEmployees (dependency)
-  const canProceedStep4 = mode === "individual" || selectedEmployeeIds.length > 0;
+  // Uses dynamic minDays from business config instead of hardcoded value
+  const canProceedStep2 = startDate && endDate && calculatedDays >= minSubscriptionDays;
+  // canProceedStep3 and canProceedStep4 defined below after dependencies are declared
 
   // В bulk режиме показываем только сотрудников:
   // 1. Активных с принятым приглашением
@@ -435,23 +383,101 @@ export function ManageLunchDialog({
     e.fullName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // CRITICAL FIX: Sync selectedEmployeeIds when filters change
-  // Remove employees from selection if they no longer pass the filters
-  // Using Set of valid IDs for O(1) lookup
+  // ═══════════════════════════════════════════════════════════════
+  // IMPROVED: Don't auto-clear selection when filter changes
+  // Instead, calculate "invisible" selections and show UI warning
+  // ═══════════════════════════════════════════════════════════════
   const validEmployeeIdsSet = useMemo(
     () => new Set(shiftFilteredEmployees.map(e => e.id)),
     [shiftFilteredEmployees]
   );
   
-  useEffect(() => {
-    if (mode !== "bulk") return;
+  // Count selected employees that are NOT visible due to current shift filter
+  const invisibleSelectionCount = useMemo(() => {
+    if (mode !== "bulk") return 0;
+    return selectedEmployeeIds.filter(id => !validEmployeeIdsSet.has(id)).length;
+  }, [mode, selectedEmployeeIds, validEmployeeIdsSet]);
+  
+  // Count selected employees that ARE visible (match current shift filter)
+  const visibleSelectionCount = useMemo(() => {
+    if (mode !== "bulk") return 0;
+    return selectedEmployeeIds.filter(id => validEmployeeIdsSet.has(id)).length;
+  }, [mode, selectedEmployeeIds, validEmployeeIdsSet]);
+  
+  // Helper to clear only invisible selections (employees from other shift)
+  const clearInvisibleSelections = useCallback(() => {
+    setSelectedEmployeeIds(prev => prev.filter(id => validEmployeeIdsSet.has(id)));
+  }, [validEmployeeIdsSet]);
+
+  // For bulk mode: calculate total price based on each employee's individual working days
+  // CRITICAL: Only count employees that pass current shift filter (shiftFilteredEmployees)
+  // MOVED HERE: After shiftFilteredEmployees and visibleSelectionCount are declared
+  const bulkCalculatedData = useMemo(() => {
+    if (mode !== "bulk" || !startDate || !endDate || visibleSelectionCount === 0) {
+      return { totalDays: 0, totalPrice: 0 };
+    }
     
-    setSelectedEmployeeIds(prev => {
-      const filteredSelection = prev.filter(id => validEmployeeIdsSet.has(id));
-      // Only update if there are invalid selections to avoid infinite loops
-      return filteredSelection.length !== prev.length ? filteredSelection : prev;
-    });
-  }, [mode, validEmployeeIdsSet]);
+    // Get IDs of employees that pass current shift filter
+    const validIds = new Set(shiftFilteredEmployees.map(e => e.id));
+    
+    let totalDays = 0;
+    let totalPrice = 0;
+    
+    for (const empId of selectedEmployeeIds) {
+      // Skip employees from other shift
+      if (!validIds.has(empId)) continue;
+      
+      const emp = employees.find(e => e.id === empId);
+      if (!emp) continue;
+      
+      const empWorkDays = getEffectiveWorkingDays(emp.workingDays);
+      let days = 0;
+      
+      if (scheduleType === "CUSTOM") {
+        // FIXED: Считаем только дни из customDates, которые совпадают с рабочими днями сотрудника
+        days = customDates.filter(date => 
+          empWorkDays.includes(date.getDay() as DayOfWeek)
+        ).length;
+      } else if (scheduleType === "EVERY_DAY") {
+        days = countWorkingDaysInRange(empWorkDays, startDate, endDate);
+      } else {
+        // EVERY_OTHER_DAY
+        let current = new Date(startDate);
+        while (current <= endDate) {
+          const dow = current.getDay() as DayOfWeek;
+          if ([1, 3, 5].includes(dow) && empWorkDays.includes(dow)) days++;
+          current = addDays(current, 1);
+        }
+      }
+      
+      totalDays += days;
+      totalPrice += days * selectedCombo.price;
+    }
+    
+    return { totalDays, totalPrice };
+  }, [mode, startDate, endDate, selectedEmployeeIds, employees, scheduleType, customDates, selectedCombo.price, shiftFilteredEmployees, visibleSelectionCount]);
+
+  // Total price: use bulk calculation for bulk mode, simple calculation for individual
+  // При редактировании берём цену из БД если комбо не изменилось
+  // MOVED HERE: After bulkCalculatedData is declared
+  const totalPrice = useMemo(() => {
+    if (mode === "bulk") {
+      return bulkCalculatedData.totalPrice;
+    }
+    
+    // При редактировании с тем же комбо - показываем реальную цену из БД
+    if (isEditing && existingSubscription?.totalPrice !== undefined && 
+        existingSubscription.comboType === comboType) {
+      return existingSubscription.totalPrice;
+    }
+    
+    // Иначе пересчитываем
+    return calculatedDays * selectedCombo.price;
+  }, [mode, bulkCalculatedData.totalPrice, isEditing, existingSubscription?.totalPrice, existingSubscription?.comboType, comboType, calculatedDays, selectedCombo.price]);
+
+  // FIXED: Use visibleSelectionCount to only count employees matching current shift filter
+  // MOVED HERE: After visibleSelectionCount is declared
+  const canProceedStep4 = mode === "individual" || visibleSelectionCount > 0;
 
   // Подсчёт сотрудников для каждого типа графика (для отображения в UI)
   // CRITICAL: Эта логика должна быть идентична scheduleTypeFilteredEmployees!
@@ -565,28 +591,13 @@ export function ManageLunchDialog({
       // toISOString() would convert to UTC and potentially shift the date by -1 day
       const formatDate = (d: Date) => format(d, 'yyyy-MM-dd');
       
-      // CRITICAL FIX: Backend doesn't handle EVERY_OTHER_DAY properly!
-      // Convert EVERY_OTHER_DAY to CUSTOM with specific dates (Mon, Wed, Fri)
-      // This ensures correct order creation on backend
-      let effectiveScheduleType = scheduleType;
-      let effectiveCustomDays: string[] | undefined;
-      
-      if (scheduleType === "CUSTOM") {
-        effectiveCustomDays = customDates.map(d => formatDate(d));
-      } else if (scheduleType === "EVERY_OTHER_DAY") {
-        // Generate Mon, Wed, Fri dates in the period
-        effectiveScheduleType = "CUSTOM";
-        effectiveCustomDays = [];
-        let current = new Date(startDate);
-        while (current <= endDate) {
-          const dow = current.getDay() as DayOfWeek;
-          // Mon=1, Wed=3, Fri=5
-          if ([1, 3, 5].includes(dow) && workingDays.includes(dow)) {
-            effectiveCustomDays.push(formatDate(current));
-          }
-          current = addDays(current, 1);
-        }
-      }
+      // Backend now properly handles all schedule types:
+      // - EVERY_DAY: creates orders for all working days (Mon-Fri or employee's schedule)
+      // - EVERY_OTHER_DAY: creates orders only for Mon, Wed, Fri
+      // - CUSTOM: creates orders only for specified dates
+      const customDaysFormatted = scheduleType === "CUSTOM" 
+        ? customDates.map(d => formatDate(d)) 
+        : undefined;
       
       if (isEditing && existingSubscription) {
         // NOTE: Backend only supports updating comboType for existing subscriptions
@@ -596,13 +607,19 @@ export function ManageLunchDialog({
         });
         toast.success("Подписка обновлена");
       } else {
+        // CRITICAL: Filter selectedEmployeeIds by current shift filter to avoid sending
+        // employees from wrong shift that might still be in selection after filter change
+        const filteredEmployeeIds = mode === "individual" && employee 
+          ? [employee.id] 
+          : selectedEmployeeIds.filter(id => validEmployeeIdsSet.has(id));
+        
         const result = await servicesApi.createLunchSubscriptions({
-          employeeIds: mode === "individual" && employee ? [employee.id] : selectedEmployeeIds,
+          employeeIds: filteredEmployeeIds,
           comboType,
           startDate: formatDate(startDate),
           endDate: formatDate(endDate),
-          scheduleType: effectiveScheduleType,
-          customDays: effectiveCustomDays,
+          scheduleType: scheduleType,
+          customDays: customDaysFormatted,
         });
         
         if (result.errors && result.errors.length > 0) {
@@ -655,11 +672,17 @@ export function ManageLunchDialog({
     return { total, remaining };
   }, [existingSubscription, startDate, endDate, calculatedDays]);
 
-  // FIXED: При редактировании считаем цену только за ОСТАВШИЕСЯ дни, не за все
+  // FIXED: Use actual price from orders (backend calculates as sum of future order prices)
+  // This ensures accurate refund amount even if order prices vary
   const originalPriceForRemaining = useMemo(() => {
     if (!existingSubscription) return 0;
+    // Use totalPrice from backend - this is the SUM of actual future order prices!
+    // Backend calculates this as: futureOrders.Sum(o => o.Price)
+    if (existingSubscription.totalPrice !== undefined && existingSubscription.totalPrice !== null) {
+      return existingSubscription.totalPrice;
+    }
+    // Fallback to calculation if totalPrice not available
     const origCombo = COMBO_OPTIONS.find(c => c.value === existingSubscription.comboType);
-    // Цена за оставшиеся дни по текущему комбо
     return remainingDays.remaining * (origCombo?.price || 0);
   }, [existingSubscription, remainingDays.remaining]);
 
@@ -849,15 +872,16 @@ export function ManageLunchDialog({
                       "pt-3 mt-3 border-t text-sm font-medium",
                       priceDifference > 0 ? "text-orange-600" : "text-emerald-600"
                     )}>
+                      {/* NOTE: Backend updates order prices but doesn't charge/refund difference */}
                       {priceDifference > 0 
-                        ? `→ Доплата за ${remainingDays.remaining} дней: +${priceDifference.toLocaleString()} TJS`
-                        : `→ Возврат за ${remainingDays.remaining} дней: ${Math.abs(priceDifference).toLocaleString()} TJS`
+                        ? `→ Стоимость увеличится на ${priceDifference.toLocaleString()} TJS (цена заказов будет обновлена)`
+                        : `→ Стоимость уменьшится на ${Math.abs(priceDifference).toLocaleString()} TJS (цена заказов будет обновлена)`
                       }
                     </div>
                   )}
                   {priceDifference === 0 && existingSubscription?.comboType === comboType && (
                     <p className="text-xs text-muted-foreground pt-2 border-t mt-2">
-                      Комбо не изменён — доплата не требуется
+                      Комбо не изменён — цены остаются прежними
                     </p>
                   )}
                 </div>
@@ -876,7 +900,8 @@ export function ManageLunchDialog({
                         Возврат за {remainingDays.remaining} неиспользованных дней
                       </p>
                       <p className="text-sm font-medium text-emerald-600 mt-1">
-                        ≈ {originalPriceForRemaining.toLocaleString()} TJS к возврату
+                        {/* Use actual sum from backend, not estimate */}
+                        {originalPriceForRemaining.toLocaleString()} TJS к возврату
                       </p>
                     </div>
                     <Button 
@@ -1033,7 +1058,7 @@ export function ManageLunchDialog({
                       <span className="text-muted-foreground">|</span>
                       <span className="text-muted-foreground">Выбрано:</span>
                       <Badge variant="outline" className="font-semibold border-foreground/20">
-                        {selectedEmployeeIds.length}
+                        {visibleSelectionCount}
                       </Badge>
                     </>
                   )}
@@ -1106,17 +1131,17 @@ export function ManageLunchDialog({
                   <h2 className="text-xl font-semibold">Выберите период подписки</h2>
                   <p className={cn(
                     "text-sm font-medium transition-colors",
-                    totalDays >= 5 ? "text-amber-600" : "text-destructive"
+                    totalDays >= minSubscriptionDays ? "text-amber-600" : "text-destructive"
                   )}>
                     {startDate && endDate ? (
                       <>
                         {format(startDate, "d MMMM", { locale: ru })} — {format(endDate, "d MMMM yyyy", { locale: ru })}
                         <span className="mx-2 text-muted-foreground">•</span>
                         <span className="font-bold">{totalDays} дней</span>
-                        {totalDays < 5 && <span className="text-destructive ml-2">(мин. 5)</span>}
+                        {totalDays < minSubscriptionDays && <span className="text-destructive ml-2">(мин. {minSubscriptionDays})</span>}
                       </>
                     ) : (
-                      <span className="text-muted-foreground">Минимум 5 рабочих дней</span>
+                      <span className="text-muted-foreground">Минимум {minSubscriptionDays} рабочих дней</span>
                     )}
                   </p>
                 </div>
@@ -1374,9 +1399,33 @@ export function ManageLunchDialog({
                         Выберите сотрудников
                       </h3>
                       <Badge variant="secondary" className="font-semibold">
-                        {selectedEmployeeIds.length} выбрано
+                        {visibleSelectionCount} выбрано
                       </Badge>
                     </div>
+                    
+                    {/* Warning: invisible selections from other shift */}
+                    {invisibleSelectionCount > 0 && (
+                      <Alert className="border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20">
+                        <AlertTriangle className="h-4 w-4 text-amber-600" />
+                        <AlertDescription className="text-sm">
+                          <div className="flex items-center justify-between gap-2">
+                            <span>
+                              {invisibleSelectionCount} сотрудник{invisibleSelectionCount === 1 ? '' : invisibleSelectionCount < 5 ? 'а' : 'ов'} из{' '}
+                              {shiftFilter === 'DAY' ? 'ночной' : 'дневной'} смены не показан{invisibleSelectionCount === 1 ? '' : 'ы'}
+                            </span>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={clearInvisibleSelections}
+                              className="h-7 text-xs hover:bg-amber-100 dark:hover:bg-amber-900/30"
+                            >
+                              Сбросить
+                            </Button>
+                          </div>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                       <Input 
@@ -1461,7 +1510,7 @@ export function ManageLunchDialog({
                       <div className="flex justify-between pt-2 border-t">
                         <span className="text-muted-foreground">Дней доставки</span>
                         <Badge className="bg-amber-500 text-white">
-                          {mode === "bulk" && selectedEmployeeIds.length > 0 
+                          {mode === "bulk" && visibleSelectionCount > 0 
                             ? `${bulkCalculatedData.totalDays} (сумм.)`
                             : calculatedDays
                           }
@@ -1539,7 +1588,7 @@ export function ManageLunchDialog({
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Выбрано</span>
-                          <Badge variant="secondary" className="font-semibold">{selectedEmployeeIds.length}</Badge>
+                          <Badge variant="secondary" className="font-semibold">{visibleSelectionCount}</Badge>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Доступно (по смене)</span>
@@ -1591,7 +1640,7 @@ export function ManageLunchDialog({
                         {totalPrice.toLocaleString()} <span className="text-xl font-semibold text-muted-foreground">TJS</span>
                       </p>
                       <p className="text-sm text-muted-foreground mt-1">
-                        {mode === "bulk" && selectedEmployeeIds.length > 0 
+                        {mode === "bulk" && visibleSelectionCount > 0 
                           ? `${bulkCalculatedData.totalDays} дней (суммарно) × ${selectedCombo.price} TJS`
                           : `${calculatedDays} дней × ${selectedCombo.price} TJS`
                         }
@@ -1604,8 +1653,8 @@ export function ManageLunchDialog({
                 <Alert className="border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/20">
                   <AlertTriangle className="h-4 w-4 text-amber-600" />
                   <AlertDescription className="text-sm text-amber-800 dark:text-amber-200">
-                    После создания подписки сотрудник{mode === "bulk" && selectedEmployeeIds.length > 1 ? "и" : ""} не 
-                    сможет{mode === "bulk" && selectedEmployeeIds.length > 1 ? "ут" : ""} использовать компенсацию 
+                    После создания подписки сотрудник{mode === "bulk" && visibleSelectionCount > 1 ? "и" : ""} не 
+                    сможет{mode === "bulk" && visibleSelectionCount > 1 ? "ут" : ""} использовать компенсацию 
                     до её завершения
                   </AlertDescription>
                 </Alert>

@@ -6,6 +6,15 @@ import type { ServiceType, DayOfWeek } from './employees'
 export type ScheduleType = 'EVERY_DAY' | 'EVERY_OTHER_DAY' | 'CUSTOM'
 export type ComboType = 'Комбо 25' | 'Комбо 35'
 
+/**
+ * Lunch subscription status type.
+ * Backend returns Russian statuses:
+ * - "Активна" - Active (operational, can receive orders)
+ * - "Приостановлена" - Paused (temporarily, can be resumed)
+ * - "Завершена" - Completed (permanently, cannot be resumed - must create new subscription)
+ */
+export type LunchSubscriptionStatus = 'Активна' | 'Приостановлена' | 'Завершена'
+
 export interface LunchSubscription {
   id: string
   employeeId: string
@@ -14,9 +23,19 @@ export interface LunchSubscription {
   endDate: string
   scheduleType: ScheduleType
   customDays?: string[] // ISO date strings for custom schedule
-  addressId?: string
-  // Backend returns Russian statuses: "Активна", "Приостановлена", "Завершена"
-  status: string
+  
+  // Address is now derived from Project (delivery_address_id is deprecated)
+  projectId?: string
+  projectName?: string
+  deliveryAddress?: string
+  
+  /**
+   * Subscription status (Russian):
+   * - "Активна" - Active
+   * - "Приостановлена" - Paused (temporary)
+   * - "Завершена" - Completed (terminal state)
+   */
+  status: LunchSubscriptionStatus | string
   totalDays: number
   // NOTE: Backend returns 'totalPrice', not 'totalAmount'
   totalPrice: number
@@ -31,14 +50,14 @@ export interface CreateLunchSubscriptionRequest {
   endDate: string
   scheduleType: ScheduleType
   customDays?: string[]
-  addressId?: string
+  // NOTE: Address is derived from Employee's Project - no addressId needed
 }
 
 export interface UpdateLunchSubscriptionRequest {
   comboType?: ComboType
   scheduleType?: ScheduleType
   customDays?: string[]
-  addressId?: string
+  // NOTE: Address is derived from Employee's Project - cannot be changed here
 }
 
 export interface LunchSubscriptionResponse {

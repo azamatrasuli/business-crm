@@ -10,6 +10,7 @@ import { useProjectsStore } from '@/stores/projects-store'
 import type { Employee } from '@/lib/api/employees'
 import type { ActiveFilter } from '@/components/ui/filter-builder'
 import { debounce } from 'lodash-es'
+import { INVITE_STATUS, ORDER_STATUS } from '@/lib/constants/entity-statuses'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -188,13 +189,14 @@ export function useEmployeesPage(): UseEmployeesPageReturn {
         : 0
 
     // Invite stats
-    const acceptedInvites = employees.filter((e) => e.inviteStatus === 'Принято').length
-    const pendingInvites = employees.filter((e) => e.inviteStatus === 'Ожидает').length
-    const rejectedInvites = employees.filter((e) => e.inviteStatus === 'Отклонено').length
+    const acceptedInvites = employees.filter((e) => e.inviteStatus === INVITE_STATUS.ACCEPTED || e.inviteStatus === 'Принято').length
+    const pendingInvites = employees.filter((e) => e.inviteStatus === INVITE_STATUS.PENDING || e.inviteStatus === 'Ожидает').length
+    const rejectedInvites = employees.filter((e) => e.inviteStatus === INVITE_STATUS.REJECTED || e.inviteStatus === 'Отклонено').length
 
     // Meal stats
-    const activeMeals = employees.filter((e) => e.mealStatus === 'Активен').length
-    const pausedMeals = employees.filter((e) => e.mealStatus === 'На паузе').length
+    // 'На паузе' is DEPRECATED, use 'Приостановлен'
+    const activeMeals = employees.filter((e) => e.mealStatus === ORDER_STATUS.ACTIVE || e.mealStatus === 'Активен').length
+    const pausedMeals = employees.filter((e) => e.mealStatus === ORDER_STATUS.PAUSED || e.mealStatus === 'Приостановлен' || e.mealStatus === 'На паузе').length
     const noMeals = employees.filter(
       (e) => !e.mealStatus || e.mealStatus === 'Не заказан'
     ).length
@@ -211,9 +213,9 @@ export function useEmployeesPage(): UseEmployeesPageReturn {
     ]
 
     const inviteChartData = [
-      { name: 'Принято', value: acceptedInvites, fill: '#10b981' },
-      { name: 'Ожидает', value: pendingInvites, fill: '#f59e0b' },
-      { name: 'Отклонено', value: rejectedInvites, fill: '#ef4444' },
+      { name: INVITE_STATUS.ACCEPTED, value: acceptedInvites, fill: '#10b981' },
+      { name: INVITE_STATUS.PENDING, value: pendingInvites, fill: '#f59e0b' },
+      { name: INVITE_STATUS.REJECTED, value: rejectedInvites, fill: '#ef4444' },
     ]
 
     const serviceChartData = [

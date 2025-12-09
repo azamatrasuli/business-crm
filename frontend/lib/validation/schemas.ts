@@ -164,7 +164,8 @@ export const createGuestOrderSchema = z.object({
 export const updateSubscriptionSchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
-  status: z.enum(['Активен', 'На паузе', 'Завершен']).optional(),
+  // Order status: synced with PostgreSQL enum (+ DEPRECATED legacy 'На паузе', 'Завершен')
+  status: z.enum(['Активен', 'Приостановлен', 'Заморожен', 'Выходной', 'Доставлен', 'Выполнен', 'Отменён', 'На паузе', 'Завершен']).optional(),
   comboType: z.string().optional(),
 })
 
@@ -172,7 +173,8 @@ export const bulkUpdateSubscriptionSchema = z.object({
   employeeIds: z.array(uuidField).min(1, 'Выберите хотя бы одного сотрудника'),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
-  status: z.enum(['Активен', 'На паузе', 'Завершен']).optional(),
+  // Order status: synced with PostgreSQL enum (+ DEPRECATED legacy 'На паузе', 'Завершен')
+  status: z.enum(['Активен', 'Приостановлен', 'Заморожен', 'Выходной', 'Доставлен', 'Выполнен', 'Отменён', 'На паузе', 'Завершен']).optional(),
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════

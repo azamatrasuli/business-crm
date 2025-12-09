@@ -13,7 +13,9 @@ import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import { toast } from 'sonner'
 import { COMBO_OPTIONS_EXTENDED } from '@/lib/config'
+import { INVITE_STATUS } from '@/lib/constants/entity-statuses'
 import { DEFAULT_WORKING_DAYS, getEffectiveWorkingDays, countWorkingDaysInRange } from '@/lib/constants/employee'
+import { useBusinessConfig } from './use-business-config'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -91,6 +93,11 @@ export interface UseLunchSubscriptionFormReturn {
   availableEmployees: Employee[]
   filteredEmployees: Employee[]
   isLoadingEmployees: boolean
+  
+  // Shift filter helpers
+  invisibleSelectionCount: number
+  visibleSelectionCount: number
+  clearInvisibleSelections: () => void
 
   // Submission
   isSubmitting: boolean
@@ -122,6 +129,10 @@ export function useLunchSubscriptionForm({
   onSuccess,
 }: UseLunchSubscriptionFormProps): UseLunchSubscriptionFormReturn {
   const isEditing = Boolean(existingSubscription)
+
+  // Business config for dynamic minDays validation
+  const { config: businessConfig } = useBusinessConfig()
+  const minSubscriptionDays = businessConfig.subscription.minDays
 
   // Step management
   const [step, setStep] = useState(1)
@@ -276,24 +287,10 @@ export function useLunchSubscriptionForm({
 
   const canProceedStep1 = Boolean(comboType) && (mode !== 'individual' || individualValidation.isValid)
   // FIXED: Use calculated WORKING days, not calendar days
-  const canProceedStep2 = Boolean(startDate && endDate && calculatedDays >= 5)
+  // Uses dynamic minDays from business config instead of hardcoded value
+  const canProceedStep2 = Boolean(startDate && endDate && calculatedDays >= minSubscriptionDays)
   const canProceedStep3 = scheduleType !== 'CUSTOM' || customDates.length > 0
-  const canProceedStep4 = mode === 'individual' || selectedEmployeeIds.length > 0
-
-  const canProceed = useMemo(() => {
-    switch (step) {
-      case 1:
-        return canProceedStep1
-      case 2:
-        return canProceedStep2
-      case 3:
-        return canProceedStep3
-      case 4:
-        return canProceedStep4
-      default:
-        return false
-    }
-  }, [step, canProceedStep1, canProceedStep2, canProceedStep3, canProceedStep4])
+  // canProceedStep4 defined below after visibleSelectionCount
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Employee Filtering
@@ -303,7 +300,7 @@ export function useLunchSubscriptionForm({
     () =>
       employees.filter((e) => {
         if (!e.isActive) return false
-        if (e.inviteStatus !== 'Принято') return false
+        if (e.inviteStatus !== INVITE_STATUS.ACCEPTED && e.inviteStatus !== 'Принято') return false
         if (e.activeLunchSubscriptionId) return false
         if (e.serviceType !== 'LUNCH') return false
 
@@ -338,22 +335,50 @@ export function useLunchSubscriptionForm({
     return filtered
   }, [availableEmployees, shiftFilter, searchQuery])
 
-  // CRITICAL FIX: Sync selectedEmployeeIds when filters change
-  // Remove employees from selection if they no longer pass the filters
+  // ═══════════════════════════════════════════════════════════════
+  // IMPROVED: Don't auto-clear selection when filter changes
+  // Instead, calculate "invisible" selections for UI warning
+  // ═══════════════════════════════════════════════════════════════
   const validEmployeeIdsSet = useMemo(
     () => new Set(filteredEmployees.map(e => e.id)),
     [filteredEmployees]
   )
+  
+  // Count selected employees that are NOT visible due to current shift filter
+  const invisibleSelectionCount = useMemo(() => {
+    if (mode !== 'bulk') return 0
+    return selectedEmployeeIds.filter(id => !validEmployeeIdsSet.has(id)).length
+  }, [mode, selectedEmployeeIds, validEmployeeIdsSet])
+  
+  // Count selected employees that ARE visible (match current shift filter)
+  const visibleSelectionCount = useMemo(() => {
+    if (mode !== 'bulk') return 0
+    return selectedEmployeeIds.filter(id => validEmployeeIdsSet.has(id)).length
+  }, [mode, selectedEmployeeIds, validEmployeeIdsSet])
+  
+  // Helper to clear only invisible selections (employees from other shift)
+  const clearInvisibleSelections = useCallback(() => {
+    setSelectedEmployeeIds(prev => prev.filter(id => validEmployeeIdsSet.has(id)))
+  }, [validEmployeeIdsSet])
 
-  useEffect(() => {
-    if (mode !== 'bulk') return
-    
-    setSelectedEmployeeIds(prev => {
-      const filteredSelection = prev.filter(id => validEmployeeIdsSet.has(id))
-      // Only update if there are invalid selections to avoid infinite loops
-      return filteredSelection.length !== prev.length ? filteredSelection : prev
-    })
-  }, [mode, validEmployeeIdsSet])
+  // FIXED: Use visibleSelectionCount to only count employees matching current shift filter
+  // MOVED HERE: After visibleSelectionCount is declared
+  const canProceedStep4 = mode === 'individual' || visibleSelectionCount > 0
+
+  const canProceed = useMemo(() => {
+    switch (step) {
+      case 1:
+        return canProceedStep1
+      case 2:
+        return canProceedStep2
+      case 3:
+        return canProceedStep3
+      case 4:
+        return canProceedStep4
+      default:
+        return false
+    }
+  }, [step, canProceedStep1, canProceedStep2, canProceedStep3, canProceedStep4])
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Step Navigation
@@ -380,38 +405,28 @@ export function useLunchSubscriptionForm({
 
     setIsSubmitting(true)
     try {
-      const employeeIds = mode === 'individual' && employee ? [employee.id] : selectedEmployeeIds
+      // CRITICAL: Filter selectedEmployeeIds by current shift filter to avoid sending
+      // employees from wrong shift that might still be in selection after filter change
+      const employeeIds = mode === 'individual' && employee 
+        ? [employee.id] 
+        : selectedEmployeeIds.filter(id => validEmployeeIdsSet.has(id))
 
       // IMPORTANT: Use local date formatting to avoid timezone shift
       const formatDateLocal = (d: Date) => format(d, 'yyyy-MM-dd')
       
-      // CRITICAL FIX: Backend doesn't handle EVERY_OTHER_DAY properly!
-      // Convert EVERY_OTHER_DAY to CUSTOM with specific dates (Mon, Wed, Fri)
-      let effectiveScheduleType = scheduleType
-      let effectiveCustomDays: string[] | undefined
-      
-      if (scheduleType === 'CUSTOM') {
-        effectiveCustomDays = customDates.map((d) => formatDateLocal(d))
-      } else if (scheduleType === 'EVERY_OTHER_DAY') {
-        // Generate Mon, Wed, Fri dates in the period
-        effectiveScheduleType = 'CUSTOM'
-        effectiveCustomDays = []
-        let current = new Date(startDate)
-        while (current <= endDate) {
-          const dow = current.getDay() as DayOfWeek
-          // Mon=1, Wed=3, Fri=5
-          if ([1, 3, 5].includes(dow) && workingDays.includes(dow)) {
-            effectiveCustomDays.push(formatDateLocal(current))
-          }
-          current = addDays(current, 1)
-        }
-      }
+      // Backend now properly handles all schedule types:
+      // - EVERY_DAY: creates orders for all working days (Mon-Fri or employee's schedule)
+      // - EVERY_OTHER_DAY: creates orders only for Mon, Wed, Fri
+      // - CUSTOM: creates orders only for specified dates
+      const customDaysFormatted = scheduleType === 'CUSTOM' 
+        ? customDates.map((d) => formatDateLocal(d)) 
+        : undefined
       
       if (isEditing && existingSubscription) {
         await servicesApi.updateLunchSubscription(existingSubscription.id, {
           comboType,
-          scheduleType: effectiveScheduleType,
-          customDays: effectiveCustomDays,
+          scheduleType: scheduleType,
+          customDays: customDaysFormatted,
         })
         toast.success('Подписка обновлена')
       } else {
@@ -420,8 +435,8 @@ export function useLunchSubscriptionForm({
           comboType,
           startDate: formatDateLocal(startDate),
           endDate: formatDateLocal(endDate),
-          scheduleType: effectiveScheduleType,
-          customDays: effectiveCustomDays,
+          scheduleType: scheduleType,
+          customDays: customDaysFormatted,
         })
         toast.success(
           employeeIds.length === 1
@@ -541,6 +556,11 @@ export function useLunchSubscriptionForm({
     availableEmployees,
     filteredEmployees,
     isLoadingEmployees,
+    
+    // Shift filter helpers
+    invisibleSelectionCount,
+    visibleSelectionCount,
+    clearInvisibleSelections,
 
     // Submission
     isSubmitting,

@@ -30,7 +30,7 @@ public class ProjectsService : IProjectsService
                 p.OverdraftLimit,
                 p.CurrencyCode,
                 p.CutoffTime,
-                Status = p.Status.ToDatabase(),
+                Status = p.Status.ToRussian(),
                 p.ServiceTypes,
                 p.IsHeadquarters,
                 
@@ -127,9 +127,26 @@ public class ProjectsService : IProjectsService
         if (project == null)
             return null;
 
-        // NOTE: Address is IMMUTABLE - cannot be changed after creation
-        // If address needs to change, create a new project
+        // ═══════════════════════════════════════════════════════════════
+        // ADDRESS UPDATE
+        // Allow updating address to fill in missing data or correct errors.
+        // For complete address relocation, consider creating a new project.
+        // ═══════════════════════════════════════════════════════════════
+        if (request.AddressName != null)
+            project.AddressName = request.AddressName;
         
+        if (request.AddressFullAddress != null)
+            project.AddressFullAddress = request.AddressFullAddress;
+        
+        if (request.AddressLatitude.HasValue)
+            project.AddressLatitude = request.AddressLatitude.Value;
+        
+        if (request.AddressLongitude.HasValue)
+            project.AddressLongitude = request.AddressLongitude.Value;
+        
+        // ═══════════════════════════════════════════════════════════════
+        // OTHER FIELDS
+        // ═══════════════════════════════════════════════════════════════
         if (request.Name != null)
             project.Name = request.Name;
         
@@ -143,7 +160,7 @@ public class ProjectsService : IProjectsService
             project.CurrencyCode = request.CurrencyCode;
         
         if (request.Status != null)
-            project.Status = CompanyStatusExtensions.FromDatabase(request.Status.ToUpperInvariant());
+            project.Status = CompanyStatusExtensions.FromRussian(request.Status);
         
         if (request.Timezone != null)
             project.Timezone = request.Timezone;
@@ -233,7 +250,7 @@ public class ProjectsService : IProjectsService
             project.Budget,
             project.OverdraftLimit,
             project.CurrencyCode,
-            project.Status.ToDatabase(),
+            project.Status.ToRussian(),
             project.Timezone,
             project.CutoffTime,
             project.ServiceTypes,

@@ -53,8 +53,22 @@ export type ServiceType = 'LUNCH' | 'COMPENSATION'
 /** Shift type for employees */
 export type ShiftType = 'DAY' | 'NIGHT'
 
-/** Order status */
-export type OrderStatus = 'Активен' | 'На паузе' | 'Отменён' | 'Завершен'
+/** 
+ * Order status 
+ * Synced with PostgreSQL enum order_status:
+ * {Активен, Выполнен, Отменён, Заморожен, Приостановлен, Выходной, Доставлен}
+ */
+export type OrderStatus = 
+  | 'Активен'       // Active order, ready for delivery
+  | 'Приостановлен' // Paused (subscription paused)
+  | 'Заморожен'     // Frozen (day skipped)
+  | 'Выходной'      // Day off
+  | 'Доставлен'     // Delivered (new terminal status)
+  | 'Выполнен'      // Completed (legacy DB value)
+  | 'Отменён'       // Cancelled
+  // DEPRECATED: Legacy UI values (for backward compatibility only)
+  | 'На паузе'      // DEPRECATED: Use 'Приостановлен' instead
+  | 'Завершен'      // DEPRECATED: Use 'Выполнен' instead
 
 /** Employee invite status */
 export type InviteStatus = 'Принято' | 'Ожидает' | 'Отклонено'

@@ -165,7 +165,8 @@ const ERROR_MESSAGES: Record<string, string> = {
 
   [ErrorCodes.BUDGET_INSUFFICIENT]: 'Недостаточно бюджета',
 
-  [ErrorCodes.SUB_MIN_DAYS_REQUIRED]: 'Минимальный период подписки — 5 дней',
+  // Fallback message - actual minDays comes from backend config in error response
+  [ErrorCodes.SUB_MIN_DAYS_REQUIRED]: 'Минимальный период подписки не соблюдён',
   [ErrorCodes.SUB_PAST_DATE_NOT_ALLOWED]: 'Нельзя создать подписку на прошедшие даты',
 
   [ErrorCodes.INTERNAL_ERROR]: 'Произошла внутренняя ошибка. Попробуйте позже',

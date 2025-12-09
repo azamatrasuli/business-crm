@@ -12,7 +12,10 @@ import {
 import type { ActiveFilter } from '@/components/ui/filter-builder'
 import { getErrorMessage } from './utils'
 
-type StatusFilter = 'all' | 'Активен' | 'На паузе' | 'Завершен'
+// Order status filter type - includes both new and legacy values
+// Synced with PostgreSQL enum: {Активен, Выполнен, Отменён, Заморожен, Приостановлен, Выходной, Доставлен}
+// NOTE: 'На паузе' is DEPRECATED, use 'Приостановлен'
+type StatusFilter = 'all' | 'Активен' | 'Приостановлен' | 'Заморожен' | 'Выходной' | 'Доставлен' | 'Выполнен' | 'На паузе' | 'Завершен' | 'Отменён'
 type TypeFilter = 'all' | 'Сотрудник' | 'Гость'
 
 interface OrdersFilter {
@@ -20,6 +23,8 @@ interface OrdersFilter {
   date: string | null
   projectId: string
   type: TypeFilter
+  serviceType?: 'LUNCH' | 'COMPENSATION'
+  comboType?: string
 }
 
 interface HomeState {
@@ -86,6 +91,16 @@ const parseActiveFilters = (filters: ActiveFilter[]): Partial<OrdersFilter> => {
           result.projectId = filter.value as string
         }
         break
+      case 'serviceType':
+        if (filter.value && filter.value !== 'all') {
+          result.serviceType = filter.value as 'LUNCH' | 'COMPENSATION'
+        }
+        break
+      case 'comboType':
+        if (filter.value && filter.value !== 'all') {
+          result.comboType = filter.value as string
+        }
+        break
     }
   }
   
@@ -130,7 +145,9 @@ export const useHomeStore = create<HomeState>((set, get) => ({
         parsedFilters.status || undefined,
         parsedFilters.date || undefined,
         normalizeProjectFilter(parsedFilters.projectId || 'all'),
-        parsedFilters.type || undefined
+        parsedFilters.type || undefined,
+        parsedFilters.serviceType || undefined,
+        parsedFilters.comboType || undefined
       )
 
       // Enrich orders with serviceType (ensure LUNCH for orders with comboType)

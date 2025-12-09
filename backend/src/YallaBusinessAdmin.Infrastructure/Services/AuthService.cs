@@ -480,7 +480,7 @@ public class AuthService : IAuthService
                 Id = user.Company.Id,
                 Name = user.Company.Name,
                 Budget = user.Company.Budget,
-                Status = user.Company.Status.ToDatabase(),
+                Status = user.Company.Status.ToRussian(),
                 CurrencyCode = user.Company.CurrencyCode,
                 Timezone = user.Company.Timezone,
                 CutoffTime = user.Company.CutoffTime
@@ -490,7 +490,7 @@ public class AuthService : IAuthService
                 Id = user.Project.Id,
                 Name = user.Project.Name,
                 Budget = user.Project.Budget,
-                Status = user.Project.Status.ToDatabase(),
+                Status = user.Project.Status.ToRussian(),
                 ServiceTypes = user.Project.ServiceTypes,
                 IsHeadquarters = user.Project.IsHeadquarters,
                 CurrencyCode = user.Project.CurrencyCode,

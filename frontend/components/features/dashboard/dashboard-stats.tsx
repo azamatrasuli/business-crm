@@ -225,7 +225,7 @@ function GuestOrdersCard({ dashboard }: DashboardStatsProps) {
                 <Pie
                   data={[
                     { name: 'Активные', value: dashboard.activeGuestOrders, fill: '#f97316' },
-                    { name: 'На паузе', value: dashboard.pausedGuestOrders, fill: '#fb923c' },
+                    { name: 'Приостановлен', value: dashboard.pausedGuestOrders, fill: '#fb923c' },
                   ]}
                   cx="50%"
                   cy="50%"
@@ -256,7 +256,7 @@ function GuestOrdersCard({ dashboard }: DashboardStatsProps) {
           <div className="rounded-lg border bg-orange-500/10 p-1.5">
             <div className="flex items-center gap-1 mb-0.5">
               <div className="h-1.5 w-1.5 rounded-full bg-orange-500" />
-              <span className="text-[10px] text-muted-foreground">На паузе</span>
+              <span className="text-[10px] text-muted-foreground">Приостановлено</span>
             </div>
             <p className="text-sm font-bold">{dashboard.pausedGuestOrders}</p>
             <p className="text-[10px] text-muted-foreground mt-0.5">{pausedGuestPercentage.toFixed(0)}%</p>

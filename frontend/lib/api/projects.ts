@@ -85,6 +85,12 @@ export interface CreateProjectRequest {
 
 export interface UpdateProjectRequest {
   name?: string;
+  // Address fields - can be updated to fill in missing data
+  addressName?: string;
+  addressFullAddress?: string;
+  addressLatitude?: number | null;
+  addressLongitude?: number | null;
+  // Finance & settings
   budget?: number;
   overdraftLimit?: number;
   currencyCode?: string;
@@ -94,6 +100,21 @@ export interface UpdateProjectRequest {
   serviceTypes?: ('LUNCH' | 'COMPENSATION')[];
   compensationDailyLimit?: number;
   compensationRollover?: boolean;
+}
+
+/**
+ * Check if project has valid delivery address.
+ * Projects without full address cannot have orders created.
+ */
+export function hasValidAddress(project: { addressFullAddress?: string | null }): boolean {
+  return !!project.addressFullAddress && project.addressFullAddress.trim().length > 0;
+}
+
+/**
+ * Check if project list item has valid delivery address.
+ */
+export function projectHasValidAddress(project: ProjectListItem | Project): boolean {
+  return hasValidAddress(project);
 }
 
 // API calls

@@ -114,7 +114,7 @@ public class EmployeeOrderHistoryService : IEmployeeOrderHistoryService
                 Id = ct.Id,
                 Date = ct.TransactionDate.ToString("yyyy-MM-dd"),
                 Type = "Сотрудник",
-                Status = "Завершен",
+                Status = OrderStatus.Delivered.ToRussian(),  // Compensation transactions are always delivered
                 Amount = ct.TotalAmount,
                 Address = ct.RestaurantName ?? "",
                 ServiceType = "COMPENSATION",

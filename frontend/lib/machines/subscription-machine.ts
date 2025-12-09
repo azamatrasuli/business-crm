@@ -333,9 +333,24 @@ export function createSubscriptionMachine(
 
 /**
  * Map API status to machine state.
+ * Supports both Russian (from backend) and English status values.
  */
 export function mapApiStatusToState(apiStatus: string): SubscriptionState {
-  const statusMap: Record<string, SubscriptionState> = {
+  // Russian status map (from backend)
+  const russianStatusMap: Record<string, SubscriptionState> = {
+    'Активна': 'active',
+    'Активный': 'active',
+    'Приостановлена': 'paused',
+    'На паузе': 'paused',  // DEPRECATED: Legacy alias
+    'Завершена': 'completed',
+    'Завершен': 'completed',
+    'Отменена': 'cancelled',
+    'Истекла': 'expired',
+    'Заморожена': 'frozen',
+  }
+  
+  // English status map (for compatibility)
+  const englishStatusMap: Record<string, SubscriptionState> = {
     PENDING: 'pending',
     ACTIVE: 'active',
     PAUSED: 'paused',
@@ -344,7 +359,9 @@ export function mapApiStatusToState(apiStatus: string): SubscriptionState {
     CANCELLED: 'cancelled',
     COMPLETED: 'completed',
   }
-  return statusMap[apiStatus.toUpperCase()] || 'pending'
+  
+  // Check Russian first, then English
+  return russianStatusMap[apiStatus] || englishStatusMap[apiStatus.toUpperCase()] || 'pending'
 }
 
 /**
@@ -354,7 +371,7 @@ export function getStateLabel(state: SubscriptionState): string {
   const labels: Record<SubscriptionState, string> = {
     pending: 'Ожидает активации',
     active: 'Активна',
-    paused: 'На паузе',
+    paused: 'Приостановлена',  // NOTE: "На паузе" is deprecated
     frozen: 'Заморожена',
     expired: 'Истекла',
     cancelled: 'Отменена',

@@ -150,7 +150,8 @@ public static class ErrorMessages
 
         // Subscription
         [ErrorCodes.SUB_NOT_FOUND] = "Подписка не найдена",
-        [ErrorCodes.SUB_MIN_DAYS_REQUIRED] = "Минимальный период подписки — 5 дней",
+        // Note: fallback message - actual minDays is loaded from config and included in thrown exception
+        [ErrorCodes.SUB_MIN_DAYS_REQUIRED] = "Минимальный период подписки не соблюдён",
         [ErrorCodes.SUB_PAST_DATE_NOT_ALLOWED] = "Нельзя создать подписку на прошедшие даты",
         [ErrorCodes.SUB_ALREADY_PAUSED] = "Подписка уже приостановлена",
         [ErrorCodes.SUB_ALREADY_ACTIVE] = "Подписка уже активна",

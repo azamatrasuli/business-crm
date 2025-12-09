@@ -9,6 +9,7 @@ import { useEmployeesStore } from '@/stores/employees-store'
 import { employeesApi, type EmployeeOrder, type DayOfWeek, type EmployeeDetail } from '@/lib/api/employees'
 import { differenceInDays, parseISO, isAfter, getDay } from 'date-fns'
 import { getEffectiveWorkingDays, countWorkingDaysInRange } from '@/lib/constants/employee'
+import { INVITE_STATUS } from '@/lib/constants/entity-statuses'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -145,7 +146,7 @@ export function useEmployeeDetail(employeeId: string): UseEmployeeDetailReturn {
   // ─────────────────────────────────────────────────────────────────────────────
 
   const canEdit = Boolean(employee?.isActive)
-  const hasAcceptedInvite = employee?.inviteStatus === 'Принято'
+  const hasAcceptedInvite = employee?.inviteStatus === INVITE_STATUS.ACCEPTED || employee?.inviteStatus === 'Принято'
   const canManageBudget = Boolean(employee?.isActive && hasAcceptedInvite)
 
   const hasActiveLunch = Boolean(employee?.activeLunchSubscriptionId)

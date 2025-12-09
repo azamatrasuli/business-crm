@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { DayOfWeek } from "@/lib/api/employees";
 import { DEFAULT_WORKING_DAYS } from "@/lib/constants/employee";
+import { getServerToday } from "@/lib/utils/date";
 
 interface DaySelectorProps {
   startDate: Date;
@@ -44,7 +45,8 @@ export function DaySelector({
   employeeWorkingDays = DEFAULT_WORKING_DAYS,
   className,
 }: DaySelectorProps) {
-  const today = startOfDay(new Date());
+  // FIXED: Use server timezone (Asia/Dushanbe) for consistent date comparisons
+  const today = getServerToday();
 
   // Generate weeks between start and end date
   const weeks = useMemo(() => {

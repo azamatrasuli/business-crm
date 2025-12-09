@@ -7,6 +7,7 @@ import { useHomeStore } from '@/stores/home-store'
 import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import { formatISODate } from '@/lib/utils/date'
+import { ORDER_STATUS } from '@/lib/constants/entity-statuses'
 import {
   Users,
   UtensilsCrossed,
@@ -82,8 +83,8 @@ const ACTION_OPTIONS: ActionOption[] = [
     icon: <PauseCircle className="h-5 w-5" />,
     color: 'text-orange-600',
     bgColor: 'bg-orange-50 dark:bg-orange-950/30',
-    available: (orders) => orders.some(o => o.status === 'Активен' && (o.serviceType === 'LUNCH' || !o.serviceType)),
-    getApplicableCount: (orders) => orders.filter(o => o.status === 'Активен' && (o.serviceType === 'LUNCH' || !o.serviceType)).length,
+    available: (orders) => orders.some(o => (o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен') && (o.serviceType === 'LUNCH' || !o.serviceType)),
+    getApplicableCount: (orders) => orders.filter(o => (o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен') && (o.serviceType === 'LUNCH' || !o.serviceType)).length,
   },
   {
     id: 'resume',
@@ -92,8 +93,9 @@ const ACTION_OPTIONS: ActionOption[] = [
     icon: <PlayCircle className="h-5 w-5" />,
     color: 'text-green-600',
     bgColor: 'bg-green-50 dark:bg-green-950/30',
-    available: (orders) => orders.some(o => o.status === 'На паузе' && (o.serviceType === 'LUNCH' || !o.serviceType)),
-    getApplicableCount: (orders) => orders.filter(o => o.status === 'На паузе' && (o.serviceType === 'LUNCH' || !o.serviceType)).length,
+    // 'На паузе' is DEPRECATED, use 'Приостановлен'
+    available: (orders) => orders.some(o => (o.status === ORDER_STATUS.PAUSED || o.status === 'Приостановлен' || o.status === 'На паузе') && (o.serviceType === 'LUNCH' || !o.serviceType)),
+    getApplicableCount: (orders) => orders.filter(o => (o.status === ORDER_STATUS.PAUSED || o.status === 'Приостановлен' || o.status === 'На паузе') && (o.serviceType === 'LUNCH' || !o.serviceType)).length,
   },
   {
     id: 'freeze',
@@ -102,8 +104,8 @@ const ACTION_OPTIONS: ActionOption[] = [
     icon: <Snowflake className="h-5 w-5" />,
     color: 'text-cyan-600',
     bgColor: 'bg-cyan-50 dark:bg-cyan-950/30',
-    available: (orders, isToday) => isToday && orders.some(o => o.status === 'Активен'),
-    getApplicableCount: (orders) => orders.filter(o => o.status === 'Активен').length,
+    available: (orders, isToday) => isToday && orders.some(o => o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен'),
+    getApplicableCount: (orders) => orders.filter(o => o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен').length,
   },
   {
     id: 'cancel',
@@ -163,8 +165,9 @@ export function BulkEditDialog({
   const stats = useMemo(() => {
     const lunch = selectedOrders.filter(o => o.serviceType === 'LUNCH' || !o.serviceType).length
     const compensation = selectedOrders.filter(o => o.serviceType === 'COMPENSATION').length
-    const active = selectedOrders.filter(o => o.status === 'Активен').length
-    const paused = selectedOrders.filter(o => o.status === 'На паузе').length
+    const active = selectedOrders.filter(o => o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен').length
+    // 'На паузе' is DEPRECATED, use 'Приостановлен'
+    const paused = selectedOrders.filter(o => o.status === ORDER_STATUS.PAUSED || o.status === 'Приостановлен' || o.status === 'На паузе').length
     
     // Группировка по комбо
     const byCombo = selectedOrders.reduce((acc, o) => {
@@ -267,7 +270,7 @@ export function BulkEditDialog({
         case 'pause': {
           // Pause subscriptions via bulk action
           const lunchOrders = selectedOrders.filter(o => 
-            o.status === 'Активен' && 
+            (o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен') && 
             (o.serviceType === 'LUNCH' || !o.serviceType) &&
             o.employeeId
           )
@@ -290,8 +293,9 @@ export function BulkEditDialog({
         
         case 'resume': {
           // Resume subscriptions
+          // 'На паузе' is DEPRECATED, use 'Приостановлен'
           const pausedOrders = selectedOrders.filter(o => 
-            o.status === 'На паузе' &&
+            (o.status === ORDER_STATUS.PAUSED || o.status === 'Приостановлен' || o.status === 'На паузе') &&
             (o.serviceType === 'LUNCH' || !o.serviceType)
           )
           if (pausedOrders.length === 0) {
@@ -311,7 +315,7 @@ export function BulkEditDialog({
 
         case 'freeze': {
           // Freeze orders using new Orders API
-          const activeOrders = selectedOrders.filter(o => o.status === 'Активен' && o.employeeId)
+          const activeOrders = selectedOrders.filter(o => (o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен') && o.employeeId)
           if (activeOrders.length === 0) {
             toast.info('Нет активных заказов для заморозки')
             return
@@ -443,7 +447,7 @@ export function BulkEditDialog({
             )}
             {stats.paused > 0 && (
               <Badge variant="outline" className="gap-1 bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/30 dark:text-orange-400 dark:border-orange-800">
-                ⏸ На паузе: {stats.paused}
+                ⏸ Приостановлено: {stats.paused}
               </Badge>
             )}
           </div>
@@ -744,7 +748,7 @@ export function BulkEditDialog({
                         </td>
                         <td className="px-3 py-2.5 whitespace-nowrap">
                           <Badge
-                            variant={order.status === 'Активен' ? 'default' : 'secondary'}
+                            variant={(order.status === ORDER_STATUS.ACTIVE || order.status === 'Активен') ? 'default' : 'secondary'}
                             className="min-w-[76px] justify-center"
                           >
                             {order.status}

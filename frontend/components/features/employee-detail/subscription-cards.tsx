@@ -70,14 +70,23 @@ function getStatusConfig(status: string) {
     case 'Активен':
     case 'Активна':
       return { className: 'bg-emerald-500/10 text-emerald-600 border-emerald-200' }
-    case 'На паузе':
+    case 'Приостановлена':
+    case 'Приостановлен':
+    case 'На паузе':  // DEPRECATED: Legacy alias
       return { className: 'bg-amber-500/10 text-amber-600 border-amber-200' }
     case 'Завершен':
     case 'Завершена':
-      return { className: 'bg-muted text-muted-foreground border-muted' }
+      return { className: 'bg-gray-500/10 text-gray-600 border-gray-200' }
     default:
       return { className: '' }
   }
+}
+
+/**
+ * Check if subscription is completed (terminal state).
+ */
+function isSubscriptionCompleted(status?: string): boolean {
+  return status === 'Завершена' || status === 'Завершен'
 }
 
 function formatDate(dateStr: string | null | undefined): string {
@@ -104,8 +113,12 @@ export function LunchSubscriptionCard({
   canManage,
 }: LunchSubscriptionCardProps) {
   const statusConfig = getStatusConfig(subscription.status || '')
-  const isPaused = subscription.status === 'На паузе'
-  const isActive = subscription.status === 'Активен' || subscription.status === 'Активна'
+  // Check for paused status (+ DEPRECATED legacy 'На паузе')
+  const isPaused = subscription.status === 'Приостановлена' || subscription.status === 'На паузе'
+  // Check for active status (both Russian variants)
+  const isActive = subscription.status === 'Активна' || subscription.status === 'Активен'
+  // Check for completed status (terminal - cannot be resumed)
+  const isCompleted = isSubscriptionCompleted(subscription.status)
 
   return (
     <Card className="border-2 border-amber-500/20">
@@ -165,18 +178,20 @@ export function LunchSubscriptionCard({
         <div className="flex gap-2">
           <Button
             onClick={onManage}
-            disabled={!canManage}
+            disabled={!canManage || isCompleted}
             className="flex-1 bg-amber-600 hover:bg-amber-700"
           >
             <CalendarDays className="h-4 w-4 mr-2" />
-            Управлять
+            {isCompleted ? 'Завершена' : 'Управлять'}
           </Button>
-          {isActive && onPause && (
+          {/* Show pause button only for active subscriptions (not completed) */}
+          {isActive && !isCompleted && onPause && (
             <Button variant="outline" onClick={onPause} disabled={!canManage}>
               <PauseCircle className="h-4 w-4" />
             </Button>
           )}
-          {isPaused && onResume && (
+          {/* Show resume button only for paused (not completed) subscriptions */}
+          {isPaused && !isCompleted && onResume && (
             <Button variant="outline" onClick={onResume} disabled={!canManage}>
               <PlayCircle className="h-4 w-4" />
             </Button>

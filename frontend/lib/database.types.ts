@@ -1075,7 +1075,7 @@ export type Database = {
         | "FROZEN"
         | "DELIVERED"
         | "CANCELLED"
-      order_status: "Активен" | "На паузе" | "Завершен"
+      order_status: "Активен" | "Выполнен" | "Отменён" | "Заморожен" | "Приостановлен" | "Выходной" | "Доставлен"
       service_type: "LUNCH" | "COMPENSATION"
       subscription_status: "ACTIVE" | "PAUSED" | "COMPLETED" | "CANCELLED"
       transaction_type:
@@ -1225,7 +1225,7 @@ export const Constants = {
         "DELIVERED",
         "CANCELLED",
       ],
-      order_status: ["Активен", "На паузе", "Завершен"],
+      order_status: ["Активен", "Выполнен", "Отменён", "Заморожен", "Приостановлен", "Выходной", "Доставлен"],
       service_type: ["LUNCH", "COMPENSATION"],
       subscription_status: ["ACTIVE", "PAUSED", "COMPLETED", "CANCELLED"],
       transaction_type: [
