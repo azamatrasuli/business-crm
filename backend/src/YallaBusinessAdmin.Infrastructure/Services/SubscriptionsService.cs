@@ -275,14 +275,14 @@ public class SubscriptionsService : ISubscriptionsService
                 // TotalPrice = (completed days * old price) + (remaining days * new price)
                 // We can calculate this as: current price - (remaining * old price) + (remaining * new price)
                 // Which simplifies to: current price + remaining * (new price - old price)
-                if (subscription.TotalPrice.HasValue && futureOrdersCount > 0)
+                if (futureOrdersCount > 0)
                 {
                     var priceDifference = (newPrice - oldPrice) * futureOrdersCount;
-                    subscription.TotalPrice = subscription.TotalPrice.Value + priceDifference;
+                    subscription.TotalPrice += priceDifference;
                 }
                 else if (subscription.TotalDays > 0)
                 {
-                    // Fallback: if no TotalPrice, recalculate from scratch
+                    // Fallback: if no future orders, recalculate from scratch
                     subscription.TotalPrice = newPrice * subscription.TotalDays;
                 }
                 
