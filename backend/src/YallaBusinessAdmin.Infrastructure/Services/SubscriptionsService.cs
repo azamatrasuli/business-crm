@@ -304,6 +304,7 @@ public class SubscriptionsService : ISubscriptionsService
     {
         var subscription = await _context.LunchSubscriptions
             .Include(s => s.Employee)
+                .ThenInclude(e => e!.Project)
             .FirstOrDefaultAsync(s => s.Id == id && s.CompanyId == companyId, cancellationToken);
 
         if (subscription == null)
@@ -327,10 +328,20 @@ public class SubscriptionsService : ISubscriptionsService
                      && o.OrderDate >= tomorrow)
             .ToListAsync(cancellationToken);
 
+        // FIX: Рассчитываем сумму возврата за отменённые заказы
+        var refundAmount = futureOrders.Sum(o => o.Price);
+
         foreach (var order in futureOrders)
         {
             order.Status = OrderStatus.Cancelled;
             order.UpdatedAt = DateTime.UtcNow;
+        }
+
+        // FIX: Возвращаем бюджет в проект
+        if (refundAmount > 0 && subscription.Employee?.Project != null)
+        {
+            subscription.Employee.Project.Budget += refundAmount;
+            subscription.Employee.Project.UpdatedAt = DateTime.UtcNow;
         }
 
         await _context.SaveChangesAsync(cancellationToken);
