@@ -248,7 +248,8 @@ public class SubscriptionsService : ISubscriptionsService
             // Otherwise existing orders would have wrong combo after update
             if (oldComboType != request.ComboType)
             {
-                var oldPrice = request.ComboType switch
+                // FIX: oldPrice должен браться из старого комбо, не из нового!
+                var oldPrice = oldComboType switch
                 {
                     "Комбо 25" => 25m,
                     "Комбо 35" => 35m,
@@ -556,12 +557,39 @@ public class SubscriptionsService : ISubscriptionsService
             .ToListAsync(cancellationToken);
 
         var updated = 0;
+        var ordersUpdated = 0;
 
         foreach (var subscription in subscriptions)
         {
             if (!string.IsNullOrWhiteSpace(request.ComboType))
             {
+                var oldComboType = subscription.ComboType;
                 subscription.ComboType = request.ComboType;
+                
+                // FIX: Также обновляем активные заказы (как в UpdateAsync)
+                if (oldComboType != request.ComboType)
+                {
+                    var newPrice = request.ComboType switch
+                    {
+                        "Комбо 25" => 25m,
+                        "Комбо 35" => 35m,
+                        _ => 25m
+                    };
+                    
+                    var activeOrders = await _context.Orders
+                        .Where(o => o.EmployeeId == subscription.EmployeeId && 
+                                   (o.Status == OrderStatus.Active || o.Status == OrderStatus.Frozen) &&
+                                   o.OrderDate >= DateTime.UtcNow.Date)
+                        .ToListAsync(cancellationToken);
+
+                    foreach (var order in activeOrders)
+                    {
+                        order.ComboType = request.ComboType;
+                        order.Price = newPrice;
+                        order.UpdatedAt = DateTime.UtcNow;
+                        ordersUpdated++;
+                    }
+                }
             }
 
             // NOTE: Address cannot be changed - it comes from employee's project
@@ -574,8 +602,9 @@ public class SubscriptionsService : ISubscriptionsService
 
         return new
         {
-            message = $"Обновлено {updated} подписок",
-            updated
+            message = $"Обновлено {updated} подписок и {ordersUpdated} заказов",
+            updated,
+            ordersUpdated
         };
     }
 
@@ -597,7 +626,22 @@ public class SubscriptionsService : ISubscriptionsService
         }
 
         subscription.IsActive = false;
+        subscription.Status = "Приостановлена";
+        subscription.PausedAt = DateTime.UtcNow;
         subscription.UpdatedAt = DateTime.UtcNow;
+
+        // FIX: Приостановить все будущие активные заказы
+        var futureOrders = await _context.Orders
+            .Where(o => o.EmployeeId == subscription.EmployeeId && 
+                       o.Status == OrderStatus.Active &&
+                       o.OrderDate >= DateTime.UtcNow.Date)
+            .ToListAsync(cancellationToken);
+
+        foreach (var order in futureOrders)
+        {
+            order.Status = OrderStatus.Paused;
+            order.UpdatedAt = DateTime.UtcNow;
+        }
 
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -621,8 +665,31 @@ public class SubscriptionsService : ISubscriptionsService
             throw new InvalidOperationException("Подписка уже активна");
         }
 
+        // FIX: Рассчитываем дни паузы и продлеваем подписку
+        if (subscription.PausedAt.HasValue && subscription.EndDate.HasValue)
+        {
+            var pausedDays = (DateTime.UtcNow - subscription.PausedAt.Value).Days;
+            subscription.PausedDaysCount += pausedDays;
+            subscription.EndDate = subscription.EndDate.Value.AddDays(pausedDays);
+        }
+
         subscription.IsActive = true;
+        subscription.Status = "Активна";
+        subscription.PausedAt = null;
         subscription.UpdatedAt = DateTime.UtcNow;
+
+        // FIX: Возобновить все приостановленные заказы
+        var pausedOrders = await _context.Orders
+            .Where(o => o.EmployeeId == subscription.EmployeeId && 
+                       o.Status == OrderStatus.Paused &&
+                       o.OrderDate >= DateTime.UtcNow.Date)
+            .ToListAsync(cancellationToken);
+
+        foreach (var order in pausedOrders)
+        {
+            order.Status = OrderStatus.Active;
+            order.UpdatedAt = DateTime.UtcNow;
+        }
 
         await _context.SaveChangesAsync(cancellationToken);
 

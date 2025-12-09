@@ -52,14 +52,20 @@ public sealed class SubscriptionManagementService : ISubscriptionManagementServi
             
             if (subscription != null)
             {
-                var oldPrice = ComboPricingConstants.GetPrice(subscription.ComboType);
                 var newPrice = ComboPricingConstants.GetPrice(request.ComboType);
                 
                 subscription.ComboType = request.ComboType;
-                // Recalculate total price based on remaining days
-                if (subscription.TotalDays > 0 && oldPrice > 0)
+                
+                // FIX: Пересчитываем TotalPrice на основе количества оставшихся заказов
+                // Это более точно чем деление TotalPrice
+                var futureOrdersCount = await _context.Orders
+                    .CountAsync(o => o.EmployeeId == employeeId && 
+                                    (o.Status == OrderStatus.Active || o.Status == OrderStatus.Frozen) &&
+                                    o.OrderDate >= DateTime.UtcNow.Date, cancellationToken);
+                
+                if (futureOrdersCount > 0)
                 {
-                    subscription.TotalPrice = (subscription.TotalPrice / oldPrice) * newPrice;
+                    subscription.TotalPrice = futureOrdersCount * newPrice;
                 }
                 subscription.UpdatedAt = DateTime.UtcNow;
             }
@@ -113,15 +119,21 @@ public sealed class SubscriptionManagementService : ISubscriptionManagementServi
                 .Where(s => employeeIds.Contains(s.EmployeeId) && s.IsActive)
                 .ToListAsync(cancellationToken);
 
+            var newPrice = ComboPricingConstants.GetPrice(request.ComboType);
+            
             foreach (var subscription in subscriptions)
             {
-                var oldPrice = ComboPricingConstants.GetPrice(subscription.ComboType);
-                var newPrice = ComboPricingConstants.GetPrice(request.ComboType);
-                
                 subscription.ComboType = request.ComboType;
-                if (subscription.TotalDays > 0 && oldPrice > 0)
+                
+                // FIX: Пересчитываем TotalPrice на основе количества оставшихся заказов
+                var futureOrdersCount = await _context.Orders
+                    .CountAsync(o => o.EmployeeId == subscription.EmployeeId && 
+                                    (o.Status == OrderStatus.Active || o.Status == OrderStatus.Frozen) &&
+                                    o.OrderDate >= DateTime.UtcNow.Date, cancellationToken);
+                
+                if (futureOrdersCount > 0)
                 {
-                    subscription.TotalPrice = (subscription.TotalPrice / oldPrice) * newPrice;
+                    subscription.TotalPrice = futureOrdersCount * newPrice;
                 }
                 subscription.UpdatedAt = DateTime.UtcNow;
             }
