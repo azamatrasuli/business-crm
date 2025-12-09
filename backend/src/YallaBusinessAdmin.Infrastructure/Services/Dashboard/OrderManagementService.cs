@@ -243,41 +243,8 @@ public sealed class OrderManagementService : IOrderManagementService
             }
         }
 
-        // ═══════════════════════════════════════════════════════════════
-        // UPDATE SUBSCRIPTION TOTALPRICE when combo is changed
-        // TotalPrice should reflect actual sum of order prices
-        // CRITICAL: Save orders FIRST so SumAsync reads updated prices from DB!
-        // ═══════════════════════════════════════════════════════════════
-        if (actionLower == "changecombo" && updated > 0)
-        {
-            // Save order price changes first, so DB query returns correct prices
-            await _context.SaveChangesAsync(cancellationToken);
-            
-            var affectedEmployeeIds = orders
-                .Where(o => o.EmployeeId.HasValue)
-                .Select(o => o.EmployeeId!.Value)
-                .Distinct()
-                .ToList();
-
-            foreach (var employeeId in affectedEmployeeIds)
-            {
-                var subscription = await _context.LunchSubscriptions
-                    .FirstOrDefaultAsync(s => s.EmployeeId == employeeId && s.IsActive, cancellationToken);
-
-                if (subscription != null)
-                {
-                    // Recalculate TotalPrice as sum of all future order prices
-                    var totalPrice = await _context.Orders
-                        .Where(o => o.EmployeeId == employeeId &&
-                                   (o.Status == OrderStatus.Active || o.Status == OrderStatus.Frozen) &&
-                                   o.OrderDate >= DateTime.UtcNow.Date)
-                        .SumAsync(o => o.Price, cancellationToken);
-
-                    subscription.TotalPrice = totalPrice;
-                    subscription.UpdatedAt = DateTime.UtcNow;
-                }
-            }
-        }
+        // NOTE: TotalPrice is calculated dynamically when reading subscription data
+        // No manual update needed here - this simplifies code and prevents inconsistencies
 
         await _context.SaveChangesAsync(cancellationToken);
 

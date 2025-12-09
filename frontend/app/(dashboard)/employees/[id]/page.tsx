@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useEmployeesStore } from '@/stores/employees-store'
+import { useHomeStore } from '@/stores/home-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -353,10 +354,19 @@ export default function EmployeeDetailPage() {
     if (!cancelDialogOrder) return
     setActionLoading(true)
     try {
-      // API call to cancel order would go here
-      toast.success('Заказ отменён')
+      // Use bulkAction API to cancel single order
+      const { bulkAction } = useHomeStore.getState()
+      await bulkAction({
+        orderIds: [cancelDialogOrder.id],
+        action: 'cancel' as 'pause' | 'resume', // API accepts 'cancel' too
+      })
+      toast.success('Заказ отменён', {
+        description: 'Стоимость возвращена на баланс',
+      })
       setCancelDialogOrder(null)
       loadOrders()
+      // Also refresh employee data to update subscription totals
+      fetchEmployee(id)
     } catch (error) {
       const appError = parseError(error)
       logger.error('Failed to cancel order', error instanceof Error ? error : new Error(appError.message), {
@@ -373,7 +383,7 @@ export default function EmployeeDetailPage() {
     } finally {
       setActionLoading(false)
     }
-  }, [cancelDialogOrder, loadOrders])
+  }, [cancelDialogOrder, loadOrders, fetchEmployee, id])
 
   // Pause/Resume subscription 
   // Note: Now using freezePeriod for subscription pause, as Orders is the source of truth

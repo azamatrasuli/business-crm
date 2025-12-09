@@ -52,22 +52,9 @@ public sealed class SubscriptionManagementService : ISubscriptionManagementServi
             
             if (subscription != null)
             {
-                var newPrice = ComboPricingConstants.GetPrice(request.ComboType);
-                
                 subscription.ComboType = request.ComboType;
-                
-                // FIX: Пересчитываем TotalPrice на основе количества оставшихся заказов
-                // Это более точно чем деление TotalPrice
-                var futureOrdersCount = await _context.Orders
-                    .CountAsync(o => o.EmployeeId == employeeId && 
-                                    (o.Status == OrderStatus.Active || o.Status == OrderStatus.Frozen) &&
-                                    o.OrderDate >= DateTime.UtcNow.Date, cancellationToken);
-                
-                if (futureOrdersCount > 0)
-                {
-                    subscription.TotalPrice = futureOrdersCount * newPrice;
-                }
                 subscription.UpdatedAt = DateTime.UtcNow;
+                // NOTE: TotalPrice is calculated dynamically - no manual update needed
             }
 
             await _context.SaveChangesAsync(cancellationToken);
@@ -119,23 +106,11 @@ public sealed class SubscriptionManagementService : ISubscriptionManagementServi
                 .Where(s => employeeIds.Contains(s.EmployeeId) && s.IsActive)
                 .ToListAsync(cancellationToken);
 
-            var newPrice = ComboPricingConstants.GetPrice(request.ComboType);
-            
             foreach (var subscription in subscriptions)
             {
                 subscription.ComboType = request.ComboType;
-                
-                // FIX: Пересчитываем TotalPrice на основе количества оставшихся заказов
-                var futureOrdersCount = await _context.Orders
-                    .CountAsync(o => o.EmployeeId == subscription.EmployeeId && 
-                                    (o.Status == OrderStatus.Active || o.Status == OrderStatus.Frozen) &&
-                                    o.OrderDate >= DateTime.UtcNow.Date, cancellationToken);
-                
-                if (futureOrdersCount > 0)
-                {
-                    subscription.TotalPrice = futureOrdersCount * newPrice;
-                }
                 subscription.UpdatedAt = DateTime.UtcNow;
+                // NOTE: TotalPrice is calculated dynamically - no manual update needed
             }
 
             updated = employees.Count;

@@ -579,7 +579,6 @@ public class EmployeesService : IEmployeesService
 
             subscriptionStartDate = sub.StartDate;
             subscriptionEndDate = sub.EndDate;
-            totalPrice = sub.TotalPrice;
             subscriptionStatus = sub.Status ?? "Активна";
             totalDays = sub.TotalDays;
 
@@ -588,9 +587,18 @@ public class EmployeesService : IEmployeesService
 
             // Count future orders (today and forward, Active or Frozen status)
             var today = DateTime.UtcNow.Date;
-            futureOrdersCount = employee.Orders.Count(o =>
-                o.OrderDate.Date >= today &&
-                (o.Status == Domain.Enums.OrderStatus.Active || o.Status == Domain.Enums.OrderStatus.Frozen));
+            var futureOrders = employee.Orders
+                .Where(o => o.OrderDate.Date >= today &&
+                           (o.Status == Domain.Enums.OrderStatus.Active || o.Status == Domain.Enums.OrderStatus.Frozen))
+                .ToList();
+            
+            futureOrdersCount = futureOrders.Count;
+            
+            // ═══════════════════════════════════════════════════════════════
+            // DYNAMIC TOTAL PRICE: Calculate as sum of actual future order prices
+            // This is always accurate - no need to update manually anywhere!
+            // ═══════════════════════════════════════════════════════════════
+            totalPrice = futureOrders.Sum(o => o.Price);
 
             // Count completed orders (Delivered or Completed status)
             completedOrdersCount = employee.Orders.Count(o =>

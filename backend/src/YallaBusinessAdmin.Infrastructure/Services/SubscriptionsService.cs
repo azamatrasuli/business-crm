@@ -58,7 +58,13 @@ public class SubscriptionsService : ISubscriptionsService
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        var items = subscriptions.Select(MapToResponse);
+        // Calculate dynamic TotalPrice for each subscription
+        var items = new List<SubscriptionResponse>();
+        foreach (var sub in subscriptions)
+        {
+            var totalPrice = await CalculateDynamicTotalPriceAsync(sub.EmployeeId, cancellationToken);
+            items.Add(MapToResponse(sub, totalPrice));
+        }
         return PagedResult<SubscriptionResponse>.Create(items, total, page, pageSize);
     }
 
@@ -74,7 +80,8 @@ public class SubscriptionsService : ISubscriptionsService
             throw new KeyNotFoundException("Подписка не найдена");
         }
 
-        return MapToResponse(subscription);
+        var totalPrice = await CalculateDynamicTotalPriceAsync(subscription.EmployeeId, cancellationToken);
+        return MapToResponse(subscription, totalPrice);
     }
 
     public async Task<SubscriptionResponse> GetByEmployeeIdAsync(Guid employeeId, Guid companyId, CancellationToken cancellationToken = default)
@@ -89,7 +96,8 @@ public class SubscriptionsService : ISubscriptionsService
             throw new KeyNotFoundException("Подписка не найдена");
         }
 
-        return MapToResponse(subscription);
+        var totalPrice = await CalculateDynamicTotalPriceAsync(subscription.EmployeeId, cancellationToken);
+        return MapToResponse(subscription, totalPrice);
     }
 
     public async Task<SubscriptionResponse> CreateAsync(CreateSubscriptionRequest request, Guid companyId, CancellationToken cancellationToken = default)
@@ -222,7 +230,8 @@ public class SubscriptionsService : ISubscriptionsService
 
             await _context.SaveChangesAsync(cancellationToken);
             existingSubscription.Employee = employee;
-            return MapToResponse(existingSubscription);
+            var reactivatedTotalPrice = await CalculateDynamicTotalPriceAsync(existingSubscription.EmployeeId, cancellationToken);
+            return MapToResponse(existingSubscription, reactivatedTotalPrice);
         }
 
         // Calculate total WORKING days and price
@@ -274,7 +283,8 @@ public class SubscriptionsService : ISubscriptionsService
 
         subscription.Employee = employee;
 
-        return MapToResponse(subscription);
+        var createdTotalPrice = await CalculateDynamicTotalPriceAsync(subscription.EmployeeId, cancellationToken);
+        return MapToResponse(subscription, createdTotalPrice);
     }
 
     public async Task<SubscriptionResponse> UpdateAsync(Guid id, UpdateSubscriptionDetailsRequest request, Guid companyId, CancellationToken cancellationToken = default)
@@ -298,13 +308,6 @@ public class SubscriptionsService : ISubscriptionsService
             // Otherwise existing orders would have wrong combo after update
             if (oldComboType != request.ComboType)
             {
-                var oldPrice = oldComboType switch
-                {
-                    "Комбо 25" => 25m,
-                    "Комбо 35" => 35m,
-                    _ => 25m
-                };
-                
                 var newPrice = request.ComboType switch
                 {
                     "Комбо 25" => 25m,
@@ -319,22 +322,7 @@ public class SubscriptionsService : ISubscriptionsService
                                o.OrderDate >= DateTime.UtcNow.Date)
                     .ToListAsync(cancellationToken);
                 
-                var futureOrdersCount = futureOrders.Count;
-                
-                // FIXED: Recalculate subscription price correctly
-                // TotalPrice = (completed days * old price) + (remaining days * new price)
-                // We can calculate this as: current price - (remaining * old price) + (remaining * new price)
-                // Which simplifies to: current price + remaining * (new price - old price)
-                if (futureOrdersCount > 0)
-                {
-                    var priceDifference = (newPrice - oldPrice) * futureOrdersCount;
-                    subscription.TotalPrice += priceDifference;
-                }
-                else if (subscription.TotalDays > 0)
-                {
-                    // Fallback: if no future orders, recalculate from scratch
-                    subscription.TotalPrice = newPrice * subscription.TotalDays;
-                }
+                // NOTE: TotalPrice is calculated dynamically - no manual update needed
                 
                 // Update future orders with new combo and price
                 foreach (var order in futureOrders)
@@ -358,7 +346,8 @@ public class SubscriptionsService : ISubscriptionsService
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        return MapToResponse(subscription);
+        var updatedTotalPrice = await CalculateDynamicTotalPriceAsync(subscription.EmployeeId, cancellationToken);
+        return MapToResponse(subscription, updatedTotalPrice);
     }
 
     public async Task DeleteAsync(Guid id, Guid companyId, CancellationToken cancellationToken = default)
@@ -406,11 +395,8 @@ public class SubscriptionsService : ISubscriptionsService
             subscription.Employee.Project.UpdatedAt = DateTime.UtcNow;
         }
 
-        // ═══════════════════════════════════════════════════════════════
-        // FIX: Update TotalPrice to reflect actual delivered orders
-        // TotalPrice = original - cancelled amount
-        // ═══════════════════════════════════════════════════════════════
-        subscription.TotalPrice -= refundAmount;
+        // NOTE: TotalPrice is calculated dynamically - no manual update needed
+        // Just update TotalDays for historical tracking
         subscription.TotalDays -= cancelledCount;
 
         // ═══════════════════════════════════════════════════════════════
@@ -454,6 +440,7 @@ public class SubscriptionsService : ISubscriptionsService
                 .ToListAsync(cancellationToken);
 
             var createdSubscriptions = new List<object>();
+            var createdSubscriptionsList = new List<LunchSubscription>();
             var errors = new List<object>();
 
             foreach (var employee in employees)
@@ -654,10 +641,19 @@ public class SubscriptionsService : ISubscriptionsService
                 continue;
             }
 
-            createdSubscriptions.Add(MapToResponse(subscription));
+            // Store subscription for later mapping (after SaveChanges)
+            createdSubscriptionsList.Add(subscription);
         }
 
             await _context.SaveChangesAsync(cancellationToken);
+
+            // Now calculate dynamic TotalPrice for each created subscription
+            foreach (var sub in createdSubscriptionsList)
+            {
+                var totalPrice = await CalculateDynamicTotalPriceAsync(sub.EmployeeId, cancellationToken);
+                createdSubscriptions.Add(MapToResponse(sub, totalPrice));
+            }
+
             await transaction.CommitAsync(cancellationToken);
 
             // Final validation: if no subscriptions created, return error
@@ -705,13 +701,6 @@ public class SubscriptionsService : ISubscriptionsService
                 // FIX: Также обновляем активные заказы (как в UpdateAsync)
                 if (oldComboType != request.ComboType)
                 {
-                    var oldPrice = oldComboType switch
-                    {
-                        "Комбо 25" => 25m,
-                        "Комбо 35" => 35m,
-                        _ => 25m
-                    };
-                    
                     var newPrice = request.ComboType switch
                     {
                         "Комбо 25" => 25m,
@@ -725,8 +714,6 @@ public class SubscriptionsService : ISubscriptionsService
                                    o.OrderDate >= DateTime.UtcNow.Date)
                         .ToListAsync(cancellationToken);
 
-                    var futureOrdersCount = activeOrders.Count;
-
                     foreach (var order in activeOrders)
                     {
                         order.ComboType = request.ComboType;
@@ -735,20 +722,7 @@ public class SubscriptionsService : ISubscriptionsService
                         ordersUpdated++;
                     }
 
-                    // ═══════════════════════════════════════════════════════════════
-                    // FIX: Recalculate TotalPrice (consistent with UpdateAsync)
-                    // TotalPrice = (completed days * old price) + (remaining days * new price)
-                    // ═══════════════════════════════════════════════════════════════
-                    if (futureOrdersCount > 0)
-                    {
-                        var priceDifference = (newPrice - oldPrice) * futureOrdersCount;
-                        subscription.TotalPrice += priceDifference;
-                    }
-                    else if (subscription.TotalDays > 0)
-                    {
-                        // Fallback: if no future orders, recalculate from scratch
-                        subscription.TotalPrice = newPrice * subscription.TotalDays;
-                    }
+                    // NOTE: TotalPrice is calculated dynamically - no manual update needed
                 }
             }
 
@@ -805,7 +779,8 @@ public class SubscriptionsService : ISubscriptionsService
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        return MapToResponse(subscription);
+        var pausedTotalPrice = await CalculateDynamicTotalPriceAsync(subscription.EmployeeId, cancellationToken);
+        return MapToResponse(subscription, pausedTotalPrice);
     }
 
     public async Task<SubscriptionResponse> ResumeAsync(Guid id, Guid companyId, CancellationToken cancellationToken = default)
@@ -853,7 +828,8 @@ public class SubscriptionsService : ISubscriptionsService
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        return MapToResponse(subscription);
+        var resumedTotalPrice = await CalculateDynamicTotalPriceAsync(subscription.EmployeeId, cancellationToken);
+        return MapToResponse(subscription, resumedTotalPrice);
     }
 
     public async Task<object> BulkPauseAsync(IEnumerable<Guid> subscriptionIds, Guid companyId, CancellationToken cancellationToken = default)
@@ -1004,7 +980,11 @@ public class SubscriptionsService : ISubscriptionsService
         };
     }
 
-    private static SubscriptionResponse MapToResponse(LunchSubscription subscription)
+    /// <summary>
+    /// Maps subscription to response DTO.
+    /// TotalPrice is passed separately to allow dynamic calculation.
+    /// </summary>
+    private static SubscriptionResponse MapToResponse(LunchSubscription subscription, decimal calculatedTotalPrice)
     {
         // Address comes from Employee's Project (one project = one address)
         return new SubscriptionResponse
@@ -1022,7 +1002,10 @@ public class SubscriptionsService : ISubscriptionsService
             StartDate = subscription.StartDate?.ToString("yyyy-MM-dd"),
             EndDate = subscription.EndDate?.ToString("yyyy-MM-dd"),
             TotalDays = subscription.TotalDays,
-            TotalPrice = subscription.TotalPrice,
+            // ═══════════════════════════════════════════════════════════════
+            // DYNAMIC TOTAL PRICE: Always reflects actual sum of future orders
+            // ═══════════════════════════════════════════════════════════════
+            TotalPrice = calculatedTotalPrice,
             Status = subscription.Status,
             ScheduleType = subscription.ScheduleType,
             
@@ -1033,6 +1016,20 @@ public class SubscriptionsService : ISubscriptionsService
             CreatedAt = subscription.CreatedAt,
             UpdatedAt = subscription.UpdatedAt
         };
+    }
+
+    /// <summary>
+    /// Calculates actual TotalPrice as sum of future order prices (Active/Frozen status, today and forward).
+    /// This is always accurate regardless of order modifications.
+    /// </summary>
+    private async Task<decimal> CalculateDynamicTotalPriceAsync(Guid employeeId, CancellationToken cancellationToken)
+    {
+        var today = DateTime.UtcNow.Date;
+        return await _context.Orders
+            .Where(o => o.EmployeeId == employeeId &&
+                       (o.Status == Domain.Enums.OrderStatus.Active || o.Status == Domain.Enums.OrderStatus.Frozen) &&
+                       o.OrderDate.Date >= today)
+            .SumAsync(o => o.Price, cancellationToken);
     }
 
     /// <summary>
