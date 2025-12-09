@@ -68,7 +68,7 @@ const ACTION_OPTIONS: ActionOption[] = [
   {
     id: 'editCombo',
     label: 'Изменить комбо',
-    description: 'Сменить тип комбо (со след. дня)',
+    description: 'Сменить тип комбо для выбранных заказов',
     icon: <UtensilsCrossed className="h-5 w-5" />,
     color: 'text-amber-600',
     bgColor: 'bg-amber-50 dark:bg-amber-950/30',
@@ -132,7 +132,7 @@ export function BulkEditDialog({
   selectedDate,
   onSuccess,
 }: BulkEditDialogProps) {
-  const { bulkAction, bulkUpdateSubscription } = useHomeStore()
+  const { bulkAction } = useHomeStore()
   const [selectedAction, setSelectedAction] = useState<BulkAction | null>(null)
   const [comboType, setComboType] = useState<ComboType>('Комбо 25')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -246,22 +246,21 @@ export function BulkEditDialog({
       switch (selectedAction) {
         case 'editCombo': {
           // Фильтруем только ланч-заказы
-          const lunchEmployeeIds = [...new Set(
-            selectedOrders
-              .filter(o => o.serviceType === 'LUNCH' || !o.serviceType)
-              .map(o => o.employeeId)
-              .filter(Boolean)
-          )] as string[]
+          const lunchOrders = selectedOrders.filter(o => o.serviceType === 'LUNCH' || !o.serviceType)
           
-          if (lunchEmployeeIds.length === 0) {
-            toast.error('Нет сотрудников с ланч-подпиской для изменения')
+          if (lunchOrders.length === 0) {
+            toast.error('Нет ланч-заказов для изменения')
             return
           }
           
-          await bulkUpdateSubscription({ employeeIds: lunchEmployeeIds, comboType })
-          toast.success(`Комбо изменён для ${lunchEmployeeIds.length} сотрудников`, {
-            description: 'Изменения вступят в силу со следующего рабочего дня',
-          })
+          // Меняем комбо только для выбранных заказов, а не всей подписки
+          const request: BulkActionRequest = {
+            orderIds: lunchOrders.map(o => o.id),
+            action: 'changecombo',
+            comboType,
+          }
+          await bulkAction(request)
+          toast.success(`Комбо изменено для ${lunchOrders.length} заказов`)
           break
         }
 
@@ -587,8 +586,8 @@ export function BulkEditDialog({
               <Alert className="bg-muted/50">
                 <Info className="h-4 w-4" />
                 <AlertDescription className="text-sm">
-                  Изменения вступят в силу <span className="font-medium">со следующего рабочего дня</span>.
-                  Текущие заказы не изменятся.
+                  Изменение применится <span className="font-medium">к выбранным заказам</span>.
+                  Для изменения всей подписки используйте «Управлять обедами».
                 </AlertDescription>
               </Alert>
             </div>

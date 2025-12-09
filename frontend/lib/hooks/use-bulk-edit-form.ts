@@ -70,7 +70,7 @@ export const ACTION_OPTIONS: ActionOption[] = [
   {
     id: 'editCombo',
     label: 'Изменить комбо',
-    description: 'Сменить тип комбо (со след. дня)',
+    description: 'Сменить тип комбо для выбранных заказов',
     color: 'text-amber-600',
     bgColor: 'bg-amber-50 dark:bg-amber-950/30',
     available: (orders) => orders.some((o) => o.serviceType === 'LUNCH' || !o.serviceType),
@@ -151,7 +151,7 @@ export function useBulkEditForm({
   selectedDate,
   onSuccess,
 }: UseBulkEditFormProps): UseBulkEditFormReturn {
-  const { bulkAction, bulkUpdateSubscription, fetchOrders } = useHomeStore()
+  const { bulkAction, fetchOrders } = useHomeStore()
 
   // State
   const [step, setStep] = useState(1)
@@ -238,10 +238,10 @@ export function useBulkEditForm({
       switch (selectedAction) {
         case 'editCombo':
           if (selectedCombo) {
-            await bulkUpdateSubscription({
-              employeeIds: applicableOrders
-                .filter((o) => o.employeeId)
-                .map((o) => o.employeeId!),
+            // Меняем комбо только для выбранных заказов, а не всей подписки
+            await bulkAction({
+              orderIds: applicableOrders.map((o) => o.id),
+              action: 'changecombo',
               comboType: selectedCombo,
             })
             toast.success(`Комбо изменено для ${applicableOrders.length} заказов`)
@@ -315,7 +315,6 @@ export function useBulkEditForm({
     selectedCombo,
     applicableOrders,
     bulkAction,
-    bulkUpdateSubscription,
     fetchOrders,
     onSuccess,
   ])

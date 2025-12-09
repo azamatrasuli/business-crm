@@ -31,7 +31,7 @@ interface EditSubscriptionDialogProps {
 }
 
 export function EditSubscriptionDialog({ open, onOpenChange, order }: EditSubscriptionDialogProps) {
-  const { updateSubscription } = useHomeStore()
+  const { bulkAction } = useHomeStore()
   const [comboType, setComboType] = useState<ComboType>('Комбо 25')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -56,8 +56,8 @@ export function EditSubscriptionDialog({ open, onOpenChange, order }: EditSubscr
   }, [open, order])
 
   const handleSubmit = async () => {
-    if (!order?.employeeId) {
-      toast.error('Не удалось определить сотрудника')
+    if (!order?.id) {
+      toast.error('Не удалось определить заказ')
       return
     }
     
@@ -66,18 +66,23 @@ export function EditSubscriptionDialog({ open, onOpenChange, order }: EditSubscr
       return
     }
 
-    const payload: { comboType?: ComboType } = {}
-    if (comboChanged) payload.comboType = comboType
     // NOTE: Address cannot be changed - it comes from employee's project
 
     setIsSubmitting(true)
     try {
-      await updateSubscription(order.employeeId, payload)
-      toast.success('Изменения сохранены')
+      // Меняем комбо только для ЭТОГО заказа, а не всей подписки
+      await bulkAction({
+        orderIds: [order.id],
+        action: 'changecombo',
+        comboType,
+      })
+      toast.success(`Комбо изменено на ${comboType}`, {
+        description: `Заказ на ${orderDateFormatted}`,
+      })
       onOpenChange(false)
     } catch (error) {
       const appError = parseError(error)
-      logger.error('Failed to update subscription', error instanceof Error ? error : new Error(appError.message), {
+      logger.error('Failed to change order combo', error instanceof Error ? error : new Error(appError.message), {
         errorCode: appError.code,
       })
       toast.error(appError.message, { description: appError.action })
@@ -92,9 +97,9 @@ export function EditSubscriptionDialog({ open, onOpenChange, order }: EditSubscr
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Редактировать заказ</DialogTitle>
+          <DialogTitle>Изменить комбо на день</DialogTitle>
           <DialogDescription>
-            Измените тип комбо для {order.employeeName}
+            Изменение применится только к заказу на {orderDateFormatted}
           </DialogDescription>
         </DialogHeader>
 
@@ -145,11 +150,11 @@ export function EditSubscriptionDialog({ open, onOpenChange, order }: EditSubscr
             </RadioGroup>
           </div>
 
-          {/* NOTE: Address cannot be changed */}
+          {/* Info about scope of change */}
           <Alert className="bg-muted/50">
             <AlertDescription className="text-sm">
-              💡 Адрес доставки берётся из проекта сотрудника и не может быть изменён.
-              Для смены адреса переведите сотрудника в другой проект.
+              💡 Изменение комбо применится только к этому заказу.
+              Для изменения всей подписки используйте «Управлять обедами».
             </AlertDescription>
           </Alert>
         </DialogBody>

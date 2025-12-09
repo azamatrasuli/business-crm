@@ -53,7 +53,8 @@ export interface AssignMealsRequest {
 
 export interface BulkActionRequest {
   orderIds: string[]
-  action: 'pause' | 'resume' | 'cancel'
+  action: 'pause' | 'resume' | 'cancel' | 'changecombo'
+  comboType?: ComboType // For changecombo action
   // NOTE: changeAddress removed - address is immutable per project
 }
 
