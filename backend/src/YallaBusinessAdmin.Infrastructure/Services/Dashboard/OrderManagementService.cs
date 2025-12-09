@@ -293,7 +293,10 @@ public sealed class OrderManagementService : IOrderManagementService
             EmployeePhone = o.Employee?.Phone,
             Date = o.OrderDate.ToString("yyyy-MM-dd"),
             Status = o.Status.ToRussian(),
-            Address = o.Project?.AddressFullAddress ?? "",
+            // Use AddressFullAddress with fallback to AddressName
+            Address = !string.IsNullOrEmpty(o.Project?.AddressFullAddress) 
+                ? o.Project.AddressFullAddress 
+                : (o.Project?.AddressName ?? ""),
             ProjectId = o.ProjectId,
             ProjectName = o.Project?.Name,
             ComboType = o.ComboType,

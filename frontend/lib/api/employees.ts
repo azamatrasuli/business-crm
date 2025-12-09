@@ -19,6 +19,9 @@ export interface Employee {
   // Project info
   projectId?: string | null
   projectName?: string | null
+  // Address from project (immutable)
+  addressName?: string | null
+  addressFullAddress?: string | null
   // Work schedule
   shiftType?: ShiftType | null
   workingDays?: DayOfWeek[] // e.g., [1, 2, 3, 4, 5] = Mon-Fri

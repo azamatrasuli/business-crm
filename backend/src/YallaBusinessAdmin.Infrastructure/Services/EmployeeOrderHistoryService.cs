@@ -81,7 +81,10 @@ public class EmployeeOrderHistoryService : IEmployeeOrderHistoryService
                 Type = o.IsGuestOrder ? "Гость" : "Сотрудник",
                 Status = o.Status.ToRussian(),
                 Amount = o.Price,
-                Address = o.Project?.AddressName ?? "",
+                // Use AddressFullAddress with fallback to AddressName for consistency
+                Address = !string.IsNullOrEmpty(o.Project?.AddressFullAddress) 
+                    ? o.Project.AddressFullAddress 
+                    : (o.Project?.AddressName ?? ""),
                 ServiceType = "LUNCH",
                 ComboType = o.ComboType
             }));
