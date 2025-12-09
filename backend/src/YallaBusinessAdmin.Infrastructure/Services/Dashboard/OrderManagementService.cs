@@ -246,9 +246,13 @@ public sealed class OrderManagementService : IOrderManagementService
         // ═══════════════════════════════════════════════════════════════
         // UPDATE SUBSCRIPTION TOTALPRICE when combo is changed
         // TotalPrice should reflect actual sum of order prices
+        // CRITICAL: Save orders FIRST so SumAsync reads updated prices from DB!
         // ═══════════════════════════════════════════════════════════════
         if (actionLower == "changecombo" && updated > 0)
         {
+            // Save order price changes first, so DB query returns correct prices
+            await _context.SaveChangesAsync(cancellationToken);
+            
             var affectedEmployeeIds = orders
                 .Where(o => o.EmployeeId.HasValue)
                 .Select(o => o.EmployeeId!.Value)
