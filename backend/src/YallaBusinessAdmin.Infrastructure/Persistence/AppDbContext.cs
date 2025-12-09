@@ -166,7 +166,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.ProjectId).HasColumnName("project_id").IsRequired();
             entity.Property(e => e.FullName).HasColumnName("full_name").IsRequired();
             entity.Property(e => e.Phone).HasColumnName("phone").IsRequired();
-            entity.Property(e => e.Email).HasColumnName("email").IsRequired();
+            entity.Property(e => e.Email).HasColumnName("email"); // Email is optional
             entity.Property(e => e.Position).HasColumnName("position");
             entity.Property(e => e.IsActive).HasColumnName("is_active");
             entity.Property(e => e.InviteStatus).HasColumnName("invite_status")

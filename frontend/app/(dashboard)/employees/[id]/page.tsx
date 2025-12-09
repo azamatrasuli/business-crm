@@ -53,6 +53,8 @@ import {
 import { EditEmployeeDialog } from '@/components/features/employees/edit-employee-dialog'
 import { ManageLunchDialog } from '@/components/features/meals/manage-lunch-dialog'
 import { ManageCompensationDialog } from '@/components/features/meals/manage-compensation-dialog'
+import { EditSubscriptionDialog } from '@/components/features/home/edit-subscription-dialog'
+import type { Order } from '@/lib/api/home'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DataTable } from '@/components/ui/data-table'
 import { SortableHeader, useSort, sortData } from '@/components/ui/sortable-header'
@@ -102,6 +104,10 @@ export default function EmployeeDetailPage() {
   // Action dialogs state
   const [cancelDialogOrder, setCancelDialogOrder] = useState<EmployeeOrder | null>(null)
   const [freezeDialogOrder, setFreezeDialogOrder] = useState<EmployeeOrder | null>(null)
+  
+  // Single order edit dialog (for changing combo of one order, not entire subscription)
+  const [editSingleOrderOpen, setEditSingleOrderOpen] = useState(false)
+  const [editSingleOrder, setEditSingleOrder] = useState<Order | null>(null)
   const [pauseSubscriptionDialog, setPauseSubscriptionDialog] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
 
@@ -1852,33 +1858,56 @@ export default function EmployeeDetailPage() {
                         
                         {/* Row 1: Main actions */}
                         <div className="grid grid-cols-2 gap-2">
-                          {/* Manage */}
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className={cn(
-                              "gap-1.5 h-9",
-                              isCompensation 
-                                ? "text-emerald-600 border-emerald-200 hover:bg-emerald-50 dark:hover:bg-emerald-950" 
-                                : "text-amber-600 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950"
-                            )}
-                            onClick={() => {
-                              setOrderDetailOpen(false)
-                              if (isCompensation) {
-                                setCompensationDialogOpen(true)
-                              } else {
-                                setLunchDialogOpen(true)
-                              }
-                            }}
-                            disabled={actionLoading}
-                          >
-                            {isCompensation ? (
-                              <Wallet className="h-3.5 w-3.5" />
-                            ) : (
+                          {/* Edit single order combo (not entire subscription!) */}
+                          {!isCompensation && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1.5 h-9 text-amber-600 border-amber-200 hover:bg-amber-50 dark:hover:bg-amber-950"
+                              onClick={() => {
+                                setOrderDetailOpen(false)
+                                // Convert EmployeeOrder to Order format for EditSubscriptionDialog
+                                const orderForEdit: Order = {
+                                  id: order.id,
+                                  employeeId: currentEmployee?.id || null,
+                                  employeeName: currentEmployee?.fullName || '',
+                                  employeePhone: currentEmployee?.phone || null,
+                                  date: order.date || '',
+                                  status: order.status || '',
+                                  address: order.address || '',
+                                  projectId: currentEmployee?.projectId || null,
+                                  projectName: currentEmployee?.projectName || null,
+                                  comboType: order.comboType,
+                                  amount: order.amount || 0,
+                                  type: 'Сотрудник',
+                                  serviceType: order.serviceType,
+                                }
+                                setEditSingleOrder(orderForEdit)
+                                setEditSingleOrderOpen(true)
+                              }}
+                              disabled={actionLoading}
+                            >
                               <UtensilsCrossed className="h-3.5 w-3.5" />
-                            )}
-                            Управлять
-                          </Button>
+                              Изменить комбо
+                            </Button>
+                          )}
+                          
+                          {/* Manage compensation */}
+                          {isCompensation && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1.5 h-9 text-emerald-600 border-emerald-200 hover:bg-emerald-50 dark:hover:bg-emerald-950"
+                              onClick={() => {
+                                setOrderDetailOpen(false)
+                                setCompensationDialogOpen(true)
+                              }}
+                              disabled={actionLoading}
+                            >
+                              <Wallet className="h-3.5 w-3.5" />
+                              Управлять
+                            </Button>
+                          )}
 
                           {/* Freeze/Unfreeze (today only, lunch only) */}
                           {!isCompensation && (canFreeze || canUnfreeze) && (
@@ -1964,7 +1993,7 @@ export default function EmployeeDetailPage() {
         employee={currentEmployee}
         onSuccess={() => fetchEmployee(id)}
       />
-      {/* Editing existing lunch (single screen) */}
+      {/* Editing existing lunch subscription (entire subscription) */}
       <ManageLunchDialog
         open={lunchDialogOpen}
         onOpenChange={setLunchDialogOpen}
@@ -1972,6 +2001,20 @@ export default function EmployeeDetailPage() {
         employee={currentEmployee}
         existingSubscription={currentEmployee.lunchSubscription || null}
         onSuccess={() => { fetchEmployee(id); loadOrders(); }}
+      />
+      {/* Edit single order combo (NOT entire subscription) */}
+      <EditSubscriptionDialog
+        open={editSingleOrderOpen}
+        onOpenChange={(open) => {
+          setEditSingleOrderOpen(open)
+          if (!open) {
+            setEditSingleOrder(null)
+            // Refresh data after edit
+            fetchEmployee(id)
+            loadOrders()
+          }
+        }}
+        order={editSingleOrder}
       />
       {/* Creating new lunch (full wizard) */}
       <ManageLunchDialog

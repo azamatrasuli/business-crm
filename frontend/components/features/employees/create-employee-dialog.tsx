@@ -57,7 +57,7 @@ const formSchema = z.object({
     .trim()
     .min(1, 'Обязательное поле')
     .regex(PHONE_REGEX, 'Введите корректный номер телефона'),
-  email: z.string().trim().min(1, 'Обязательное поле').email('Некорректный email'),
+  email: z.string().trim().email('Некорректный email').optional().or(z.literal('')),
   position: z.string().trim().min(1, 'Обязательное поле'),
 
   // Рабочий график - все обязательные
@@ -119,7 +119,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
       const request: CreateEmployeeRequest = {
         fullName: data.fullName,
         phone: data.phone,
-        email: data.email,
+        email: data.email || undefined,
         position: data.position,
         projectId, // Required by backend
         serviceType: data.serviceType as ServiceType | undefined,
@@ -202,7 +202,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
                 <div className="flex items-center gap-2">
                   <User className="h-4 w-4 text-primary" />
                   <h4 className="font-medium">Личные данные</h4>
-                  <span className="text-xs text-muted-foreground ml-auto">Все поля обязательны</span>
+                  <span className="text-xs text-muted-foreground ml-auto">Email опционален</span>
                 </div>
 
                 <div className="grid gap-4">
