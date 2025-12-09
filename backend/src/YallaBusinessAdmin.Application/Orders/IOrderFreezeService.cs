@@ -51,11 +51,17 @@ public interface IOrderFreezeService
         CancellationToken cancellationToken = default);
     
     /// <summary>
-    /// Проверить можно ли заморозить заказ (лимит 2 в неделю).
+    /// Проверить можно ли заморозить заказ.
+    /// Лимит берётся из business_config (subscription.max_freezes_per_week).
     /// </summary>
+    /// <param name="employeeId">ID сотрудника</param>
+    /// <param name="date">Дата для проверки</param>
+    /// <param name="maxFreezesPerWeek">Максимум заморозок в неделю (из конфига)</param>
+    /// <param name="cancellationToken">Токен отмены</param>
     Task<bool> ValidateFreezeLimitAsync(
         Guid employeeId, 
-        DateOnly date, 
+        DateOnly date,
+        int maxFreezesPerWeek,
         CancellationToken cancellationToken = default);
 }
 

@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using YallaBusinessAdmin.Application.Common.Errors;
+using YallaBusinessAdmin.Application.Common.Interfaces;
 using YallaBusinessAdmin.Application.Common.Models;
 using YallaBusinessAdmin.Application.Subscriptions;
 using YallaBusinessAdmin.Application.Subscriptions.Dtos;
@@ -15,10 +16,12 @@ namespace YallaBusinessAdmin.Infrastructure.Services;
 public class SubscriptionsService : ISubscriptionsService
 {
     private readonly AppDbContext _context;
+    private readonly IBusinessConfigService _configService;
 
-    public SubscriptionsService(AppDbContext context)
+    public SubscriptionsService(AppDbContext context, IBusinessConfigService configService)
     {
         _context = context;
+        _configService = configService;
     }
 
     public async Task<PagedResult<SubscriptionResponse>> GetAllAsync(
@@ -145,12 +148,24 @@ public class SubscriptionsService : ISubscriptionsService
         }
 
         // ═══════════════════════════════════════════════════════════════
-        // VALIDATION: Project must have sufficient budget
-        // Calculate required budget based on dates and combo type
+        // VALIDATION: Minimum subscription days (from business config)
         // ═══════════════════════════════════════════════════════════════
         var validationStartDate = request.StartDate ?? today;
         var validationEndDate = request.EndDate ?? validationStartDate.AddMonths(1);
         var validationTotalDays = WorkingDaysHelper.CountWorkingDays(employee.WorkingDays, validationStartDate, validationEndDate);
+        
+        var minDays = await _configService.GetIntAsync(ConfigKeys.SubscriptionMinDays, 5, cancellationToken);
+        if (validationTotalDays < minDays)
+        {
+            throw new BusinessRuleException(
+                ErrorCodes.SUB_MIN_DAYS_REQUIRED,
+                $"Минимальный период подписки — {minDays} рабочих дней. Выбрано: {validationTotalDays}");
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // VALIDATION: Project must have sufficient budget
+        // Calculate required budget based on dates and combo type
+        // ═══════════════════════════════════════════════════════════════
         var validationPrice = request.ComboType switch
         {
             "Комбо 25" => 25m,

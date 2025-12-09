@@ -104,3 +104,14 @@ export {
   type VirtualListProps,
 } from './use-virtual-list'
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Business Config hooks (SINGLE SOURCE OF TRUTH from backend)
+// ═══════════════════════════════════════════════════════════════════════════════
+export {
+  useBusinessConfig,
+  useConfigValue,
+  useSubscriptionConfig,
+  useComboPrices,
+  BUSINESS_CONFIG_KEY,
+} from './use-business-config'
+

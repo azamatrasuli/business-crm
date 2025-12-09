@@ -77,6 +77,11 @@ public static class DependencyInjection
         services.AddSingleton<ICacheService, MemoryCacheService>();
 
         // ═══════════════════════════════════════════════════════════════════════════════
+        // Business Configuration (SINGLE SOURCE OF TRUTH for all business rules)
+        // ═══════════════════════════════════════════════════════════════════════════════
+        services.AddScoped<IBusinessConfigService, BusinessConfigService>();
+
+        // ═══════════════════════════════════════════════════════════════════════════════
         // Idempotency (prevents duplicate operations)
         // ═══════════════════════════════════════════════════════════════════════════════
         services.AddSingleton<IIdempotencyService, IdempotencyService>();

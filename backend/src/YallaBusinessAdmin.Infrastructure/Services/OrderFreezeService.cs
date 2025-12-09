@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using YallaBusinessAdmin.Application.Common.Errors;
+using YallaBusinessAdmin.Application.Common.Interfaces;
 using YallaBusinessAdmin.Application.Orders;
 using YallaBusinessAdmin.Application.Orders.Dtos;
 using YallaBusinessAdmin.Domain.Entities;
@@ -14,14 +15,16 @@ public class OrderFreezeService : IOrderFreezeService
 {
     private readonly AppDbContext _context;
     private readonly ILogger<OrderFreezeService> _logger;
-    
-    // Лимит заморозок в неделю (из config.json)
-    private const int MaxFreezesPerWeek = 2;
+    private readonly IBusinessConfigService _configService;
 
-    public OrderFreezeService(AppDbContext context, ILogger<OrderFreezeService> logger)
+    public OrderFreezeService(
+        AppDbContext context, 
+        ILogger<OrderFreezeService> logger,
+        IBusinessConfigService configService)
     {
         _context = context;
         _logger = logger;
+        _configService = configService;
     }
 
     public async Task<FreezeOrderResponse> FreezeOrderAsync(
@@ -58,13 +61,14 @@ public class OrderFreezeService : IOrderFreezeService
             }
         }
 
-        // Check freeze limit
+        // Check freeze limit (from business config)
         var orderDate = DateOnly.FromDateTime(order.OrderDate);
-        if (!await ValidateFreezeLimitAsync(order.EmployeeId.Value, orderDate, cancellationToken))
+        var maxFreezesPerWeek = await _configService.GetIntAsync(ConfigKeys.SubscriptionMaxFreezesPerWeek, 2, cancellationToken);
+        if (!await ValidateFreezeLimitAsync(order.EmployeeId.Value, orderDate, maxFreezesPerWeek, cancellationToken))
         {
             throw new BusinessRuleException(
                 ErrorCodes.FREEZE_LIMIT_EXCEEDED,
-                $"Превышен лимит заморозок ({MaxFreezesPerWeek} в неделю). Попробуйте на следующей неделе.");
+                $"Превышен лимит заморозок ({maxFreezesPerWeek} в неделю). Попробуйте на следующей неделе.");
         }
 
         // Get employee's subscription
@@ -226,6 +230,9 @@ public class OrderFreezeService : IOrderFreezeService
         if (subscription == null)
             throw new InvalidOperationException("У сотрудника нет активной подписки");
 
+        // Get freeze limit from business config
+        var maxFreezesPerWeek = await _configService.GetIntAsync(ConfigKeys.SubscriptionMaxFreezesPerWeek, 2, cancellationToken);
+
         var frozenOrders = new List<Order>();
         var replacementOrders = new List<Order>();
 
@@ -248,7 +255,7 @@ public class OrderFreezeService : IOrderFreezeService
             }
             
             // Check freeze limit for this week
-            if (!await ValidateFreezeLimitAsync(request.EmployeeId, orderDate, cancellationToken))
+            if (!await ValidateFreezeLimitAsync(request.EmployeeId, orderDate, maxFreezesPerWeek, cancellationToken))
             {
                 _logger.LogWarning(
                     "Freeze limit reached for employee {EmployeeId} on {Date}. Stopping period freeze.",
@@ -327,14 +334,16 @@ public class OrderFreezeService : IOrderFreezeService
             .Where(s => s.EmployeeId == employeeId && s.IsActive)
             .FirstOrDefaultAsync(cancellationToken);
 
-        var remainingFreezes = Math.Max(0, MaxFreezesPerWeek - freezesThisWeek);
+        // Get freeze limit from business config
+        var maxFreezesPerWeek = await _configService.GetIntAsync(ConfigKeys.SubscriptionMaxFreezesPerWeek, 2, cancellationToken);
+        var remainingFreezes = Math.Max(0, maxFreezesPerWeek - freezesThisWeek);
 
         return new EmployeeFreezeInfoResponse
         {
             EmployeeId = employeeId,
             EmployeeName = employee.FullName,
             FreezesThisWeek = freezesThisWeek,
-            MaxFreezesPerWeek = MaxFreezesPerWeek,
+            MaxFreezesPerWeek = maxFreezesPerWeek,
             CanFreeze = remainingFreezes > 0,
             RemainingFreezes = remainingFreezes,
             FrozenOrders = frozenOrders.Select(MapToResponse).ToList(),
@@ -368,9 +377,18 @@ public class OrderFreezeService : IOrderFreezeService
         return orders.Select(MapToResponse).ToList();
     }
 
+    /// <summary>
+    /// Validate if employee can freeze more orders this week.
+    /// </summary>
+    /// <param name="employeeId">Employee ID</param>
+    /// <param name="date">Date to check freeze limit for</param>
+    /// <param name="maxFreezesPerWeek">Maximum allowed freezes per week (from config)</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns>True if employee can freeze more orders</returns>
     public async Task<bool> ValidateFreezeLimitAsync(
         Guid employeeId,
         DateOnly date,
+        int maxFreezesPerWeek,
         CancellationToken cancellationToken = default)
     {
         // Get week bounds for the given date
@@ -388,7 +406,7 @@ public class OrderFreezeService : IOrderFreezeService
                         DateOnly.FromDateTime(o.FrozenAt.Value) <= weekEnd)
             .CountAsync(cancellationToken);
 
-        return freezesThisWeek < MaxFreezesPerWeek;
+        return freezesThisWeek < maxFreezesPerWeek;
     }
 
     private async Task<Order> CreateReplacementOrderAsync(
