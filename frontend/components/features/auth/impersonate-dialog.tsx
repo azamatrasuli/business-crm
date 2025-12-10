@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
+import { logger } from '@/lib/logger'
 import {
   Dialog,
   DialogBody,
@@ -30,16 +31,16 @@ export function ImpersonateDialog({ open, onOpenChange }: ImpersonateDialogProps
   // Fetch admins when dialog opens
   useEffect(() => {
     if (open && allAdmins.length === 0) {
-      fetchAllAdmins().catch(console.error)
+      fetchAllAdmins().catch((err) => logger.error('Failed to fetch admins in dialog', err instanceof Error ? err : new Error(String(err))))
     }
   }, [open, allAdmins.length, fetchAllAdmins])
 
   // Filter admins by search
   const filteredAdmins = useMemo(() => {
     if (!search.trim()) return allAdmins
-    
+
     const searchLower = search.toLowerCase()
-    return allAdmins.filter(admin => 
+    return allAdmins.filter(admin =>
       admin.fullName.toLowerCase().includes(searchLower) ||
       admin.companyName.toLowerCase().includes(searchLower) ||
       admin.phone.includes(search) ||
@@ -53,7 +54,7 @@ export function ImpersonateDialog({ open, onOpenChange }: ImpersonateDialogProps
     for (const admin of filteredAdmins) {
       // Skip current user
       if (admin.id === user?.id) continue
-      
+
       if (!groups[admin.companyName]) {
         groups[admin.companyName] = []
       }
@@ -69,7 +70,7 @@ export function ImpersonateDialog({ open, onOpenChange }: ImpersonateDialogProps
       toast.success(`Вы вошли как ${adminName}`)
       onOpenChange(false)
     } catch (error) {
-      console.error('Impersonation failed:', error)
+      logger.error('Impersonation failed in dialog', error instanceof Error ? error : new Error(String(error)))
       toast.error('Не удалось войти под другим пользователем')
       setImpersonating(null)
     }
@@ -126,7 +127,7 @@ export function ImpersonateDialog({ open, onOpenChange }: ImpersonateDialogProps
                           {admins.length}
                         </Badge>
                       </div>
-                      
+
                       {/* Admin cards */}
                       <div className="space-y-2">
                         {admins.map((admin) => (

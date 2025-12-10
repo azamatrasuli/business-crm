@@ -43,9 +43,10 @@ public sealed class DashboardService : IDashboardService
     public Task<DashboardResponse> GetDashboardAsync(
         Guid companyId,
         Guid? projectId = null,
+        DateOnly? filterDate = null,
         CancellationToken cancellationToken = default)
     {
-        return _metricsService.GetDashboardAsync(companyId, projectId, cancellationToken);
+        return _metricsService.GetDashboardAsync(companyId, projectId, filterDate, cancellationToken);
     }
 
     #endregion

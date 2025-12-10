@@ -14,6 +14,7 @@ import {
   type CreateProjectRequest,
   type UpdateProjectRequest,
 } from '@/lib/api/projects';
+import { logger } from '@/lib/logger';
 
 interface ProjectsState {
   // Data
@@ -21,19 +22,19 @@ interface ProjectsState {
   currentProject: Project | null;
   selectedProjectId: string | null;
   projectStats: ProjectStats | null;
-  
+
   // Derived/computed - updated automatically
   selectedProject: ProjectListItem | null;
-  
+
   // Loading states
   isLoading: boolean;
   loading: boolean; // alias for isLoading
   isLoadingProject: boolean;
   isLoadingStats: boolean;
-  
+
   // Error
   error: string | null;
-  
+
   // Actions
   fetchProjects: () => Promise<void>;
   fetchProject: (id: string) => Promise<void>;
@@ -91,24 +92,24 @@ export const useProjectsStore = create<ProjectsState>()(
         try {
           const projects = await getProjects();
           const { selectedProjectId } = get();
-          
+
           // Auto-select first project if none selected
-          const newSelectedId = (!selectedProjectId && projects.length > 0) 
-            ? projects[0].id 
+          const newSelectedId = (!selectedProjectId && projects.length > 0)
+            ? projects[0].id
             : selectedProjectId;
-          
+
           // Find selectedProject
           const selectedProject = projects.find(p => p.id === newSelectedId) || null;
-          
-          set({ 
-            projects, 
+
+          set({
+            projects,
             selectedProjectId: newSelectedId,
             selectedProject,
-            isLoading: false, 
+            isLoading: false,
             loading: false,
           });
         } catch (error) {
-          set({ 
+          set({
             error: error instanceof Error ? error.message : 'Ошибка загрузки проектов',
             isLoading: false,
             loading: false,
@@ -122,9 +123,9 @@ export const useProjectsStore = create<ProjectsState>()(
           const project = await getProject(id);
           set({ currentProject: project, isLoadingProject: false });
         } catch (error) {
-          set({ 
+          set({
             error: error instanceof Error ? error.message : 'Ошибка загрузки проекта',
-            isLoadingProject: false 
+            isLoadingProject: false
           });
         }
       },
@@ -134,7 +135,8 @@ export const useProjectsStore = create<ProjectsState>()(
         try {
           const stats = await getProjectStats(id);
           set({ projectStats: stats, isLoadingStats: false });
-        } catch {
+        } catch (error) {
+          logger.warn('Failed to fetch project stats', { projectId: id, error });
           set({ isLoadingStats: false });
         }
       },
@@ -167,7 +169,7 @@ export const useProjectsStore = create<ProjectsState>()(
             spentTotal: 0,
             budgetRemaining: project.budget,
           }];
-          set({ 
+          set({
             projects: newProjects,
             selectedProject: newProjects.find(p => p.id === selectedProjectId) || null,
             isLoading: false,
@@ -175,7 +177,7 @@ export const useProjectsStore = create<ProjectsState>()(
           });
           return project;
         } catch (error) {
-          set({ 
+          set({
             error: error instanceof Error ? error.message : 'Ошибка создания проекта',
             isLoading: false,
             loading: false,
@@ -198,7 +200,7 @@ export const useProjectsStore = create<ProjectsState>()(
             serviceTypes: project.serviceTypes,
             // Address stays the same (immutable)
           } : p);
-          set({ 
+          set({
             projects: updatedProjects,
             selectedProject: updatedProjects.find(p => p.id === selectedProjectId) || null,
             currentProject: project,
@@ -207,7 +209,7 @@ export const useProjectsStore = create<ProjectsState>()(
           });
           return project;
         } catch (error) {
-          set({ 
+          set({
             error: error instanceof Error ? error.message : 'Ошибка обновления проекта',
             isLoading: false,
             loading: false,
@@ -222,10 +224,10 @@ export const useProjectsStore = create<ProjectsState>()(
           await deleteProject(id);
           const { projects, selectedProjectId } = get();
           const newProjects = projects.filter(p => p.id !== id);
-          const newSelectedId = selectedProjectId === id 
-            ? (newProjects[0]?.id || null) 
+          const newSelectedId = selectedProjectId === id
+            ? (newProjects[0]?.id || null)
             : selectedProjectId;
-          set({ 
+          set({
             projects: newProjects,
             selectedProjectId: newSelectedId,
             selectedProject: newProjects.find(p => p.id === newSelectedId) || null,
@@ -233,7 +235,7 @@ export const useProjectsStore = create<ProjectsState>()(
             loading: false,
           });
         } catch (error) {
-          set({ 
+          set({
             error: error instanceof Error ? error.message : 'Ошибка удаления проекта',
             isLoading: false,
             loading: false,
@@ -244,7 +246,7 @@ export const useProjectsStore = create<ProjectsState>()(
 
       selectProject: (id: string | null) => {
         const { projects } = get();
-        set({ 
+        set({
           selectedProjectId: id,
           selectedProject: projects.find(p => p.id === id) || null,
         });
@@ -252,7 +254,7 @@ export const useProjectsStore = create<ProjectsState>()(
 
       setSelectedProjectId: (id: string | null) => {
         const { projects } = get();
-        set({ 
+        set({
           selectedProjectId: id,
           selectedProject: projects.find(p => p.id === id) || null,
         });

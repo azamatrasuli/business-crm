@@ -1,5 +1,6 @@
 import apiClient from './client'
 import type { ServiceType, DayOfWeek } from './employees'
+import { logger } from '@/lib/logger'
 
 // ==================== LUNCH SUBSCRIPTION ====================
 
@@ -23,12 +24,12 @@ export interface LunchSubscription {
   endDate: string
   scheduleType: ScheduleType
   customDays?: string[] // ISO date strings for custom schedule
-  
+
   // Address is now derived from Project (delivery_address_id is deprecated)
   projectId?: string
   projectName?: string
   deliveryAddress?: string
-  
+
   /**
    * Subscription status (Russian):
    * - "Активна" - Active
@@ -122,7 +123,7 @@ export interface ServiceAvailability {
 
 export const servicesApi = {
   // ----- Lunch Subscriptions -----
-  
+
   async createLunchSubscriptions(data: CreateLunchSubscriptionRequest): Promise<LunchSubscriptionResponse> {
     // Используем bulk endpoint потому что фронтенд отправляет employeeIds как массив
     const response = await apiClient.post<LunchSubscriptionResponse>('/subscriptions/bulk', data)
@@ -175,7 +176,9 @@ export const servicesApi = {
     try {
       const response = await apiClient.get<Compensation>(`/employees/${employeeId}/compensation`)
       return response.data
-    } catch {
+    } catch (error) {
+      // Expected for employees without compensation - log for debugging only
+      logger.debug('No compensation found for employee', { employeeId, error })
       return null
     }
   },
@@ -185,12 +188,21 @@ export const servicesApi = {
   },
 
   // ----- Service Availability Check -----
-  // NOTE: This endpoint does NOT exist on backend yet - implement before using!
 
-  async checkServiceAvailability(employeeIds: string[]): Promise<ServiceAvailability[]> {
-    // TODO: Backend endpoint /services/check-availability needs to be created
-    const response = await apiClient.post<ServiceAvailability[]>('/services/check-availability', { employeeIds })
-    return response.data
+  /**
+   * Check service availability for employees.
+   * @throws Error - Backend endpoint not implemented yet
+   * @deprecated This method is not yet available. Backend endpoint needs to be created first.
+   */
+  async checkServiceAvailability(_employeeIds: string[]): Promise<ServiceAvailability[]> {
+    // FIXME: Backend endpoint /services/check-availability needs to be created
+    // When implemented, remove this throw and uncomment the API call below:
+    // const response = await apiClient.post<ServiceAvailability[]>('/services/check-availability', { employeeIds: _employeeIds })
+    // return response.data
+    throw new Error(
+      '[API Not Implemented] checkServiceAvailability: Backend endpoint /services/check-availability does not exist. ' +
+      'Please implement the backend endpoint before using this method.'
+    )
   },
 
   // ----- Bulk Operations -----
@@ -205,9 +217,19 @@ export const servicesApi = {
     await apiClient.post('/subscriptions/bulk/resume', { SubscriptionIds: subscriptionIds })
   },
 
-  async bulkCancelServices(employeeIds: string[], serviceType: ServiceType): Promise<void> {
-    // TODO: Backend endpoint /services/bulk/cancel needs to be created
-    await apiClient.post('/services/bulk/cancel', { employeeIds, serviceType })
+  /**
+   * Bulk cancel services for employees.
+   * @throws Error - Backend endpoint not implemented yet
+   * @deprecated This method is not yet available. Backend endpoint needs to be created first.
+   */
+  async bulkCancelServices(_employeeIds: string[], _serviceType: ServiceType): Promise<void> {
+    // FIXME: Backend endpoint /services/bulk/cancel needs to be created
+    // When implemented, remove this throw and uncomment the API call below:
+    // await apiClient.post('/services/bulk/cancel', { employeeIds: _employeeIds, serviceType: _serviceType })
+    throw new Error(
+      '[API Not Implemented] bulkCancelServices: Backend endpoint /services/bulk/cancel does not exist. ' +
+      'Please implement the backend endpoint before using this method.'
+    )
   },
 }
 

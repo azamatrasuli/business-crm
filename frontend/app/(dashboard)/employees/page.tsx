@@ -61,8 +61,8 @@ const DAYS_SHORT = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
 // Форматирование графика работы
 const formatWorkSchedule = (employee: Employee) => {
   const shift = employee.shiftType === 'DAY' ? '☀️' : employee.shiftType === 'NIGHT' ? '🌙' : ''
-  const time = employee.workStartTime && employee.workEndTime 
-    ? `${employee.workStartTime}–${employee.workEndTime}` 
+  const time = employee.workStartTime && employee.workEndTime
+    ? `${employee.workStartTime}–${employee.workEndTime}`
     : ''
   return { shift, time }
 }
@@ -77,15 +77,15 @@ const formatWorkingDays = (workingDays?: number[]) => {
   return workingDays.map(d => DAYS_SHORT[d]).join(', ')
 }
 
-// Цвет статуса услуги (для подписок и заказов) - uses centralized config
-const getServiceStatusColor = (status?: string) => {
-  // Try order status first, then subscription status
-  const orderConfig = getOrderStatusConfig(status)
-  if (orderConfig.variant !== 'outline' || orderConfig.label !== 'Неизвестно') {
-    return orderConfig.variant
-  }
+// Конфиг статуса услуги (для подписок и заказов) - uses centralized config
+const getServiceStatusConfig = (status?: string) => {
+  // Try subscription status first (for service column), then order status
   const subConfig = getSubscriptionStatusConfig(status)
-  return subConfig.variant
+  // FIX: Check if className is not empty (means status was matched)
+  if (subConfig.className) {
+    return subConfig
+  }
+  return getOrderStatusConfig(status)
 }
 
 
@@ -166,7 +166,7 @@ export default function EmployeesPage() {
     fetchEmployees(1)
     fetchProjects()
   }, [fetchEmployees, fetchProjects])
-  
+
   // Helper to get project name by ID
   const getProjectName = useCallback((projectId: string | null | undefined) => {
     if (!projectId) return null
@@ -174,14 +174,17 @@ export default function EmployeesPage() {
     return project?.name || null
   }, [projects])
 
-  const debouncedSearch = debounce(() => {
-    fetchEmployees(1)
-  }, 500)
+  const debouncedSearch = useMemo(
+    () => debounce(() => {
+      fetchEmployees(1)
+    }, 500),
+    [fetchEmployees]
+  )
 
-  const handleSearchChange = (value: string) => {
+  const handleSearchChange = useCallback((value: string) => {
     setSearchQuery(value)
     debouncedSearch()
-  }
+  }, [setSearchQuery, debouncedSearch])
 
   const handleFiltersChange = useCallback((filters: ActiveFilter[]) => {
     setActiveFilters(filters)
@@ -196,30 +199,30 @@ export default function EmployeesPage() {
   const employeesStats = useMemo(() => {
     const totalEmployees = employees.length
     const activeEmployees = employees.filter((e) => e.isActive).length
-    
+
     // Сотрудники с активными услугами
     const withLunch = employees.filter((e) => e.lunchSubscription?.status === 'Активна').length
     const withCompensation = employees.filter((e) => e.compensation?.status === 'Активна').length
-    
+
     // Сотрудники без услуг (активные, но без ланча и компенсации)
-    const withoutService = employees.filter((e) => 
-      e.isActive && 
+    const withoutService = employees.filter((e) =>
+      e.isActive &&
       (e.inviteStatus === INVITE_STATUS.ACCEPTED || e.inviteStatus === 'Принято') &&
-      !e.lunchSubscription && 
+      !e.lunchSubscription &&
       !e.compensation
     ).length
-    
+
     // Ожидают приглашения (требуют внимания сегодня)
     const pendingInvites = employees.filter((e) => e.isActive && (e.inviteStatus === INVITE_STATUS.PENDING || e.inviteStatus === 'Ожидает')).length
-    
+
     // Финансы: сумма бюджетов подписок
-    const totalLunchBudget = employees.reduce((sum, e) => 
+    const totalLunchBudget = employees.reduce((sum, e) =>
       sum + (e.lunchSubscription?.totalPrice || 0), 0)
-    const totalCompensationBudget = employees.reduce((sum, e) => 
+    const totalCompensationBudget = employees.reduce((sum, e) =>
       sum + (e.compensation?.totalBudget || 0), 0)
-    const usedCompensation = employees.reduce((sum, e) => 
+    const usedCompensation = employees.reduce((sum, e) =>
       sum + (e.compensation?.usedAmount || 0), 0)
-    
+
     // Заканчивается подписка скоро (в течение 3 дней)
     const today = new Date()
     const threeDaysLater = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000)
@@ -268,7 +271,7 @@ export default function EmployeesPage() {
       // Custom comparator for invite status (ordered: Принято > Ожидает > Отклонено)
       inviteStatus: (a, b) => {
         // Use centralized constants (INVITE_STATUS values are Russian strings)
-        const order: Record<string, number> = { 
+        const order: Record<string, number> = {
           [INVITE_STATUS.ACCEPTED]: 3,
           [INVITE_STATUS.PENDING]: 2,
           [INVITE_STATUS.REJECTED]: 1
@@ -278,7 +281,7 @@ export default function EmployeesPage() {
       // Custom comparator for meal status
       mealStatus: (a, b) => {
         // Use centralized constants (ORDER_STATUS values are Russian strings)
-        const order: Record<string, number> = { 
+        const order: Record<string, number> = {
           [ORDER_STATUS.ACTIVE]: 3,
           [ORDER_STATUS.PAUSED]: 2,
           'Не заказан': 1
@@ -297,7 +300,7 @@ export default function EmployeesPage() {
   const handleEditEmployee = useCallback(async (event: React.MouseEvent, employee: Employee) => {
     event.stopPropagation()
     if (!employee.isActive) return
-    
+
     setEditLoading(true)
     try {
       // Загружаем полные данные сотрудника
@@ -353,8 +356,8 @@ export default function EmployeesPage() {
       cell: ({ row }) => {
         const employee = row.original
         const statusConfig = getEmployeeStatusConfig(employee.status)
-        const statusColor = employee.status === EMPLOYEE_STATUS.ACTIVE 
-          ? 'bg-emerald-500' 
+        const statusColor = employee.status === EMPLOYEE_STATUS.ACTIVE
+          ? 'bg-emerald-500'
           : 'bg-gray-400'
         return (
           <div className="flex items-center gap-2">
@@ -432,11 +435,11 @@ export default function EmployeesPage() {
         const employee = row.original
         const { shift, time } = formatWorkSchedule(employee)
         const days = formatWorkingDays(employee.workingDays)
-        
+
         if (!shift && !time && days === '—') {
           return <span className="text-muted-foreground">—</span>
         }
-        
+
         return (
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-1.5">
@@ -464,12 +467,12 @@ export default function EmployeesPage() {
           return <span className="text-muted-foreground">—</span>
         }
         return employee.serviceType === 'LUNCH' ? (
-          <Badge variant="outline" className="gap-1 bg-amber-500/10 text-amber-600 border-amber-200">
+          <Badge variant="outline" className="gap-1 bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
             <UtensilsCrossed className="h-3 w-3" />
             Ланч
           </Badge>
         ) : (
-          <Badge variant="outline" className="gap-1 bg-emerald-500/10 text-emerald-600 border-emerald-200">
+          <Badge variant="outline" className="gap-1 bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
             <Wallet className="h-3 w-3" />
             Компенсация
           </Badge>
@@ -481,18 +484,19 @@ export default function EmployeesPage() {
       header: 'Статус услуги',
       cell: ({ row }) => {
         const employee = row.original
-        
+
         // Определяем статус на основе активной услуги
         const lunchStatus = employee.lunchSubscription?.status
         const compensationStatus = employee.compensation?.status
         const status = lunchStatus || compensationStatus
-        
+
         if (!status) {
           return <span className="text-muted-foreground text-sm">Не активна</span>
         }
-        
+
+        const statusConfig = getServiceStatusConfig(status)
         return (
-          <Badge variant={getServiceStatusColor(status)} className="min-w-[90px] justify-center">
+          <Badge variant="outline" className={`min-w-[90px] justify-center ${statusConfig.className}`}>
             {status}
           </Badge>
         )
@@ -545,10 +549,10 @@ export default function EmployeesPage() {
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>
-                  {!employee.isActive 
-                    ? 'Сотрудник деактивирован' 
+                  {!employee.isActive
+                    ? 'Сотрудник деактивирован'
                     : (employee.inviteStatus !== INVITE_STATUS.ACCEPTED && employee.inviteStatus !== 'Принято')
-                      ? 'Сотрудник ещё не принял приглашение' 
+                      ? 'Сотрудник ещё не принял приглашение'
                       : employee.serviceType === 'COMPENSATION'
                         ? 'Сотрудник на компенсации'
                         : employee.activeLunchSubscriptionId
@@ -576,8 +580,8 @@ export default function EmployeesPage() {
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>
-                  {!employee.isActive 
-                    ? 'Сотрудник деактивирован' 
+                  {!employee.isActive
+                    ? 'Сотрудник деактивирован'
                     : (employee.inviteStatus !== INVITE_STATUS.ACCEPTED && employee.inviteStatus !== 'Принято')
                       ? 'Сотрудник ещё не принял приглашение'
                       : employee.activeLunchSubscriptionId || employee.serviceType === 'LUNCH'
@@ -666,9 +670,9 @@ export default function EmployeesPage() {
               </p>
             </div>
           </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => fetchEmployees(currentPage)}
             className="w-full sm:w-auto flex-shrink-0 border-destructive/30 hover:bg-destructive/10"
           >

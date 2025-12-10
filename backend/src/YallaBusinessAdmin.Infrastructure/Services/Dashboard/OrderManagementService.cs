@@ -42,39 +42,54 @@ public sealed class OrderManagementService : IOrderManagementService
         Guid? projectId = null,
         CancellationToken cancellationToken = default)
     {
-        var results = new List<OrderResponse>();
-
-        // Determine which service types to include based on filter
-        var includeLunch = string.IsNullOrWhiteSpace(serviceTypeFilter) || 
+        // ═══════════════════════════════════════════════════════════════
+        // ОПТИМИЗАЦИЯ: Определяем какие типы сервисов включать
+        // ═══════════════════════════════════════════════════════════════
+        var includeLunch = string.IsNullOrWhiteSpace(serviceTypeFilter) ||
                            serviceTypeFilter.Equals("LUNCH", StringComparison.OrdinalIgnoreCase);
-        var includeCompensation = string.IsNullOrWhiteSpace(serviceTypeFilter) || 
+        var includeCompensation = string.IsNullOrWhiteSpace(serviceTypeFilter) ||
                                    serviceTypeFilter.Equals("COMPENSATION", StringComparison.OrdinalIgnoreCase);
 
-        // Get LUNCH orders (skip if serviceType filter is COMPENSATION only)
+        // ═══════════════════════════════════════════════════════════════
+        // FAST PATH: Только LUNCH заказы - полная SQL пагинация
+        // Это самый частый сценарий, оптимизируем его максимально
+        // ═══════════════════════════════════════════════════════════════
+        if (includeLunch && (!includeCompensation || typeFilter?.ToLower() == "guest"))
+        {
+            return await GetLunchOrdersWithPaginationAsync(
+                companyId, projectId, search, statusFilter, dateFilter,
+                addressFilter, typeFilter, comboTypeFilter, page, pageSize,
+                cancellationToken);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // MIXED PATH: LUNCH + COMPENSATION - объединяем результаты
+        // NOTE: Выполняем последовательно, т.к. DbContext не потокобезопасен
+        // ═══════════════════════════════════════════════════════════════
+        var results = new List<OrderResponse>();
+
         if (includeLunch)
         {
-            var lunchOrders = await GetLunchOrdersAsync(
-                companyId, projectId, search, statusFilter, dateFilter, addressFilter, typeFilter, comboTypeFilter,
-                cancellationToken);
+            var lunchOrders = await GetLunchOrdersOptimizedAsync(
+                companyId, projectId, search, statusFilter, dateFilter,
+                addressFilter, typeFilter, comboTypeFilter, cancellationToken);
             results.AddRange(lunchOrders);
         }
 
-        // Get COMPENSATION transactions (skip if serviceType is LUNCH only or type is guest)
         if (includeCompensation && typeFilter?.ToLower() != "guest")
         {
-            var compTransactions = await GetCompensationTransactionsAsync(
+            var compOrders = await GetCompensationTransactionsOptimizedAsync(
                 companyId, projectId, search, dateFilter, cancellationToken);
-            results.AddRange(compTransactions);
+            results.AddRange(compOrders);
         }
 
-        // Sort and paginate
-        var sortedResults = results
+        results = results
             .OrderByDescending(r => r.Date)
             .ThenBy(r => r.EmployeeName)
             .ToList();
 
-        var total = sortedResults.Count;
-        var pagedItems = sortedResults
+        var total = results.Count;
+        var pagedItems = results
             .Skip((page - 1) * pageSize)
             .Take(pageSize);
 
@@ -105,7 +120,7 @@ public sealed class OrderManagementService : IOrderManagementService
         ValidateBudget(project.Budget, project.OverdraftLimit, totalCost);
 
         var orderDate = ParseOrderDate(request.Date);
-        
+
         // ═══════════════════════════════════════════════════════════════
         // CUTOFF VALIDATION: Only check cutoff if order is for today
         // Business rule: Cannot create orders for today after cutoff time
@@ -122,24 +137,24 @@ public sealed class OrderManagementService : IOrderManagementService
             await _context.Orders.AddAsync(order, cancellationToken);
         }
 
-        // Deduct from project budget
-        project.Budget -= totalCost;
-        project.UpdatedAt = DateTime.UtcNow;
-
-        // Create transaction records
-        await CreateGuestOrderTransactionsAsync(orders, companyId, targetProjectId, project.Budget, cancellationToken);
+        // ═══════════════════════════════════════════════════════════════
+        // NOTE: Бюджет НЕ списывается при создании гостевых заказов!
+        // Списание происходит в конце дня через DailySettlementJob
+        // когда заказы переводятся из Active в Completed.
+        // Транзакция также создаётся при списании.
+        // ═══════════════════════════════════════════════════════════════
 
         await _context.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
-            "Created {Count} guest orders for project {ProjectId}, total cost {Cost}",
+            "Created {Count} guest orders for project {ProjectId}, pending settlement {Cost}",
             request.Quantity, targetProjectId, totalCost);
 
         return new CreateGuestOrderResponse
         {
             Message = $"Создано {request.Quantity} гостевых заказов",
             TotalCost = totalCost,
-            RemainingBudget = project.Budget,
+            RemainingBudget = project.Budget, // Показываем текущий баланс (ещё не списано)
             Orders = orders.Select(o => MapToOrderResponse(o, project))
         };
     }
@@ -171,7 +186,7 @@ public sealed class OrderManagementService : IOrderManagementService
         // Business rule: Cannot create orders for today after cutoff time
         // IMPORTANT: Must check cutoff for each employee's project timezone!
         // ═══════════════════════════════════════════════════════════════
-        
+
         foreach (var employee in employees)
         {
             var validationResult = ValidateEmployeeForMealAssignment(employee, price, orderDate);
@@ -291,7 +306,69 @@ public sealed class OrderManagementService : IOrderManagementService
 
     #region Private Helper Methods
 
-    private async Task<IEnumerable<OrderResponse>> GetLunchOrdersAsync(
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ОПТИМИЗИРОВАННЫЕ МЕТОДЫ - Фильтрация и пагинация на уровне SQL
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// FAST PATH: Получение LUNCH заказов с полной SQL пагинацией.
+    /// Используется когда нужны только LUNCH заказы (самый частый сценарий).
+    /// </summary>
+    private async Task<PagedResult<OrderResponse>> GetLunchOrdersWithPaginationAsync(
+        Guid companyId,
+        Guid? projectId,
+        string? search,
+        string? statusFilter,
+        string? dateFilter,
+        string? addressFilter,
+        string? typeFilter,
+        string? comboTypeFilter,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        var query = BuildLunchOrdersQuery(companyId, projectId, search, statusFilter,
+            dateFilter, addressFilter, typeFilter, comboTypeFilter);
+
+        // Получаем общее количество (один COUNT запрос)
+        var total = await query.CountAsync(cancellationToken);
+
+        // Применяем сортировку и пагинацию на уровне SQL
+        var pagedOrders = await query
+            .OrderByDescending(o => o.OrderDate)
+            .ThenBy(o => o.Employee != null ? o.Employee.FullName : o.GuestName)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            // Проекция - только нужные поля (избегаем полной загрузки сущностей)
+            .Select(o => new OrderResponse
+            {
+                Id = o.Id,
+                EmployeeId = o.EmployeeId,
+                EmployeeName = o.Employee != null ? o.Employee.FullName : (o.GuestName ?? "Гость"),
+                EmployeePhone = o.Employee != null ? o.Employee.Phone : null,
+                Date = o.OrderDate.ToString("yyyy-MM-dd"),
+                Status = o.Status.ToRussian(),
+                Address = o.Project != null
+                    ? (!string.IsNullOrEmpty(o.Project.AddressFullAddress)
+                        ? o.Project.AddressFullAddress
+                        : (o.Project.AddressName ?? ""))
+                    : "",
+                ProjectId = o.ProjectId,
+                ProjectName = o.Project != null ? o.Project.Name : null,
+                ComboType = o.ComboType,
+                Amount = o.Price,
+                Type = o.IsGuestOrder ? "Гость" : "Сотрудник",
+                ServiceType = "LUNCH"
+            })
+            .ToListAsync(cancellationToken);
+
+        return PagedResult<OrderResponse>.Create(pagedOrders, total, page, pageSize);
+    }
+
+    /// <summary>
+    /// Получение LUNCH заказов без пагинации (для смешанного режима LUNCH+COMPENSATION).
+    /// </summary>
+    private async Task<IEnumerable<OrderResponse>> GetLunchOrdersOptimizedAsync(
         Guid companyId,
         Guid? projectId,
         string? search,
@@ -302,30 +379,85 @@ public sealed class OrderManagementService : IOrderManagementService
         string? comboTypeFilter,
         CancellationToken cancellationToken)
     {
+        var query = BuildLunchOrdersQuery(companyId, projectId, search, statusFilter,
+            dateFilter, addressFilter, typeFilter, comboTypeFilter);
+
+        // Проекция - только нужные поля
+        return await query
+            .Select(o => new OrderResponse
+            {
+                Id = o.Id,
+                EmployeeId = o.EmployeeId,
+                EmployeeName = o.Employee != null ? o.Employee.FullName : (o.GuestName ?? "Гость"),
+                EmployeePhone = o.Employee != null ? o.Employee.Phone : null,
+                Date = o.OrderDate.ToString("yyyy-MM-dd"),
+                Status = o.Status.ToRussian(),
+                Address = o.Project != null
+                    ? (!string.IsNullOrEmpty(o.Project.AddressFullAddress)
+                        ? o.Project.AddressFullAddress
+                        : (o.Project.AddressName ?? ""))
+                    : "",
+                ProjectId = o.ProjectId,
+                ProjectName = o.Project != null ? o.Project.Name : null,
+                ComboType = o.ComboType,
+                Amount = o.Price,
+                Type = o.IsGuestOrder ? "Гость" : "Сотрудник",
+                ServiceType = "LUNCH"
+            })
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Строит базовый запрос для LUNCH заказов со всеми фильтрами на уровне SQL.
+    /// </summary>
+    private IQueryable<Order> BuildLunchOrdersQuery(
+        Guid companyId,
+        Guid? projectId,
+        string? search,
+        string? statusFilter,
+        string? dateFilter,
+        string? addressFilter,
+        string? typeFilter,
+        string? comboTypeFilter)
+    {
         var query = _context.Orders
             .AsNoTracking()
-            .Include(o => o.Employee)
-            .Include(o => o.Project)
             .Where(o => o.CompanyId == companyId);
 
+        // Фильтр по проекту
         if (projectId.HasValue)
         {
             query = query.Where(o => o.ProjectId == projectId.Value);
         }
 
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            var searchLower = search.ToLower();
-            query = query.Where(o =>
-                (o.Employee != null && o.Employee.FullName.ToLower().Contains(searchLower)) ||
-                (o.GuestName != null && o.GuestName.ToLower().Contains(searchLower)));
-        }
-
+        // Фильтр по адресу (projectId)
         if (!string.IsNullOrWhiteSpace(addressFilter) && Guid.TryParse(addressFilter, out var filterProjectId))
         {
             query = query.Where(o => o.ProjectId == filterProjectId);
         }
 
+        // ═══════════════════════════════════════════════════════════════
+        // ОПТИМИЗАЦИЯ: Фильтр по статусу НА УРОВНЕ SQL
+        // Конвертируем русский статус в enum, затем обратно в строку для БД
+        // ═══════════════════════════════════════════════════════════════
+        if (!string.IsNullOrWhiteSpace(statusFilter))
+        {
+            var statusEnum = OrderStatusExtensions.FromRussian(statusFilter);
+            query = query.Where(o => o.Status == statusEnum);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // ОПТИМИЗАЦИЯ: Фильтр по дате НА УРОВНЕ SQL
+        // Используем диапазон дат для корректной работы с timezone
+        // ═══════════════════════════════════════════════════════════════
+        if (!string.IsNullOrWhiteSpace(dateFilter) && DateOnly.TryParse(dateFilter, out var parsedDate))
+        {
+            var targetDateStart = parsedDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+            var targetDateEnd = parsedDate.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+            query = query.Where(o => o.OrderDate >= targetDateStart && o.OrderDate < targetDateEnd);
+        }
+
+        // Фильтр по типу (гость/сотрудник)
         if (!string.IsNullOrWhiteSpace(typeFilter))
         {
             query = typeFilter.ToLower() switch
@@ -336,50 +468,28 @@ public sealed class OrderManagementService : IOrderManagementService
             };
         }
 
-        // Apply combo type filter at DB level
+        // Фильтр по типу комбо
         if (!string.IsNullOrWhiteSpace(comboTypeFilter))
         {
             query = query.Where(o => o.ComboType == comboTypeFilter);
         }
 
-        var allOrders = await query.ToListAsync(cancellationToken);
-
-        // Apply status filter in memory
-        if (!string.IsNullOrWhiteSpace(statusFilter))
+        // Поиск по имени (employee или guest)
+        if (!string.IsNullOrWhiteSpace(search))
         {
-            var statusEnum = OrderStatusExtensions.FromRussian(statusFilter);
-            allOrders = allOrders.Where(o => o.Status == statusEnum).ToList();
+            var searchLower = search.ToLower();
+            query = query.Where(o =>
+                (o.Employee != null && o.Employee.FullName.ToLower().Contains(searchLower)) ||
+                (o.GuestName != null && o.GuestName.ToLower().Contains(searchLower)));
         }
 
-        // Apply date filter in memory
-        if (!string.IsNullOrWhiteSpace(dateFilter) && DateTime.TryParse(dateFilter, out var filterDate))
-        {
-            var filterDateUtc = DateTime.SpecifyKind(filterDate.Date, DateTimeKind.Utc);
-            allOrders = allOrders.Where(o => o.OrderDate.Date == filterDateUtc.Date).ToList();
-        }
-
-        return allOrders.Select(o => new OrderResponse
-        {
-            Id = o.Id,
-            EmployeeId = o.EmployeeId,
-            EmployeeName = o.Employee?.FullName ?? o.GuestName ?? "Гость",
-            EmployeePhone = o.Employee?.Phone,
-            Date = o.OrderDate.ToString("yyyy-MM-dd"),
-            Status = o.Status.ToRussian(),
-            // Use AddressFullAddress with fallback to AddressName
-            Address = !string.IsNullOrEmpty(o.Project?.AddressFullAddress) 
-                ? o.Project.AddressFullAddress 
-                : (o.Project?.AddressName ?? ""),
-            ProjectId = o.ProjectId,
-            ProjectName = o.Project?.Name,
-            ComboType = o.ComboType,
-            Amount = o.Price,
-            Type = o.IsGuestOrder ? "Гость" : "Сотрудник",
-            ServiceType = "LUNCH"
-        });
+        return query;
     }
 
-    private async Task<IEnumerable<OrderResponse>> GetCompensationTransactionsAsync(
+    /// <summary>
+    /// ОПТИМИЗИРОВАННАЯ версия: Получение компенсационных транзакций с фильтрацией на уровне SQL.
+    /// </summary>
+    private async Task<IEnumerable<OrderResponse>> GetCompensationTransactionsOptimizedAsync(
         Guid companyId,
         Guid? projectId,
         string? search,
@@ -388,15 +498,23 @@ public sealed class OrderManagementService : IOrderManagementService
     {
         var query = _context.Set<CompensationTransaction>()
             .AsNoTracking()
-            .Include(ct => ct.Employee)
-            .Include(ct => ct.Project)
             .Where(ct => ct.Project != null && ct.Project.CompanyId == companyId);
 
+        // Фильтр по проекту
         if (projectId.HasValue)
         {
             query = query.Where(ct => ct.ProjectId == projectId.Value);
         }
 
+        // ═══════════════════════════════════════════════════════════════
+        // ОПТИМИЗАЦИЯ: Фильтр по дате НА УРОВНЕ SQL
+        // ═══════════════════════════════════════════════════════════════
+        if (!string.IsNullOrWhiteSpace(dateFilter) && DateOnly.TryParse(dateFilter, out var filterDateOnly))
+        {
+            query = query.Where(ct => ct.TransactionDate == filterDateOnly);
+        }
+
+        // Поиск по имени сотрудника
         if (!string.IsNullOrWhiteSpace(search))
         {
             var searchLower = search.ToLower();
@@ -404,39 +522,29 @@ public sealed class OrderManagementService : IOrderManagementService
                 ct.Employee != null && ct.Employee.FullName.ToLower().Contains(searchLower));
         }
 
-        var transactions = await query.ToListAsync(cancellationToken);
-
-        // Apply date filter
-        if (!string.IsNullOrWhiteSpace(dateFilter) && DateTime.TryParse(dateFilter, out var filterDate))
-        {
-            var filterDateOnly = DateOnly.FromDateTime(filterDate);
-            transactions = transactions
-                .Where(ct => ct.TransactionDate == filterDateOnly)
-                .ToList();
-        }
-
-        var projectIds = transactions.Select(ct => ct.ProjectId).Distinct().ToList();
-        var projects = await _context.Projects
-            .Where(p => projectIds.Contains(p.Id))
-            .ToDictionaryAsync(p => p.Id, p => p.CompensationDailyLimit, cancellationToken);
-
-        return transactions.Select(ct => new OrderResponse
-        {
-            Id = ct.Id,
-            EmployeeId = ct.EmployeeId,
-            EmployeeName = ct.Employee?.FullName ?? "Сотрудник",
-            EmployeePhone = ct.Employee?.Phone,
-            Date = ct.TransactionDate.ToString("yyyy-MM-dd"),
-            Status = OrderStatus.Completed.ToRussian(),  // Compensation transactions are always completed
-            Address = ct.RestaurantName ?? "",
-            ComboType = "",
-            Amount = ct.TotalAmount,
-            Type = "Сотрудник",
-            ServiceType = "COMPENSATION",
-            CompensationLimit = projects.GetValueOrDefault(ct.ProjectId, 0),
-            CompensationAmount = ct.CompanyPaidAmount,
-            RestaurantName = ct.RestaurantName
-        });
+        // ═══════════════════════════════════════════════════════════════
+        // ОПТИМИЗАЦИЯ: Используем проекцию с JOIN для получения лимита
+        // Избегаем дополнительного запроса к Projects
+        // ═══════════════════════════════════════════════════════════════
+        return await query
+            .Select(ct => new OrderResponse
+            {
+                Id = ct.Id,
+                EmployeeId = ct.EmployeeId,
+                EmployeeName = ct.Employee != null ? ct.Employee.FullName : "Сотрудник",
+                EmployeePhone = ct.Employee != null ? ct.Employee.Phone : null,
+                Date = ct.TransactionDate.ToString("yyyy-MM-dd"),
+                Status = OrderStatus.Completed.ToRussian(),  // Compensation transactions are always completed
+                Address = ct.RestaurantName ?? "",
+                ComboType = "",
+                Amount = ct.TotalAmount,
+                Type = "Сотрудник",
+                ServiceType = "COMPENSATION",
+                CompensationLimit = ct.Project != null ? ct.Project.CompensationDailyLimit : 0,
+                CompensationAmount = ct.CompanyPaidAmount,
+                RestaurantName = ct.RestaurantName
+            })
+            .ToListAsync(cancellationToken);
     }
 
     private static void ValidateCutoffTime(TimeOnly cutoffTime, string? timezone)
@@ -496,7 +604,6 @@ public sealed class OrderManagementService : IOrderManagementService
         List<Order> orders,
         Guid companyId,
         Guid? projectId,
-        decimal balanceAfter,
         CancellationToken cancellationToken)
     {
         foreach (var order in orders)
@@ -509,8 +616,7 @@ public sealed class OrderManagementService : IOrderManagementService
                 Type = TransactionType.GuestOrder,
                 Amount = -order.Price,
                 DailyOrderId = order.Id,
-                BalanceAfter = balanceAfter,
-                Description = $"Гостевой заказ: {order.GuestName}",
+                Description = order.GuestName ?? "Гость",
                 CreatedAt = DateTime.UtcNow
             };
             await _context.CompanyTransactions.AddAsync(transaction, cancellationToken);
@@ -636,19 +742,29 @@ public sealed class OrderManagementService : IOrderManagementService
         var newPrice = ComboPricingConstants.GetPrice(newComboType);
         var priceDiff = newPrice - oldPrice;
 
-        if (priceDiff != 0)
+        // ═══════════════════════════════════════════════════════════════
+        // BUDGET CORRECTION: Только для Completed заказов!
+        // Active/Paused заказы ещё не списаны - корректировка не нужна.
+        // Completed заказы уже списаны - нужно доплатить/вернуть разницу.
+        // ═══════════════════════════════════════════════════════════════
+        var needsBudgetCorrection = order.Status == OrderStatus.Completed && priceDiff != 0;
+
+        if (needsBudgetCorrection)
         {
-            if (order.IsGuestOrder && order.Project != null)
+            var isCompensationOrder = !order.IsGuestOrder &&
+                                       order.Employee?.ServiceType == ServiceType.Compensation;
+
+            if (isCompensationOrder && order.Employee?.Budget != null)
             {
-                // Guest order: deduct/refund from Project budget
-                // priceDiff > 0 means upgrade (need to charge more), priceDiff < 0 means downgrade (refund)
+                // Compensation order: deduct/refund from Employee budget
+                order.Employee.Budget.TotalBudget -= priceDiff;
+            }
+            else if (order.Project != null)
+            {
+                // Guest order or LUNCH order: deduct/refund from Project budget
+                // priceDiff > 0 means upgrade (charge more), priceDiff < 0 means downgrade (refund)
                 order.Project.Budget -= priceDiff;
                 order.Project.UpdatedAt = DateTime.UtcNow;
-            }
-            else if (order.Employee?.Budget != null)
-            {
-                // Employee order: deduct/refund from Employee budget
-                order.Employee.Budget.TotalBudget -= priceDiff;
             }
         }
 
@@ -669,31 +785,49 @@ public sealed class OrderManagementService : IOrderManagementService
 
         decimal refundAmount = 0;
 
-        if (order.IsGuestOrder && order.Project != null)
-        {
-            // Guest order: refund to Project budget (same source as creation)
-            order.Project.Budget += order.Price;
-            order.Project.UpdatedAt = DateTime.UtcNow;
-            refundAmount = order.Price;
+        // ═══════════════════════════════════════════════════════════════
+        // REFUND LOGIC: Возврат только для COMPLETED заказов!
+        // Active/Paused заказы ещё не списаны - возврата не требуется.
+        // Completed заказы уже списаны через DailySettlementJob - нужен возврат.
+        // ═══════════════════════════════════════════════════════════════
+        var needsRefund = order.Status == OrderStatus.Completed;
 
-            // Create transaction record for audit trail
-            var transaction = new CompanyTransaction
-            {
-                Id = Guid.NewGuid(),
-                CompanyId = order.CompanyId,
-                Type = TransactionType.Refund,
-                Amount = order.Price,
-                DailyOrderId = order.Id,
-                BalanceAfter = order.Project.Budget,
-                Description = $"Возврат за отмененный гостевой заказ: {order.GuestName}",
-                CreatedAt = DateTime.UtcNow
-            };
-            await _context.CompanyTransactions.AddAsync(transaction, cancellationToken);
-        }
-        else if (order.Employee?.Budget != null)
+        if (needsRefund)
         {
-            // Employee order: refund to Employee budget
-            order.Employee.Budget.TotalBudget += order.Price;
+            var isCompensationOrder = !order.IsGuestOrder &&
+                                       order.Employee?.ServiceType == ServiceType.Compensation;
+
+            if (isCompensationOrder && order.Employee?.Budget != null)
+            {
+                // Compensation order: refund to Employee budget
+                order.Employee.Budget.TotalBudget += order.Price;
+                refundAmount = order.Price;
+            }
+            else if (order.Project != null)
+            {
+                // Guest order or LUNCH order: refund to Project budget
+                order.Project.Budget += order.Price;
+                order.Project.UpdatedAt = DateTime.UtcNow;
+                refundAmount = order.Price;
+
+                // Create transaction record for audit trail
+                // Description = только уникальная инфа (имя), дата/сумма есть в других колонках
+                var employeeName = order.IsGuestOrder
+                    ? order.GuestName ?? "Гость"
+                    : order.Employee?.FullName ?? "Сотрудник";
+                var transaction = new CompanyTransaction
+                {
+                    Id = Guid.NewGuid(),
+                    CompanyId = order.CompanyId,
+                    ProjectId = order.ProjectId,
+                    Type = TransactionType.Refund,
+                    Amount = order.Price,
+                    DailyOrderId = order.Id,
+                    Description = $"Отмена заказа: {employeeName}",
+                    CreatedAt = DateTime.UtcNow
+                };
+                await _context.CompanyTransactions.AddAsync(transaction, cancellationToken);
+            }
         }
 
         // ═══════════════════════════════════════════════════════════════
@@ -703,7 +837,7 @@ public sealed class OrderManagementService : IOrderManagementService
         // ═══════════════════════════════════════════════════════════════
         var isFutureOrder = order.OrderDate.Date > DateTime.UtcNow.Date;
         var hasActiveSubscription = false;
-        
+
         if (!order.IsGuestOrder && order.EmployeeId.HasValue)
         {
             hasActiveSubscription = await _context.LunchSubscriptions
@@ -720,7 +854,7 @@ public sealed class OrderManagementService : IOrderManagementService
             // Стандартное поведение: меняем статус на "Отменён"
             order.Cancel();
         }
-        
+
         return (true, refundAmount, null);
     }
 

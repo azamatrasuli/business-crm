@@ -63,13 +63,13 @@ export default function ProjectsPage() {
     const totalCompensation = projects.reduce((sum, p) => sum + (p.employeesWithCompensation || 0), 0)
     const spentLunch = projects.reduce((sum, p) => sum + (p.spentLunch || 0), 0)
     const spentCompensation = projects.reduce((sum, p) => sum + (p.spentCompensation || 0), 0)
-    
+
     // Count projects without delivery address - critical issue!
     const projectsWithoutAddress = projects.filter(p => !hasValidAddress(p))
-    
-    return { 
-      total: projects.length, 
-      totalBudget, 
+
+    return {
+      total: projects.length,
+      totalBudget,
       totalSpent,
       totalRemaining,
       totalEmployees,
@@ -185,14 +185,14 @@ export default function ProjectsPage() {
               <span className="font-semibold">{employeesCount}</span>
               <span className="text-xs text-muted-foreground">всего</span>
             </div>
-            
+
             {/* Breakdown by service */}
             <div className="flex flex-wrap gap-1.5">
               {employeesWithLunch > 0 && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 gap-1 bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-800 dark:text-amber-400 cursor-help">
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 gap-1 bg-amber-500/10 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400 cursor-help">
                         <UtensilsCrossed className="h-3 w-3" />
                         {employeesWithLunch}
                       </Badge>
@@ -205,7 +205,7 @@ export default function ProjectsPage() {
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 gap-1 bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400 cursor-help">
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 gap-1 bg-blue-500/10 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400 cursor-help">
                         <CreditCard className="h-3 w-3" />
                         {employeesWithCompensation}
                       </Badge>
@@ -264,7 +264,7 @@ export default function ProjectsPage() {
               <span className="font-semibold">{formatNumber(spentTotal)}</span>
               <span className="text-xs text-muted-foreground">{currencyCode}</span>
             </div>
-            
+
             {/* Breakdown */}
             <div className="flex flex-wrap gap-2 text-xs">
               {spentLunch > 0 && (
@@ -315,7 +315,7 @@ export default function ProjectsPage() {
         const { budgetRemaining, budget, currencyCode = 'TJS' } = row.original
         const usedPercent = budget > 0 ? ((budget - budgetRemaining) / budget) * 100 : 0
         const colorClass = getBudgetColor(budgetRemaining, budget)
-        
+
         return (
           <div className="space-y-1.5 min-w-[130px]">
             <div className="flex items-center gap-1.5">
@@ -325,11 +325,11 @@ export default function ProjectsPage() {
               </span>
               <span className="text-xs text-muted-foreground">{currencyCode}</span>
             </div>
-            
+
             {/* Progress bar */}
             <div className="w-full">
-              <Progress 
-                value={Math.min(usedPercent, 100)} 
+              <Progress
+                value={Math.min(usedPercent, 100)}
                 className="h-1.5"
               />
               <p className="text-[10px] text-muted-foreground mt-0.5">
@@ -392,7 +392,7 @@ export default function ProjectsPage() {
               ⚠️ {stats.projectsWithoutAddressCount} {stats.projectsWithoutAddressCount === 1 ? 'проект' : stats.projectsWithoutAddressCount < 5 ? 'проекта' : 'проектов'} без адреса доставки
             </span>
             <span className="block text-sm mt-1">
-              Невозможно создавать заказы для проектов без указанного адреса. 
+              Невозможно создавать заказы для проектов без указанного адреса.
               Проекты: {stats.projectsWithoutAddress.slice(0, 5).join(', ')}
               {stats.projectsWithoutAddressCount > 5 && ` и ещё ${stats.projectsWithoutAddressCount - 5}`}
             </span>

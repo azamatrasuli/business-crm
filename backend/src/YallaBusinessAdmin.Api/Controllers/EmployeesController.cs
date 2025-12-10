@@ -48,6 +48,7 @@ public class EmployeesController : BaseApiController
     /// <param name="maxBudget">Maximum budget filter.</param>
     /// <param name="hasSubscription">Subscription filter.</param>
     /// <param name="projectId">Project filter.</param>
+    /// <param name="serviceType">Service type filter: "LUNCH" or "COMPENSATION".</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Paged result of employees.</returns>
     [HttpGet]
@@ -66,6 +67,7 @@ public class EmployeesController : BaseApiController
         [FromQuery] decimal? maxBudget = null,
         [FromQuery] bool? hasSubscription = null,
         [FromQuery] Guid? projectId = null,
+        [FromQuery] string? serviceType = null,
         CancellationToken cancellationToken = default)
     {
         var (companyId, errorResult) = RequireCompanyId();
@@ -73,7 +75,7 @@ public class EmployeesController : BaseApiController
 
         var result = await _employeesService.GetAllAsync(
             page, pageSize, search, status, inviteStatus, orderStatus,
-            companyId!.Value, sortBy, sortDesc, minBudget, maxBudget, hasSubscription, projectId, cancellationToken);
+            companyId!.Value, sortBy, sortDesc, minBudget, maxBudget, hasSubscription, projectId, serviceType, cancellationToken);
         return Ok(result);
     }
 

@@ -23,7 +23,7 @@ interface LogEntry {
 }
 
 // Session ID for correlating logs within a session
-const sessionId = typeof window !== 'undefined' 
+const sessionId = typeof window !== 'undefined'
   ? `ses_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   : 'server'
 
@@ -58,7 +58,7 @@ class Logger {
    */
   private getCorrelationId(): string {
     if (typeof window !== 'undefined') {
-      return (window as Window & { __lastCorrelationId?: string }).__lastCorrelationId 
+      return (window as Window & { __lastCorrelationId?: string }).__lastCorrelationId
         ?? `log_${Date.now()}`
     }
     return `log_${Date.now()}`
@@ -105,7 +105,7 @@ class Logger {
     }
 
     const prefix = `[${entry.timestamp.split('T')[1].split('.')[0]}] [${entry.level}]`
-    
+
     if (entry.error) {
       console.group(`%c${prefix} ${entry.message}`, styles[entry.level])
       console.log('Context:', entry.context)
@@ -121,7 +121,7 @@ class Logger {
    */
   private addToBuffer(entry: LogEntry) {
     logBuffer.push(entry)
-    
+
     if (logBuffer.length >= BUFFER_SIZE) {
       this.flush()
     }
@@ -143,7 +143,7 @@ class Logger {
       //   headers: { 'Content-Type': 'application/json' },
       //   body: JSON.stringify({ logs: entries }),
       // })
-      
+
       // For now, just log that we would send
       console.log(`[Logger] Would send ${entries.length} log entries to server`)
     } catch (error) {
@@ -158,7 +158,7 @@ class Logger {
    */
   debug(message: string, context?: Record<string, unknown>) {
     if (this.isProduction) return // Skip debug in production
-    
+
     const entry = this.createEntry('DEBUG', message, context)
     this.logToConsole(entry)
   }
@@ -168,11 +168,11 @@ class Logger {
    */
   info(message: string, context?: Record<string, unknown>) {
     const entry = this.createEntry('INFO', message, context)
-    
+
     if (!this.isProduction) {
       this.logToConsole(entry)
     }
-    
+
     this.addToBuffer(entry)
   }
 
@@ -181,7 +181,7 @@ class Logger {
    */
   warn(message: string, context?: Record<string, unknown>) {
     const entry = this.createEntry('WARN', message, context)
-    
+
     this.logToConsole(entry)
     this.addToBuffer(entry)
   }
@@ -191,7 +191,7 @@ class Logger {
    */
   error(message: string, error?: Error, context?: Record<string, unknown>) {
     const entry = this.createEntry('ERROR', message, context, error)
-    
+
     this.logToConsole(entry)
     this.addToBuffer(entry)
   }
@@ -201,10 +201,10 @@ class Logger {
    */
   fatal(message: string, error?: Error, context?: Record<string, unknown>) {
     const entry = this.createEntry('FATAL', message, context, error)
-    
+
     this.logToConsole(entry)
     this.addToBuffer(entry)
-    
+
     // Immediately flush on fatal errors
     this.flush()
   }
@@ -241,11 +241,11 @@ class Logger {
       status,
       duration,
     })
-    
+
     if (level === 'WARN' || !this.isProduction) {
       this.logToConsole(entry)
     }
-    
+
     if (status >= 400) {
       this.addToBuffer(entry)
     }
@@ -255,13 +255,29 @@ class Logger {
 // Singleton instance
 export const logger = new Logger()
 
-// Set up periodic flushing
-if (typeof window !== 'undefined') {
-  setInterval(() => logger.flush(), FLUSH_INTERVAL)
-  
+// Track initialization to prevent duplicate intervals during hot reload
+declare global {
+  interface Window {
+    __loggerInitialized?: boolean
+    __loggerIntervalId?: ReturnType<typeof setInterval>
+  }
+}
+
+// Set up periodic flushing (with HMR-safe guard)
+if (typeof window !== 'undefined' && !window.__loggerInitialized) {
+  window.__loggerInitialized = true
+
+  // Clear any existing interval from previous HMR reload
+  if (window.__loggerIntervalId) {
+    clearInterval(window.__loggerIntervalId)
+  }
+
+  // Set up new interval and store its ID
+  window.__loggerIntervalId = setInterval(() => logger.flush(), FLUSH_INTERVAL)
+
   // Flush on page unload
   window.addEventListener('beforeunload', () => logger.flush())
-  
+
   // Capture unhandled errors
   window.addEventListener('error', (event) => {
     logger.error('Unhandled error', event.error, {
@@ -270,7 +286,7 @@ if (typeof window !== 'undefined') {
       colno: event.colno,
     })
   })
-  
+
   // Capture unhandled promise rejections
   window.addEventListener('unhandledrejection', (event) => {
     logger.error('Unhandled promise rejection', event.reason instanceof Error ? event.reason : new Error(String(event.reason)))

@@ -130,7 +130,9 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
       }
       await createEmployee(request)
 
-      // TODO: вернуть логику инвайтов когда запустим Client Web и бюджетирование
+      // NOTE: Invite functionality is planned for Client Web launch (Phase 2)
+      // This will include: email invites, budget allocation, and employee self-service
+      // See: docs/roadmap/client-web.md for details
       toast.success('Сотрудник успешно создан')
 
       form.reset()
@@ -145,8 +147,7 @@ export function CreateEmployeeDialog({ open, onOpenChange }: CreateEmployeeDialo
 
       // Handle multiple field errors at once
       if (appError.isMultiValidationError) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const hasFieldErrors = applyFieldErrors(appError, form.setError as any)
+        const hasFieldErrors = applyFieldErrors(appError, form.setError)
         if (!hasFieldErrors) {
           toast.error(appError.message, { description: appError.action })
         }

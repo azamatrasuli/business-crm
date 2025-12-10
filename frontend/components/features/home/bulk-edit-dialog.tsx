@@ -48,7 +48,7 @@ import { COMBO_METADATA, COMBO_TYPES } from '@/lib/combos'
 // FREEZE DISABLED (2025-01-09): import removed
 // import { freezeOrder } from '@/lib/api/orders'
 
-type BulkAction = 
+type BulkAction =
   | 'editCombo'      // Изменить комбо
   | 'pause'          // Поставить на паузу
   | 'resume'         // Возобновить
@@ -170,21 +170,21 @@ export function BulkEditDialog({
     const active = selectedOrders.filter(o => o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен').length
     // 'На паузе' is DEPRECATED, use 'Приостановлен'
     const paused = selectedOrders.filter(o => o.status === ORDER_STATUS.PAUSED || o.status === 'Приостановлен' || o.status === 'На паузе').length
-    
+
     // Группировка по комбо
     const byCombo = selectedOrders.reduce((acc, o) => {
       const combo = o.comboType || 'Нет'
       acc[combo] = (acc[combo] || 0) + 1
       return acc
     }, {} as Record<string, number>)
-    
+
     // Группировка по проектам
     const byProject = selectedOrders.reduce((acc, o) => {
       const project = o.projectName || 'Без проекта'
       acc[project] = (acc[project] || 0) + 1
       return acc
     }, {} as Record<string, number>)
-    
+
     return { lunch, compensation, active, paused, total: selectedOrders.length, byCombo, byProject }
   }, [selectedOrders])
 
@@ -202,7 +202,7 @@ export function BulkEditDialog({
   // Предупреждения для текущего действия
   const warnings = useMemo(() => {
     const result: string[] = []
-    
+
     if (selectedAction === 'editCombo') {
       if (stats.compensation > 0) {
         result.push(`${stats.compensation} сотр. с компенсацией не будут затронуты`)
@@ -212,15 +212,15 @@ export function BulkEditDialog({
         result.push(`${sameCombo} уже имеют выбранный тип комбо`)
       }
     }
-    
+
     if (selectedAction === 'pause' && stats.paused > 0) {
       result.push(`${stats.paused} уже на паузе — пропущены`)
     }
-    
+
     if (selectedAction === 'resume' && stats.active > 0) {
       result.push(`${stats.active} уже активны — пропущены`)
     }
-    
+
     return result
   }, [selectedAction, stats, comboType, selectedOrders])
 
@@ -236,7 +236,7 @@ export function BulkEditDialog({
 
   const handleSubmit = async () => {
     if (!selectedAction) return
-    
+
     // Для отмены требуем подтверждения
     if (selectedAction === 'cancel' && !confirmCancel) {
       setConfirmCancel(true)
@@ -252,12 +252,12 @@ export function BulkEditDialog({
         case 'editCombo': {
           // Фильтруем только ланч-заказы
           const lunchOrders = selectedOrders.filter(o => o.serviceType === 'LUNCH' || !o.serviceType)
-          
+
           if (lunchOrders.length === 0) {
             toast.error('Нет ланч-заказов для изменения')
             return
           }
-          
+
           // Меняем комбо только для выбранных заказов, а не всей подписки
           const request: BulkActionRequest = {
             orderIds: lunchOrders.map(o => o.id),
@@ -271,8 +271,8 @@ export function BulkEditDialog({
 
         case 'pause': {
           // Pause subscriptions via bulk action
-          const lunchOrders = selectedOrders.filter(o => 
-            (o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен') && 
+          const lunchOrders = selectedOrders.filter(o =>
+            (o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен') &&
             (o.serviceType === 'LUNCH' || !o.serviceType) &&
             o.employeeId
           )
@@ -280,11 +280,11 @@ export function BulkEditDialog({
             toast.info('Нет активных ланч-заказов для приостановки')
             return
           }
-          
+
           // Use bulk action API
-          const request: BulkActionRequest = { 
-            orderIds: lunchOrders.map(o => o.id), 
-            action: 'pause' 
+          const request: BulkActionRequest = {
+            orderIds: lunchOrders.map(o => o.id),
+            action: 'pause'
           }
           await bulkAction(request)
           toast.success(`Приостановлено: ${lunchOrders.length} заказов`, {
@@ -292,11 +292,11 @@ export function BulkEditDialog({
           })
           break
         }
-        
+
         case 'resume': {
           // Resume subscriptions
           // 'На паузе' is DEPRECATED, use 'Приостановлен'
-          const pausedOrders = selectedOrders.filter(o => 
+          const pausedOrders = selectedOrders.filter(o =>
             (o.status === ORDER_STATUS.PAUSED || o.status === 'Приостановлен' || o.status === 'На паузе') &&
             (o.serviceType === 'LUNCH' || !o.serviceType)
           )
@@ -304,11 +304,11 @@ export function BulkEditDialog({
             toast.info('Нет приостановленных заказов для возобновления')
             return
           }
-          
+
           // Fallback: use bulk action for backward compatibility
-          const request: BulkActionRequest = { 
-            orderIds: pausedOrders.map(o => o.id), 
-            action: 'resume' 
+          const request: BulkActionRequest = {
+            orderIds: pausedOrders.map(o => o.id),
+            action: 'resume'
           }
           await bulkAction(request)
           toast.success(`Возобновлено: ${pausedOrders.length} заказов`)
@@ -324,7 +324,7 @@ export function BulkEditDialog({
         }
 
         case 'cancel': {
-          const request: BulkActionRequest = { orderIds, action: 'cancel' as any }
+          const request: BulkActionRequest = { orderIds, action: 'cancel' }
           await bulkAction(request)
           toast.success(`Отменено: ${orderIds.length} заказов`, {
             description: 'Стоимость возвращена на баланс',
@@ -340,7 +340,7 @@ export function BulkEditDialog({
       logger.error('Bulk action failed', error instanceof Error ? error : new Error(appError.message), {
         errorCode: appError.code,
       })
-      
+
       if (appError.code === ErrorCodes.FREEZE_LIMIT_EXCEEDED) {
         toast.error('Лимит заморозок исчерпан', {
           description: 'Вы использовали 2 заморозки на этой неделе. Дождитесь следующей недели.',
@@ -401,23 +401,23 @@ export function BulkEditDialog({
               Всего: {stats.total}
             </Badge>
             {stats.lunch > 0 && (
-              <Badge variant="outline" className="gap-1 bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800">
+              <Badge variant="outline" className="gap-1 bg-amber-500/10 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400">
                 <UtensilsCrossed className="h-3 w-3" />
                 Ланч: {stats.lunch}
               </Badge>
             )}
             {stats.compensation > 0 && (
-              <Badge variant="outline" className="gap-1 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800">
+              <Badge variant="outline" className="gap-1 bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400">
                 💳 Компенсация: {stats.compensation}
               </Badge>
             )}
             {stats.active > 0 && (
-              <Badge variant="outline" className="gap-1 bg-green-50 text-green-700 border-green-200 dark:bg-green-950/30 dark:text-green-400 dark:border-green-800">
+              <Badge variant="outline" className="gap-1 bg-green-500/10 text-green-700 dark:bg-green-500/20 dark:text-green-400">
                 ✓ Активных: {stats.active}
               </Badge>
             )}
             {stats.paused > 0 && (
-              <Badge variant="outline" className="gap-1 bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950/30 dark:text-orange-400 dark:border-orange-800">
+              <Badge variant="outline" className="gap-1 bg-orange-500/10 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400">
                 ⏸ Приостановлено: {stats.paused}
               </Badge>
             )}
@@ -478,7 +478,7 @@ export function BulkEditDialog({
                 )
               })}
             </div>
-            
+
             {availableActions.length === 0 && (
               <Alert>
                 <Info className="h-4 w-4" />
@@ -530,8 +530,8 @@ export function BulkEditDialog({
                       htmlFor={`bulk-edit-${combo}`}
                       className={cn(
                         "flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-all",
-                        comboType === combo 
-                          ? "border-primary bg-primary/5 ring-2 ring-primary/20" 
+                        comboType === combo
+                          ? "border-primary bg-primary/5 ring-2 ring-primary/20"
                           : "hover:bg-muted/50"
                       )}
                     >
@@ -557,7 +557,7 @@ export function BulkEditDialog({
                   )
                 })}
               </RadioGroup>
-              
+
               <Alert className="bg-muted/50">
                 <Info className="h-4 w-4" />
                 <AlertDescription className="text-sm">
@@ -603,7 +603,7 @@ export function BulkEditDialog({
                   Стоимость будет возвращена на баланс компании.
                 </AlertDescription>
               </Alert>
-              
+
               {confirmCancel && (
                 <Alert className="border-destructive/50 bg-destructive/10">
                   <AlertTriangle className="h-4 w-4 text-destructive" />
@@ -645,7 +645,7 @@ export function BulkEditDialog({
                 <ChevronDown className="h-4 w-4 text-muted-foreground" />
               )}
             </button>
-            
+
             {showEmployeeList && (
               <div className="h-[380px] rounded-lg border overflow-auto">
                 <table className="w-full text-sm min-w-[900px]">
@@ -680,12 +680,12 @@ export function BulkEditDialog({
                         </td>
                         <td className="px-3 py-2.5 whitespace-nowrap">
                           {order.serviceType === 'LUNCH' || !order.serviceType ? (
-                            <Badge variant="outline" className="gap-1.5 bg-amber-500/10 text-amber-600 border-amber-200 dark:bg-amber-500/20 dark:text-amber-400 dark:border-amber-700">
+                            <Badge variant="outline" className="gap-1.5 bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
                               <UtensilsCrossed className="h-3 w-3" />
                               Ланч
                             </Badge>
                           ) : (
-                            <Badge variant="outline" className="gap-1.5 bg-emerald-500/10 text-emerald-600 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-700">
+                            <Badge variant="outline" className="gap-1.5 bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
                               <Wallet className="h-3 w-3" />
                               Компенсация
                             </Badge>

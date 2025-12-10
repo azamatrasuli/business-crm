@@ -1,5 +1,6 @@
 import apiClient from './client'
 import { clearAuthStatusCookie } from '@/stores/utils/cookie-manager'
+import { logger } from '@/lib/logger'
 
 export interface LoginRequest {
   phone: string
@@ -78,8 +79,9 @@ export const authApi = {
   async logout(): Promise<void> {
     try {
       await apiClient.post('/auth/logout')
-    } catch {
-      // Ignore errors on logout
+    } catch (error) {
+      // Log but don't throw - logout should always succeed client-side
+      logger.warn('Logout API call failed (non-critical)', { error })
     } finally {
       clearAuthStatusCookie()
     }

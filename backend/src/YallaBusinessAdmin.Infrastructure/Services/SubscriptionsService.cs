@@ -18,11 +18,16 @@ public class SubscriptionsService : ISubscriptionsService
 {
     private readonly AppDbContext _context;
     private readonly IBusinessConfigService _configService;
+    private readonly IBudgetService _budgetService;
 
-    public SubscriptionsService(AppDbContext context, IBusinessConfigService configService)
+    public SubscriptionsService(
+        AppDbContext context,
+        IBusinessConfigService configService,
+        IBudgetService budgetService)
     {
         _context = context;
         _configService = configService;
+        _budgetService = budgetService;
     }
 
     public async Task<PagedResult<SubscriptionResponse>> GetAllAsync(
@@ -205,30 +210,11 @@ public class SubscriptionsService : ISubscriptionsService
         }
 
         // ═══════════════════════════════════════════════════════════════
-        // VALIDATION: Project must have sufficient budget
-        // Calculate required budget based on dates and combo type
-        // ═══════════════════════════════════════════════════════════════
-        var validationPrice = request.ComboType switch
-        {
-            "Комбо 25" => 25m,
-            "Комбо 35" => 35m,
-            _ => 25m
-        };
-        var requiredBudget = validationPrice * validationTotalDays;
-        var availableBudget = employee.Project.Budget + employee.Project.OverdraftLimit;
-
-        if (requiredBudget > availableBudget)
-        {
-            throw new InvalidOperationException(
-                $"Недостаточно бюджета для создания подписки. " +
-                $"Требуется: {requiredBudget:N0} TJS, доступно: {availableBudget:N0} TJS");
-        }
-
-        // ═══════════════════════════════════════════════════════════════
         // TRANSACTION: All subscription creation operations must be atomic
         // - Create/reactivate subscription
         // - Update employee service type
         // - Create orders
+        // - ATOMIC budget deduction (inside transaction to prevent race conditions)
         // ═══════════════════════════════════════════════════════════════
         var strategy = _context.Database.CreateExecutionStrategy();
 
@@ -276,6 +262,11 @@ public class SubscriptionsService : ISubscriptionsService
                     // Create orders for reactivated subscription
                     await CreateOrdersForSubscriptionAsync(
                         existingSubscription, employee, employee.Project!, cancellationToken);
+
+                    // ═══════════════════════════════════════════════════════════════
+                    // NOTE: Бюджет НЕ списывается при реактивации подписки!
+                    // Списание происходит в конце каждого дня через DailySettlementJob.
+                    // ═══════════════════════════════════════════════════════════════
 
                     await _context.SaveChangesAsync(cancellationToken);
                     await transaction.CommitAsync(cancellationToken);
@@ -331,6 +322,13 @@ public class SubscriptionsService : ISubscriptionsService
                 // ═══════════════════════════════════════════════════════════════
                 var ordersCreated = await CreateOrdersForSubscriptionAsync(
                     subscription, employee, employee.Project!, cancellationToken);
+
+                // ═══════════════════════════════════════════════════════════════
+                // NOTE: Бюджет НЕ списывается при создании подписки!
+                // Списание происходит в конце каждого дня через DailySettlementJob
+                // когда заказы переводятся из Active в Completed.
+                // Это позволяет отменять заказы без возвратов (до списания).
+                // ═══════════════════════════════════════════════════════════════
 
                 await _context.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
@@ -452,33 +450,54 @@ public class SubscriptionsService : ISubscriptionsService
                 // SOFT DELETE: Deactivate instead of hard delete
                 subscription.Deactivate(); // Uses domain method which sets IsActive=false and Status=Completed
 
-                // DELETE FUTURE ORDERS: Remove orders from today onwards (Active or Paused)
-                // Past orders are preserved as history
+                // ═══════════════════════════════════════════════════════════════
+                // CANCEL FUTURE ORDERS: Find and cancel orders that are not yet settled
                 // IMPORTANT: Use project's timezone for "today" comparison!
+                // ═══════════════════════════════════════════════════════════════
                 var deleteTimezone = subscription.Employee?.Project?.Timezone;
                 var deleteLocalToday = TimezoneHelper.GetLocalToday(deleteTimezone);
-                var futureOrders = await _context.Orders
+
+                // Find Active/Paused orders (not yet settled - no refund needed)
+                var unsettledOrders = await _context.Orders
                     .Where(o => o.EmployeeId == subscription.EmployeeId
                              && (o.Status == OrderStatus.Active || o.Status == OrderStatus.Paused)
                              && o.OrderDate >= deleteLocalToday)
                     .ToListAsync(cancellationToken);
 
-                // Calculate refund amount for cancelled orders
-                var refundAmount = futureOrders.Sum(o => o.Price);
+                // Find Completed orders (already settled - refund required)
+                var settledOrders = await _context.Orders
+                    .Where(o => o.EmployeeId == subscription.EmployeeId
+                             && o.Status == OrderStatus.Completed
+                             && o.OrderDate >= deleteLocalToday)
+                    .ToListAsync(cancellationToken);
 
-                // S1.5.2: Cancel orders (set status to Cancelled) instead of deleting
-                // This preserves order history for audit/analytics
-                foreach (var order in futureOrders)
+                // Cancel unsettled orders - NO REFUND (budget not deducted yet)
+                foreach (var order in unsettledOrders)
                 {
                     order.Status = OrderStatus.Cancelled;
                     order.UpdatedAt = DateTime.UtcNow;
                 }
 
-                // Refund budget to project
-                if (refundAmount > 0 && subscription.Employee?.Project != null)
+                // Cancel settled orders - REFUND required (budget was already deducted)
+                var refundAmount = settledOrders.Sum(o => o.Price);
+                foreach (var order in settledOrders)
                 {
-                    subscription.Employee.Project.Budget += refundAmount;
-                    subscription.Employee.Project.UpdatedAt = DateTime.UtcNow;
+                    order.Status = OrderStatus.Cancelled;
+                    order.UpdatedAt = DateTime.UtcNow;
+                }
+
+                // ═══════════════════════════════════════════════════════════════
+                // ATOMIC BUDGET REFUND - only for Completed (settled) orders
+                // Uses row-level locking to prevent race conditions
+                // ═══════════════════════════════════════════════════════════════
+                if (refundAmount > 0 && subscription.Employee?.ProjectId != null)
+                {
+                    await _budgetService.RefundProjectBudgetAsync(
+                        subscription.Employee.ProjectId,
+                        refundAmount,
+                        $"Удаление подписки: {subscription.Employee.FullName} (возврат за {settledOrders.Count} выполненных заказов)",
+                        null,
+                        cancellationToken);
                 }
 
                 // Reset Employee.ServiceType only if it was LUNCH
@@ -590,46 +609,14 @@ public class SubscriptionsService : ISubscriptionsService
             }
 
             // ═══════════════════════════════════════════════════════════════
-            // VALIDATION: Check budget (early validation before date parsing)
-            // IMPORTANT: Use project's timezone for "today" comparison!
+            // NOTE: Budget validation moved to atomic deduction after all subscriptions created
+            // This prevents race conditions when multiple subscriptions are created concurrently
             // ═══════════════════════════════════════════════════════════════
-            var bulkTimezone = employee.Project?.Timezone;
-            var bulkLocalToday = TimezoneHelper.GetLocalTodayDate(bulkTimezone);
-            var earlyStartDate = !string.IsNullOrEmpty(request.StartDate)
-                ? DateOnly.ParseExact(request.StartDate, "yyyy-MM-dd", CultureInfo.InvariantCulture)
-                : bulkLocalToday;
-            var earlyEndDate = !string.IsNullOrEmpty(request.EndDate)
-                ? DateOnly.ParseExact(request.EndDate, "yyyy-MM-dd", CultureInfo.InvariantCulture)
-                : earlyStartDate.AddMonths(1);
-
-            int estimatedDays;
-            if (request.ScheduleType == "CUSTOM" && request.CustomDays != null && request.CustomDays.Count > 0)
-            {
-                estimatedDays = request.CustomDays.Select(d => DateOnly.Parse(d)).Count(d => d >= bulkLocalToday);
-            }
-            else
-            {
-                // Count days based on schedule type: EVERY_DAY or EVERY_OTHER_DAY
-                estimatedDays = WorkingDaysHelper.CountOrderDays(request.ScheduleType, employee.WorkingDays, earlyStartDate, earlyEndDate);
-            }
-
-            var comboPrice = request.ComboType switch
-            {
-                "Комбо 25" => 25m,
-                "Комбо 35" => 35m,
-                _ => 25m
-            };
-            var requiredBudget = comboPrice * estimatedDays;
-            var availableBudget = employee.Project.Budget + employee.Project.OverdraftLimit;
-
-            if (requiredBudget > availableBudget)
-            {
-                errors.Add(new { employeeId = employee.Id.ToString(), message = $"{employee.FullName} (недостаточно бюджета: требуется {requiredBudget:N0}, доступно {availableBudget:N0} TJS)" });
-                continue;
-            }
 
             // Parse dates from request (ISO format: YYYY-MM-DD)
-            // NOTE: bulkLocalToday already calculated with project timezone above
+            // IMPORTANT: Use project's timezone for "today" comparison!
+            var bulkTimezone = employee.Project?.Timezone;
+            var bulkLocalToday = TimezoneHelper.GetLocalTodayDate(bulkTimezone);
             var startDate = !string.IsNullOrEmpty(request.StartDate)
                 ? DateOnly.ParseExact(request.StartDate, "yyyy-MM-dd", CultureInfo.InvariantCulture)
                 : bulkLocalToday;
@@ -770,6 +757,12 @@ public class SubscriptionsService : ISubscriptionsService
             // Store subscription for later mapping (after SaveChanges)
             createdSubscriptionsList.Add(subscription);
         }
+
+            // ═══════════════════════════════════════════════════════════════
+            // NOTE: Бюджет НЕ списывается при массовом создании подписок!
+            // Списание происходит в конце каждого дня через DailySettlementJob
+            // когда заказы переводятся из Active в Completed.
+            // ═══════════════════════════════════════════════════════════════
 
             await _context.SaveChangesAsync(cancellationToken);
 

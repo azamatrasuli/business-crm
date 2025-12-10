@@ -279,6 +279,21 @@ public class AppDbContext : DbContext
                 .WithMany(u => u.CreatedGuestOrders)
                 .HasForeignKey(e => e.CreatedByUserId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            // ═══════════════════════════════════════════════════════════════
+            // ИНДЕКСЫ для оптимизации запросов заказов
+            // ═══════════════════════════════════════════════════════════════
+            // Составной индекс для основного запроса заказов (company + project + date)
+            entity.HasIndex(e => new { e.CompanyId, e.ProjectId, e.OrderDate })
+                .HasDatabaseName("idx_orders_company_project_date");
+
+            // Индекс для фильтрации по статусу
+            entity.HasIndex(e => e.Status)
+                .HasDatabaseName("idx_orders_status");
+
+            // Индекс для фильтрации по дате (часто используется отдельно)
+            entity.HasIndex(e => e.OrderDate)
+                .HasDatabaseName("idx_orders_order_date");
         });
 
         // LunchSubscription
@@ -370,7 +385,6 @@ public class AppDbContext : DbContext
             entity.Property(e => e.InvoiceId).HasColumnName("invoice_id");
             entity.Property(e => e.DailyOrderId).HasColumnName("daily_order_id");
             entity.Property(e => e.ClientAppOrderUuid).HasColumnName("client_app_order_uuid");
-            entity.Property(e => e.BalanceAfter).HasColumnName("balance_after").HasPrecision(15, 2);
             entity.Property(e => e.Description).HasColumnName("description");
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
 
@@ -520,6 +534,12 @@ public class AppDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(e => e.EmployeeId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // ═══════════════════════════════════════════════════════════════
+            // ИНДЕКС для оптимизации запросов компенсаций по дате
+            // ═══════════════════════════════════════════════════════════════
+            entity.HasIndex(e => new { e.ProjectId, e.TransactionDate })
+                .HasDatabaseName("idx_compensation_project_date");
         });
 
         // EmployeeCompensationBalance

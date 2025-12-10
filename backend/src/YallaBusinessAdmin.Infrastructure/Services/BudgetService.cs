@@ -65,7 +65,7 @@ public class BudgetService : IBudgetService
             .FirstOrDefaultAsync(cancellationToken);
 
         // Log transaction
-        await LogTransactionAsync(projectId, -amount, newBalance, description, orderId, cancellationToken);
+        await LogTransactionAsync(projectId, -amount, description, orderId, cancellationToken);
 
         return newBalance;
     }
@@ -98,7 +98,7 @@ public class BudgetService : IBudgetService
             .FirstOrDefaultAsync(cancellationToken);
 
         // Log transaction
-        await LogTransactionAsync(projectId, amount, newBalance, description, orderId, cancellationToken);
+        await LogTransactionAsync(projectId, amount, description, orderId, cancellationToken);
 
         return newBalance;
     }
@@ -131,7 +131,6 @@ public class BudgetService : IBudgetService
     private async Task LogTransactionAsync(
         Guid projectId,
         decimal amount,
-        decimal balanceAfter,
         string description,
         Guid? orderId,
         CancellationToken cancellationToken)
@@ -150,7 +149,6 @@ public class BudgetService : IBudgetService
             Type = amount > 0 ? TransactionType.Refund : TransactionType.LunchDeduction,
             Amount = amount,
             DailyOrderId = orderId,
-            BalanceAfter = balanceAfter,
             Description = description,
             CreatedAt = DateTime.UtcNow
         };

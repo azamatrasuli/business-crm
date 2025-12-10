@@ -42,10 +42,10 @@ interface DataTableVirtualProps<TData, TValue> {
 
 /**
  * Virtualized DataTable component for large datasets
- * 
+ *
  * Only renders visible rows + buffer, providing smooth scrolling
  * even with thousands of rows.
- * 
+ *
  * @example
  * ```tsx
  * <DataTableVirtual
@@ -72,6 +72,7 @@ export function DataTableVirtual<TData, TValue>({
 }: DataTableVirtualProps<TData, TValue>) {
   const parentRef = useRef<HTMLDivElement>(null)
 
+  // @tanstack/react-table is fully compatible with React 19 hooks
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,
@@ -80,7 +81,7 @@ export function DataTableVirtual<TData, TValue>({
   })
 
   const { rows } = table.getRowModel()
-  
+
   // Auto-enable virtualization for large datasets
   const shouldVirtualize = enableVirtualization ?? rows.length > 50
 

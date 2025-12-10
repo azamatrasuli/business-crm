@@ -10,6 +10,7 @@ import {
 } from '@/lib/api/employees'
 import type { ActiveFilter } from '@/components/ui/filter-builder'
 import { getErrorMessage } from './utils'
+import { logger } from '@/lib/logger'
 
 interface EmployeesFilter {
   status: 'all' | 'active' | 'inactive'
@@ -75,7 +76,7 @@ const mapInviteStatusFilter = (inviteStatus: EmployeesFilter['inviteStatus']) =>
 // Convert active filters to API params
 const parseActiveFilters = (filters: ActiveFilter[]): Partial<EmployeesFilter> => {
   const result: Partial<EmployeesFilter> = {}
-  
+
   for (const filter of filters) {
     switch (filter.fieldId) {
       case 'status':
@@ -122,7 +123,7 @@ const parseActiveFilters = (filters: ActiveFilter[]): Partial<EmployeesFilter> =
         break
     }
   }
-  
+
   return result
 }
 
@@ -145,7 +146,7 @@ export const useEmployeesStore = create<EmployeesState>((set, get) => ({
     try {
       const { pageSize, searchQuery, activeFilters } = get()
       const parsedFilters = parseActiveFilters(activeFilters)
-      
+
       const response = await employeesApi.getEmployees(
         page,
         pageSize,
@@ -207,18 +208,19 @@ export const useEmployeesStore = create<EmployeesState>((set, get) => ({
     try {
       const updated = await employeesApi.updateEmployee(id, data)
       await get().fetchEmployees(get().currentPage)
-      
+
       // Also refresh selectedEmployee if it's the same employee
       const { selectedEmployee } = get()
       if (selectedEmployee?.id === id) {
         try {
           const refreshed = await employeesApi.getEmployee(id)
           set({ selectedEmployee: refreshed })
-        } catch {
-          // Ignore error, list is already refreshed
+        } catch (error) {
+          // Non-critical: list is already refreshed, log for debugging
+          logger.debug('Failed to refresh selected employee after update', { id, error })
         }
       }
-      
+
       set({ isLoading: false })
       return updated
     } catch (error) {

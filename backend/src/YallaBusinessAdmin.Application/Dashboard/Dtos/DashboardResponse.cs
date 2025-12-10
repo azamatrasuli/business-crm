@@ -20,6 +20,9 @@ public class DashboardResponse
     /// <summary>Number of paused orders.</summary>
     public int PausedOrders { get; set; }
 
+    /// <summary>Number of cancelled orders.</summary>
+    public int CancelledOrders { get; set; }
+
     /// <summary>Total number of guest orders.</summary>
     public int GuestOrders { get; set; }
 

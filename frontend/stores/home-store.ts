@@ -42,8 +42,8 @@ interface HomeState {
   dateFilter: string | null
   projectFilter: string
   activeFilters: ActiveFilter[]
-  fetchDashboard: () => Promise<void>
-  fetchOrders: (page?: number) => Promise<void>
+  fetchDashboard: (date?: string) => Promise<void>
+  fetchOrders: (page?: number, overrideDate?: string) => Promise<void>
   fetchCutoffTime: () => Promise<void>
   setSearch: (value: string) => void
   setStatusFilter: (value: StatusFilter) => void
@@ -68,7 +68,7 @@ const normalizeProjectFilter = (value: string) => {
 // Convert active filters to API params
 const parseActiveFilters = (filters: ActiveFilter[]): Partial<OrdersFilter> => {
   const result: Partial<OrdersFilter> = {}
-  
+
   for (const filter of filters) {
     switch (filter.fieldId) {
       case 'status':
@@ -103,7 +103,7 @@ const parseActiveFilters = (filters: ActiveFilter[]): Partial<OrdersFilter> => {
         break
     }
   }
-  
+
   return result
 }
 
@@ -123,27 +123,33 @@ export const useHomeStore = create<HomeState>((set, get) => ({
   projectFilter: 'all',
   activeFilters: [],
 
-  fetchDashboard: async () => {
+  fetchDashboard: async (date?: string) => {
     try {
-      const dashboard = await homeApi.getDashboard()
+      // If no date provided, try to get from activeFilters
+      const { activeFilters } = get()
+      const filterDate = date || activeFilters.find(f => f.fieldId === 'date')?.value as string | undefined
+      const dashboard = await homeApi.getDashboard(filterDate)
       set({ dashboard })
     } catch (error) {
       set({ error: getErrorMessage(error) })
     }
   },
 
-  fetchOrders: async (page = 1) => {
+  fetchOrders: async (page = 1, overrideDate?: string) => {
     set({ isLoading: true, error: null })
     try {
       const { pageSize, search, activeFilters } = get()
       const parsedFilters = parseActiveFilters(activeFilters)
-      
+
+      // Use overrideDate if provided, otherwise use date from activeFilters
+      const dateToUse = overrideDate !== undefined ? overrideDate : parsedFilters.date
+
       const response = await homeApi.getOrders(
         page,
         pageSize,
         search || undefined,
         parsedFilters.status || undefined,
-        parsedFilters.date || undefined,
+        dateToUse || undefined,
         normalizeProjectFilter(parsedFilters.projectId || 'all'),
         parsedFilters.type || undefined,
         parsedFilters.serviceType || undefined,

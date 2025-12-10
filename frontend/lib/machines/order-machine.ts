@@ -2,11 +2,13 @@
  * @fileoverview Order State Machine
  * State machine for managing order lifecycle.
  * Provides predictable state transitions for orders.
- * 
+ *
  * FREEZE FUNCTIONALITY DISABLED (2025-01-09)
  * The 'frozen' state is kept for type compatibility only.
  * Freeze transitions are removed from the state machine.
  */
+
+import { logger } from '@/lib/logger'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -142,7 +144,7 @@ export class OrderMachine {
     const nextState = stateTransitions?.[event.type]
 
     if (!nextState) {
-      console.warn(`No transition for event "${event.type}" in state "${this._state}"`)
+      logger.warn(`No transition for event "${event.type}" in state "${this._state}"`)
       return { state: this._state, context: this._context, changed: false }
     }
 

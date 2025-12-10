@@ -145,7 +145,7 @@ export function EditEmployeeDialog({
         workEndTime: data.workEndTime || undefined,
       }
 
-      console.log('[EditEmployee] Sending request:', request)
+      logger.debug('[EditEmployee] Sending request', { request })
 
       await updateEmployee(employee.id, request)
       toast.success('Сотрудник успешно обновлен')
@@ -162,8 +162,7 @@ export function EditEmployeeDialog({
 
       // Handle multiple field errors at once
       if (appError.isMultiValidationError) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const hasFieldErrors = applyFieldErrors(appError, form.setError as any)
+        const hasFieldErrors = applyFieldErrors(appError, form.setError)
         if (!hasFieldErrors) {
           toast.error(appError.message, { description: appError.action })
         }

@@ -19,6 +19,7 @@ public interface IEmployeesService
         decimal? maxBudget = null,
         bool? hasSubscription = null,
         Guid? projectId = null,
+        string? serviceType = null,
         CancellationToken cancellationToken = default);
 
     Task<EmployeeResponse> GetByIdAsync(Guid id, Guid companyId, CancellationToken cancellationToken = default);
@@ -26,20 +27,20 @@ public interface IEmployeesService
     Task<EmployeeResponse> UpdateAsync(Guid id, UpdateEmployeeRequest request, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default);
     Task<EmployeeResponse> ToggleActivationAsync(Guid id, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid id, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default);
-    
+
     /// <summary>
     /// Permanently deletes an employee and all related data from the database.
     /// WARNING: This action is irreversible! Use only for test/fake data cleanup.
     /// </summary>
     Task HardDeleteAsync(Guid id, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default);
-    
+
     Task UpdateBudgetAsync(Guid id, UpdateBudgetRequest request, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default);
     Task BatchUpdateBudgetAsync(BatchUpdateBudgetRequest request, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default);
-    
+
     Task<PagedResult<EmployeeOrderResponse>> GetEmployeeOrdersAsync(
-        Guid id, 
-        int page, 
-        int pageSize, 
+        Guid id,
+        int page,
+        int pageSize,
         Guid companyId,
         string? dateFrom = null,
         string? dateTo = null,

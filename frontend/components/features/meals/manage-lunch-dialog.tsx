@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { DEFAULT_WORKING_DAYS, getEffectiveWorkingDays, countWorkingDaysInRange, isWorkingDay as isWorkingDayCheck, formatWorkingDaysDescription } from "@/lib/constants/employee";
 import { cn } from "@/lib/utils";
+import { logger } from "@/lib/logger";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -30,7 +31,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
 import { parseError, ErrorCodes } from "@/lib/errors";
-import { logger } from "@/lib/logger";
 import { DaySelector } from "./day-selector";
 import { servicesApi, type ScheduleType, type ComboType } from "@/lib/api/services";
 import { employeesApi, type Employee, type EmployeeDetail, type DayOfWeek } from "@/lib/api/employees";
@@ -109,7 +109,7 @@ export function ManageLunchDialog({
   // Debug: логируем данные подписки при открытии
   useEffect(() => {
     if (open && existingSubscription) {
-      console.log('[ManageLunchDialog] existingSubscription data:', {
+      logger.debug('[ManageLunchDialog] existingSubscription data', {
         id: existingSubscription.id,
         totalDays: existingSubscription.totalDays,
         totalPrice: existingSubscription.totalPrice,
@@ -155,7 +155,7 @@ export function ManageLunchDialog({
           setAllEmployees(response.items);
         })
         .catch(err => {
-          console.error("Failed to load employees for bulk dialog:", err);
+          logger.error("Failed to load employees for bulk dialog", err);
           // При ошибке оставляем propEmployees
         })
         .finally(() => {

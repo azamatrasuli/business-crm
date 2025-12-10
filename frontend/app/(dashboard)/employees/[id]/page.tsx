@@ -471,12 +471,12 @@ export default function EmployeeDetailPage() {
           return <span className="text-muted-foreground">—</span>
         }
         return order.serviceType === 'LUNCH' ? (
-          <Badge variant="outline" className="gap-1.5 bg-amber-500/10 text-amber-600 border-amber-200 dark:bg-amber-500/20 dark:text-amber-400 dark:border-amber-700">
+          <Badge variant="outline" className="gap-1.5 bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
             <UtensilsCrossed className="h-3 w-3" />
             Ланч
           </Badge>
         ) : (
-          <Badge variant="outline" className="gap-1.5 bg-emerald-500/10 text-emerald-600 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-700">
+          <Badge variant="outline" className="gap-1.5 bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
             <Wallet className="h-3 w-3" />
             Компенсация
           </Badge>
@@ -615,8 +615,9 @@ export default function EmployeeDetailPage() {
       ),
       cell: ({ row }) => {
         const order = row.original
+        const config = getOrderStatusConfig(order.status || '')
         return (
-          <Badge variant={getStatusColor(order.status || '')} className="min-w-[76px] justify-center">
+          <Badge variant={config.variant || 'outline'} className={`min-w-[76px] justify-center ${config.className}`}>
             {order.status}
           </Badge>
         )
@@ -788,6 +789,27 @@ export default function EmployeeDetailPage() {
                       size="icon"
                       className={isPaused ? "h-8 w-8 text-muted-foreground" : "h-8 w-8 text-amber-600 hover:text-amber-700"}
                       disabled={!canEdit}
+                      onClick={() => {
+                        if (!canEdit) return
+                        // Convert EmployeeOrder to Order format for EditSubscriptionDialog
+                        const orderForEdit: Order = {
+                          id: order.id,
+                          employeeId: currentEmployee?.id || null,
+                          employeeName: currentEmployee?.fullName || '',
+                          employeePhone: currentEmployee?.phone || null,
+                          date: order.date || '',
+                          status: order.status || '',
+                          address: order.address || '',
+                          projectId: currentEmployee?.projectId || null,
+                          projectName: currentEmployee?.projectName || null,
+                          comboType: order.comboType,
+                          amount: order.amount || 0,
+                          type: 'Сотрудник',
+                          serviceType: order.serviceType,
+                        }
+                        setEditSingleOrder(orderForEdit)
+                        setEditSingleOrderOpen(true)
+                      }}
                     >
                       <UtensilsCrossed className="h-4 w-4" />
                     </Button>
@@ -1265,7 +1287,7 @@ export default function EmployeeDetailPage() {
                     <div className="rounded-xl border p-3 space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-sm font-medium">Прогресс подписки</span>
-                        <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-200">
+                        <Badge variant="outline" className="bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
                           {lunchSub.status}
                         </Badge>
                       </div>
@@ -1423,7 +1445,7 @@ export default function EmployeeDetailPage() {
                               Остаток переносится
                             </Badge>
                           ) : (
-                            <Badge variant="outline" className="gap-1 text-xs text-amber-600 border-amber-200">
+                            <Badge variant="outline" className="gap-1 text-xs text-amber-600 bg-amber-500/10 dark:bg-amber-500/20 dark:text-amber-400">
                               <AlertTriangle className="h-3 w-3" />
                               Остаток сгорает
                             </Badge>
@@ -1635,7 +1657,7 @@ export default function EmployeeDetailPage() {
               {/* Legend */}
               <div className="flex flex-wrap items-center gap-4 text-sm">
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-primary/20 border border-primary/30" />
+                  <div className="w-4 h-4 rounded bg-primary/20" />
                   <span className="text-muted-foreground">Рабочий день</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1643,11 +1665,11 @@ export default function EmployeeDetailPage() {
                   <span className="text-muted-foreground">Выходной</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-amber-500/20 border border-amber-500/30" />
+                  <div className="w-4 h-4 rounded bg-amber-500/20" />
                   <span className="text-muted-foreground">Ланч</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded bg-emerald-500/20 border border-emerald-500/30" />
+                  <div className="w-4 h-4 rounded bg-emerald-500/20" />
                   <span className="text-muted-foreground">Компенсация</span>
                 </div>
               </div>
@@ -1714,12 +1736,12 @@ export default function EmployeeDetailPage() {
                                 <div className="mt-1 space-y-1">
                                   {hasLunch && (
                                     <div className={cn(
-                                      "flex items-center gap-1 px-1.5 py-0.5 rounded border",
+                                      "flex items-center gap-1 px-1.5 py-0.5 rounded",
                                       isCancelled
-                                        ? `${STATUS_COLORS.cancelled.bg} ${STATUS_COLORS.cancelled.text} ${STATUS_COLORS.cancelled.border} line-through`
+                                        ? `${STATUS_COLORS.cancelled.bg} ${STATUS_COLORS.cancelled.bgDark} ${STATUS_COLORS.cancelled.text} ${STATUS_COLORS.cancelled.textDark} line-through`
                                         : isPaused
-                                          ? `${STATUS_COLORS.paused.bg} ${STATUS_COLORS.paused.text} ${STATUS_COLORS.paused.border}`
-                                          : "bg-amber-500/20 text-amber-700 dark:text-amber-400 border-transparent"
+                                          ? `${STATUS_COLORS.paused.bg} ${STATUS_COLORS.paused.bgDark} ${STATUS_COLORS.paused.text} ${STATUS_COLORS.paused.textDark}`
+                                          : "bg-amber-500/20 text-amber-700 dark:text-amber-400"
                                     )}>
                                       <UtensilsCrossed className="h-3 w-3" />
                                       <span className="text-[10px] font-medium truncate">
@@ -1731,10 +1753,10 @@ export default function EmployeeDetailPage() {
                                   )}
                                   {hasCompensationOrder && (
                                     <div className={cn(
-                                      "flex items-center gap-1 px-1.5 py-0.5 rounded border",
+                                      "flex items-center gap-1 px-1.5 py-0.5 rounded",
                                       compensationOrder?.status === 'Отменён'
-                                        ? `${STATUS_COLORS.cancelled.bg} ${STATUS_COLORS.cancelled.text} ${STATUS_COLORS.cancelled.border} line-through`
-                                        : "bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-transparent"
+                                        ? `${STATUS_COLORS.cancelled.bg} ${STATUS_COLORS.cancelled.bgDark} ${STATUS_COLORS.cancelled.text} ${STATUS_COLORS.cancelled.textDark} line-through`
+                                        : "bg-emerald-500/20 text-emerald-700 dark:text-emerald-400"
                                     )}>
                                       <Wallet className="h-3 w-3" />
                                       <span className="text-[10px] font-medium">

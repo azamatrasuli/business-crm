@@ -146,6 +146,7 @@ public static class DependencyInjection
         // Background Jobs
         // ═══════════════════════════════════════════════════════════════════════════════
         services.AddHostedService<DailyOrderGenerationJob>();
+        services.AddHostedService<DailySettlementJob>(); // Списание бюджета в конце дня
 
         return services;
     }

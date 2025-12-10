@@ -106,7 +106,7 @@ export function GuestOrderDialog({ open, onOpenChange }: GuestOrderDialogProps) 
   const {
     createGuestOrder,
     dashboard,
-    dateFilter,
+    activeFilters,
     cutoffTime,
   } = useHomeStore()
   const { projects, fetchProjects } = useProjectsStore()
@@ -115,7 +115,13 @@ export function GuestOrderDialog({ open, onOpenChange }: GuestOrderDialogProps) 
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingData, setPendingData] = useState<CreateGuestOrderRequest | null>(null)
 
-  const orderDateIso = dateFilter || todayIso
+  // Get date from activeFilters (same source as dashboard)
+  const dateFromFilters = useMemo(() => {
+    const dateFilter = activeFilters.find(f => f.fieldId === 'date')
+    return (dateFilter?.value as string) || ''
+  }, [activeFilters])
+
+  const orderDateIso = dateFromFilters || todayIso
   const orderDate = useMemo(() => getDisplayDate(orderDateIso), [orderDateIso])
   const orderDateLabel = useMemo(
     () =>
@@ -232,7 +238,7 @@ export function GuestOrderDialog({ open, onOpenChange }: GuestOrderDialogProps) 
       logger.error('Failed to create guest order', error instanceof Error ? error : new Error(appError.message), {
         errorCode: appError.code,
       })
-      
+
       // Handle specific errors
       if (appError.code === ErrorCodes.ORDER_CUTOFF_PASSED) {
         toast.error('Время для создания заказов истекло', {

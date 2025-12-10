@@ -23,8 +23,6 @@ public class CompanyTransaction
     public Guid? DailyOrderId { get; set; }
     public Guid? ClientAppOrderUuid { get; set; } // Weak reference to external Client App
     
-    // Balance snapshot for integrity verification
-    public decimal BalanceAfter { get; set; }
     public string? Description { get; set; }
     
     public DateTime CreatedAt { get; set; }

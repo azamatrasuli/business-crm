@@ -37,6 +37,7 @@ public class DashboardController : BaseApiController
     /// <summary>
     /// Gets dashboard metrics including budget, orders, and statistics.
     /// </summary>
+    /// <param name="date">Optional date filter (yyyy-MM-dd format). If provided, statistics are calculated for this date only.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Dashboard response with metrics.</returns>
     /// <response code="200">Returns dashboard metrics.</response>
@@ -46,13 +47,23 @@ public class DashboardController : BaseApiController
     [ProducesResponseType(typeof(DashboardResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<DashboardResponse>> GetDashboard(CancellationToken cancellationToken)
+    public async Task<ActionResult<DashboardResponse>> GetDashboard(
+        [FromQuery] string? date = null,
+        CancellationToken cancellationToken = default)
     {
         var (companyId, errorResult) = RequireCompanyId();
         if (errorResult != null) return errorResult;
 
         var projectId = GetProjectId();
-        var result = await _dashboardService.GetDashboardAsync(companyId!.Value, projectId, cancellationToken);
+
+        // Parse date filter if provided
+        DateOnly? filterDate = null;
+        if (!string.IsNullOrEmpty(date) && DateOnly.TryParse(date, out var parsedDate))
+        {
+            filterDate = parsedDate;
+        }
+
+        var result = await _dashboardService.GetDashboardAsync(companyId!.Value, projectId, filterDate, cancellationToken);
         return Ok(result);
     }
 

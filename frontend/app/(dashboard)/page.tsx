@@ -159,11 +159,12 @@ function HomePageContent() {
     }
     setActiveFilters([todayFilter])
 
-    fetchDashboard()
+    // Pass today's date directly to avoid race condition
+    fetchDashboard(todayIso)
     fetchCutoffTime()
     fetchProjects()
     fetchEmployees()
-    fetchOrders(1)
+    fetchOrders(1, todayIso)
   }, [fetchDashboard, fetchCutoffTime, fetchProjects, fetchEmployees, fetchOrders, setActiveFilters, todayIso])
 
   useEffect(() => {
@@ -183,7 +184,8 @@ function HomePageContent() {
   }, [orders])
 
   const debouncedSearch = debounce(() => {
-    fetchOrders(1)
+    // Use selectedDate from current state when searching
+    fetchOrders(1, selectedDate || undefined)
   }, 500)
 
   const handleSearchChange = (value: string) => {
@@ -192,7 +194,7 @@ function HomePageContent() {
   }
 
   const handlePageChange = (page: number) => {
-    fetchOrders(page)
+    fetchOrders(page, selectedDate || undefined)
   }
 
   // Sort orders with custom comparators
@@ -269,8 +271,10 @@ function HomePageContent() {
     } else {
       setActiveFilters(filtersWithoutDate)
     }
-    fetchOrders(1)
-  }, [activeFilters, setActiveFilters, fetchOrders])
+    // Pass date directly to avoid race condition with store update
+    fetchOrders(1, newDate || undefined)
+    fetchDashboard(newDate || undefined)
+  }, [activeFilters, setActiveFilters, fetchOrders, fetchDashboard])
 
   // Date navigation handlers
   const goToPreviousDay = () => {
@@ -383,7 +387,7 @@ function HomePageContent() {
     try {
       await bulkAction({
         orderIds: [cancelDialogOrder.id],
-        action: 'cancel' as any,
+        action: 'cancel',
       })
       toast.success(`Заказ для ${cancelDialogOrder.employeeName} отменён`)
       setCancelDialogOrder(null)
@@ -558,12 +562,12 @@ function HomePageContent() {
           return <span className="text-muted-foreground">—</span>
         }
         return order.serviceType === 'LUNCH' ? (
-          <Badge variant="outline" className="gap-1.5 bg-amber-500/10 text-amber-600 border-amber-200 dark:bg-amber-500/20 dark:text-amber-400 dark:border-amber-700">
+          <Badge variant="outline" className="gap-1.5 bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
             <UtensilsCrossed className="h-3 w-3" />
             Ланч
           </Badge>
         ) : (
-          <Badge variant="outline" className="gap-1.5 bg-emerald-500/10 text-emerald-600 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-700">
+          <Badge variant="outline" className="gap-1.5 bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
             <Wallet className="h-3 w-3" />
             Компенсация
           </Badge>
@@ -768,8 +772,9 @@ function HomePageContent() {
       ),
       cell: ({ row }) => {
         const order = row.original
+        const config = getOrderStatusConfig(order.status)
         return (
-          <Badge variant={getStatusColor(order.status)} className="min-w-[76px] justify-center">
+          <Badge variant={config.variant || 'outline'} className={`min-w-[76px] justify-center ${config.className}`}>
             {order.status}
           </Badge>
         )
@@ -1119,8 +1124,12 @@ function HomePageContent() {
 
   const handleFiltersChange = useCallback((filters: ActiveFilter[]) => {
     setActiveFilters(filters)
-    fetchOrders(1)
-  }, [setActiveFilters, fetchOrders])
+    // Extract date from new filters and pass directly to avoid race condition
+    const dateFilter = filters.find(f => f.fieldId === 'date')
+    const dateValue = dateFilter?.value as string | undefined
+    fetchOrders(1, dateValue)
+    fetchDashboard(dateValue)
+  }, [setActiveFilters, fetchOrders, fetchDashboard])
 
   return (
     <div className="space-y-6">
@@ -1176,7 +1185,7 @@ function HomePageContent() {
 
       {/* Dashboard Stats Cards */}
       {dashboard && (
-        <div className="grid gap-2 grid-cols-2 sm:grid-cols-4">
+        <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
           {/* Баланс */}
           <Card className="relative overflow-hidden border border-emerald-500/20 py-0">
             <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-transparent" />
@@ -1212,7 +1221,7 @@ function HomePageContent() {
             </CardContent>
           </Card>
 
-          {/* Активные заказы */}
+          {/* Заказы на дату */}
           <Card className="relative overflow-hidden border border-blue-500/20 py-0">
             <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-indigo-500/5 to-transparent" />
             <CardContent className="relative p-3">
@@ -1220,15 +1229,17 @@ function HomePageContent() {
                 <div className="rounded bg-blue-500/10 p-1">
                   <ShoppingCart className="h-3 w-3 text-blue-500" />
                 </div>
-                <span className="text-xs text-muted-foreground">Заказы сегодня</span>
+                <span className="text-xs text-muted-foreground">
+                  {isTodaySelected ? 'Заказы сегодня' : hasDateFilter ? `Заказы на ${displayDate ? format(displayDate, 'dd.MM') : ''}` : 'Все заказы'}
+                </span>
               </div>
               <p className="text-lg font-bold">{dashboard.activeOrders}<span className="text-sm text-muted-foreground font-normal">/{dashboard.totalOrders}</span></p>
               <p className="text-[10px] text-muted-foreground">
                 активных
-                {cutoffTime && !isCutoffLocked && (
+                {isTodaySelected && cutoffTime && !isCutoffLocked && (
                   <span className="text-blue-600 ml-1">• до {cutoffTime}</span>
                 )}
-                {isCutoffLocked && (
+                {isTodaySelected && isCutoffLocked && (
                   <span className="text-orange-600 ml-1">• закрыто</span>
                 )}
               </p>
@@ -1254,6 +1265,21 @@ function HomePageContent() {
               </p>
             </CardContent>
           </Card>
+
+          {/* Отменённые */}
+          <Card className="relative overflow-hidden border border-gray-500/20 py-0">
+            <div className="absolute inset-0 bg-gradient-to-br from-gray-500/10 via-slate-500/5 to-transparent" />
+            <CardContent className="relative p-3">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="rounded bg-gray-500/10 p-1">
+                  <X className="h-3 w-3 text-gray-500" />
+                </div>
+                <span className="text-xs text-muted-foreground">Отменённые</span>
+              </div>
+              <p className="text-lg font-bold">{dashboard.cancelledOrders ?? 0}</p>
+              <p className="text-[10px] text-muted-foreground">заказов</p>
+            </CardContent>
+          </Card>
         </div>
       )}
 
@@ -1270,10 +1296,14 @@ function HomePageContent() {
 
               <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1">
                 <Button
+                  type="button"
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 rounded-md hover:bg-background"
-                  onClick={goToPreviousDay}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    goToPreviousDay()
+                  }}
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
@@ -1286,10 +1316,14 @@ function HomePageContent() {
                 />
 
                 <Button
+                  type="button"
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 rounded-md hover:bg-background"
-                  onClick={goToNextDay}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    goToNextDay()
+                  }}
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>

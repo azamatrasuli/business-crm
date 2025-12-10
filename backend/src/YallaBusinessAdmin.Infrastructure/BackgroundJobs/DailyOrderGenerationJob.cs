@@ -88,7 +88,7 @@ public class DailyOrderGenerationJob : BackgroundService
                 // ═══════════════════════════════════════════════════════════════
                 var lunchSubscriptions = await context.LunchSubscriptions
                     .Include(ls => ls.Employee)
-                    .Where(ls => 
+                    .Where(ls =>
                         ls.ProjectId == project.Id &&
                         ls.IsActive &&
                         ls.Status == SubscriptionStatus.Active &&
@@ -129,7 +129,7 @@ public class DailyOrderGenerationJob : BackgroundService
                     // CRITICAL FIX: Use UTC DateTime for Postgres compatibility
                     var todayUtc = DateTime.SpecifyKind(projectToday.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
                     var existingOrder = await context.Orders
-                        .AnyAsync(o => 
+                        .AnyAsync(o =>
                             o.EmployeeId == employee.Id &&
                             o.OrderDate.Date == todayUtc.Date,
                             cancellationToken);
@@ -164,14 +164,15 @@ public class DailyOrderGenerationJob : BackgroundService
 
                 if (ordersCreated > 0)
                 {
-                    // Deduct from project budget
-                    project.Budget -= totalCost;
-                    project.UpdatedAt = DateTime.UtcNow;
-
+                    // ═══════════════════════════════════════════════════════════════
+                    // NOTE: Бюджет НЕ списывается здесь!
+                    // Списание происходит в DailySettlementJob в конце дня
+                    // когда заказы переводятся из Active в Completed.
+                    // ═══════════════════════════════════════════════════════════════
                     await context.SaveChangesAsync(cancellationToken);
 
                     _logger.LogInformation(
-                        "Generated {Count} orders for project {ProjectName}, deducted {Amount} {Currency}",
+                        "Generated {Count} orders for project {ProjectName}, pending settlement: {Amount} {Currency}",
                         ordersCreated, project.Name, totalCost, project.CurrencyCode);
                 }
             }
@@ -182,6 +183,3 @@ public class DailyOrderGenerationJob : BackgroundService
         }
     }
 }
-
-
-

@@ -2,11 +2,13 @@
  * @fileoverview Subscription State Machine
  * XState-like state machine for managing subscription lifecycle.
  * Provides predictable state transitions and prevents invalid states.
- * 
+ *
  * REFACTORED: 2025-01-09
  * Simplified states: pending, active, paused, expired, cancelled, completed
  * Frozen state REMOVED (temporarily disabled)
  */
+
+import { logger } from '@/lib/logger'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -212,10 +214,10 @@ export class SubscriptionMachine {
   can(eventType: SubscriptionEvent['type']): boolean {
     const stateConfig = this.config.states[this._state]
     const transition = stateConfig.on?.[eventType]
-    
+
     if (!transition) return false
     if (!transition.guard) return true
-    
+
     // Create a minimal event for guard check
     const event = { type: eventType } as SubscriptionEvent
     return transition.guard(this._context, event)
@@ -228,13 +230,13 @@ export class SubscriptionMachine {
 
     // No transition defined
     if (!transition) {
-      console.warn(`No transition for event "${event.type}" in state "${this._state}"`)
+      logger.warn(`No transition for event "${event.type}" in state "${this._state}"`)
       return { state: this._state, context: this._context, changed: false }
     }
 
     // Check guard
     if (transition.guard && !transition.guard(this._context, event)) {
-      console.warn(`Guard prevented transition for event "${event.type}"`)
+      logger.warn(`Guard prevented transition for event "${event.type}"`)
       return { state: this._state, context: this._context, changed: false }
     }
 
@@ -312,7 +314,7 @@ export function mapApiStatusToState(apiStatus: string): SubscriptionState {
     // Legacy: frozen -> treat as paused
     'Заморожена': 'paused',
   }
-  
+
   // English status map (for compatibility)
   const englishStatusMap: Record<string, SubscriptionState> = {
     PENDING: 'pending',
@@ -323,7 +325,7 @@ export function mapApiStatusToState(apiStatus: string): SubscriptionState {
     CANCELLED: 'cancelled',
     COMPLETED: 'completed',
   }
-  
+
   // Check Russian first, then English
   return russianStatusMap[apiStatus] || englishStatusMap[apiStatus.toUpperCase()] || 'pending'
 }

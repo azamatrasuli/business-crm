@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { authApi, type LoginResponse, type AdminListItem } from '@/lib/api/auth'
+import { logger } from '@/lib/logger'
 import {
   setAuthStatusCookie,
   clearAuthStatusCookie,
@@ -149,7 +150,7 @@ export const useAuthStore = create<AuthStore>()(
             set({ ...clearAuthState(), isInitializing: false })
           }
         } catch (error) {
-          console.error('Auth initialization error:', error)
+          logger.error('Auth initialization error', error instanceof Error ? error : new Error(String(error)))
           set({ ...clearAuthState(), isInitializing: false })
         }
       },
@@ -195,7 +196,7 @@ export const useAuthStore = create<AuthStore>()(
         try {
           await authApi.logout()
         } catch (error) {
-          console.error('Logout error:', error)
+          logger.warn('Logout error (non-critical)', { error })
         } finally {
           clearAuthStatusCookie()
           set({ ...clearAuthState(), allAdmins: [] })
@@ -208,7 +209,7 @@ export const useAuthStore = create<AuthStore>()(
         const { isImpersonating, stopImpersonating } = get()
 
         if (isImpersonating) {
-          console.log('Impersonation session expired, returning to original account')
+          logger.info('Impersonation session expired, returning to original account')
           stopImpersonating()
           return
         }
@@ -228,7 +229,7 @@ export const useAuthStore = create<AuthStore>()(
             ...extractUserContext(response.user),
           })
         } catch (error) {
-          console.error('Token refresh failed:', error)
+          logger.error('Token refresh failed', error instanceof Error ? error : new Error(String(error)))
           clearAuthStatusCookie()
           set(clearAuthState())
         }
@@ -284,7 +285,7 @@ export const useAuthStore = create<AuthStore>()(
             window.location.href = '/'
           }
         } catch (error) {
-          console.error('Impersonation failed:', error)
+          logger.error('Impersonation failed', error instanceof Error ? error : new Error(String(error)))
           throw error
         }
       },
@@ -312,7 +313,7 @@ export const useAuthStore = create<AuthStore>()(
             window.location.href = '/'
           }
         } catch (error) {
-          console.error('Failed to stop impersonation:', error)
+          logger.error('Failed to stop impersonation', error instanceof Error ? error : new Error(String(error)))
           // Fallback: clear auth state and redirect to login
           clearAuthStatusCookie()
           set(clearAuthState())
@@ -329,7 +330,7 @@ export const useAuthStore = create<AuthStore>()(
           set({ allAdmins: admins, adminsLoading: false })
           return admins
         } catch (error) {
-          console.error('Failed to fetch admins:', error)
+          logger.error('Failed to fetch admins', error instanceof Error ? error : new Error(String(error)))
           set({ adminsLoading: false })
           throw error
         }

@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useCallback } from 'react'
+import { logger } from '@/lib/logger'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -48,7 +49,7 @@ class EventBus {
       try {
         cb(data)
       } catch (error) {
-        console.error(`Error in event listener for "${event}":`, error)
+        logger.error(`Error in event listener for "${event}"`, error instanceof Error ? error : new Error(String(error)))
       }
     })
   }

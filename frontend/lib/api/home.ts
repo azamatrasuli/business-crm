@@ -6,6 +6,7 @@ export interface DashboardStats {
   totalOrders: number
   activeOrders: number
   pausedOrders: number
+  cancelledOrders: number
   guestOrders: number
   activeGuestOrders: number
   pausedGuestOrders: number
@@ -78,8 +79,10 @@ export interface OrdersResponse {
 }
 
 export const homeApi = {
-  async getDashboard(): Promise<DashboardStats> {
-    const response = await apiClient.get<DashboardStats>('/home/dashboard')
+  async getDashboard(date?: string): Promise<DashboardStats> {
+    const params: Record<string, string> = {}
+    if (date) params.date = date
+    const response = await apiClient.get<DashboardStats>('/home/dashboard', { params })
     return response.data
   },
 

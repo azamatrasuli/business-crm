@@ -203,18 +203,18 @@ export default function ProfilePage() {
                   {projectName}
                 </p>
               </div>
-              
+
               <div className="space-y-1">
                 <Label className="text-muted-foreground text-xs">Типы услуг</Label>
                 <div className="flex flex-wrap gap-2">
                   {projectServiceTypes?.includes('LUNCH') && (
-                    <Badge variant="outline" className="gap-1 bg-amber-500/10 text-amber-600 border-amber-200">
+                    <Badge variant="outline" className="gap-1 bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
                       <UtensilsCrossed className="h-3 w-3" />
                       Комплексные обеды
                     </Badge>
                   )}
                   {projectServiceTypes?.includes('COMPENSATION') && (
-                    <Badge variant="outline" className="gap-1 bg-emerald-500/10 text-emerald-600 border-emerald-200">
+                    <Badge variant="outline" className="gap-1 bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
                       <CreditCard className="h-3 w-3" />
                       Компенсация
                     </Badge>
@@ -225,7 +225,7 @@ export default function ProfilePage() {
                 </div>
               </div>
             </div>
-            
+
             <p className="text-xs text-muted-foreground mt-4 pt-4 border-t">
               Для изменения настроек проекта обратитесь к администратору
             </p>

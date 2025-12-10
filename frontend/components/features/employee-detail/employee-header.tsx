@@ -61,10 +61,10 @@ function getInviteStatusConfig(status: string | undefined) {
 // Component
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function EmployeeHeader({ 
-  employee, 
-  onBack, 
-  onEdit, 
+export function EmployeeHeader({
+  employee,
+  onBack,
+  onEdit,
   onHardDelete,
   canEdit,
   isDeleting = false
@@ -92,12 +92,12 @@ export function EmployeeHeader({
             <div className="flex items-center gap-2">
               {/* Active Status */}
               {employee.isActive ? (
-                <Badge variant="default" className="bg-emerald-500/10 text-emerald-600 border-emerald-200">
+                <Badge variant="default" className="bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400">
                   <CheckCircle2 className="h-3 w-3 mr-1" />
                   Активен
                 </Badge>
               ) : (
-                <Badge variant="destructive" className="bg-red-500/10 text-red-600 border-red-200">
+                <Badge variant="destructive" className="bg-red-500/10 text-red-600 dark:bg-red-500/20 dark:text-red-400">
                   <Ban className="h-3 w-3 mr-1" />
                   Неактивен
                 </Badge>
@@ -141,8 +141,8 @@ export function EmployeeHeader({
         {onHardDelete && (
           <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
             <AlertDialogTrigger asChild>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 size="sm"
                 className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
                 disabled={isDeleting}

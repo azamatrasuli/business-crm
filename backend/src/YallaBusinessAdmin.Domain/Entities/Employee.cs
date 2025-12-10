@@ -125,7 +125,7 @@ public class Employee
     }
 
     /// <summary>
-    /// Deactivates the employee and pauses all their active orders.
+    /// Deactivates the employee, pauses all their active orders, and pauses their subscription.
     /// </summary>
     public void Deactivate()
     {
@@ -136,6 +136,12 @@ public class Employee
         foreach (var order in Orders.Where(o => o.Status == OrderStatus.Active && o.OrderDate >= DateTime.UtcNow.Date))
         {
             order.Pause();
+        }
+
+        // Pause subscription if active (not completed or already paused)
+        if (LunchSubscription != null && LunchSubscription.CanBePaused)
+        {
+            LunchSubscription.Pause();
         }
     }
 

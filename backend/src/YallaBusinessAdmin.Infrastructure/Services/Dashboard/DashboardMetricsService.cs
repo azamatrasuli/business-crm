@@ -32,16 +32,17 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
     public async Task<DashboardResponse> GetDashboardAsync(
         Guid companyId,
         Guid? projectId = null,
+        DateOnly? filterDate = null,
         CancellationToken cancellationToken = default)
     {
         _logger.LogDebug(
-            "Getting dashboard for company {CompanyId}, project {ProjectId}",
-            companyId, projectId);
+            "Getting dashboard for company {CompanyId}, project {ProjectId}, date {FilterDate}",
+            companyId, projectId, filterDate);
 
         var (budget, overdraftLimit, timezone, cutoffTime, currencyCode) =
             await GetBudgetSettingsAsync(companyId, projectId, cancellationToken);
 
-        var ordersStats = await GetOrdersStatisticsAsync(companyId, projectId, cancellationToken);
+        var ordersStats = await GetOrdersStatisticsAsync(companyId, projectId, filterDate, cancellationToken);
 
         var budgetMetrics = CalculateBudgetMetrics(
             budget, overdraftLimit, ordersStats.Forecast, currencyCode);
@@ -55,6 +56,7 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
             TotalOrders = ordersStats.TotalOrders,
             ActiveOrders = ordersStats.ActiveOrders,
             PausedOrders = ordersStats.PausedOrders,
+            CancelledOrders = ordersStats.CancelledOrders,
             GuestOrders = ordersStats.GuestOrders,
             ActiveGuestOrders = ordersStats.ActiveGuestOrders,
             PausedGuestOrders = ordersStats.PausedGuestOrders,
@@ -113,7 +115,7 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
     }
 
     private async Task<OrdersStatistics> GetOrdersStatisticsAsync(
-        Guid companyId, Guid? projectId, CancellationToken cancellationToken)
+        Guid companyId, Guid? projectId, DateOnly? filterDate, CancellationToken cancellationToken)
     {
         var query = _context.Orders
             .AsNoTracking()
@@ -124,6 +126,15 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
             query = query.Where(o => o.ProjectId == projectId.Value);
         }
 
+        // Filter by date if provided
+        if (filterDate.HasValue)
+        {
+            // Convert DateOnly to DateTime (start of day in UTC) for PostgreSQL comparison
+            var targetDateStart = filterDate.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+            var targetDateEnd = filterDate.Value.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+            query = query.Where(o => o.OrderDate >= targetDateStart && o.OrderDate < targetDateEnd);
+        }
+
         var orders = await query.ToListAsync(cancellationToken);
 
         var today = DateTime.UtcNow.Date;
@@ -131,6 +142,7 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
 
         var activeOrders = orders.Count(o => o.Status == OrderStatus.Active);
         var pausedOrders = orders.Count(o => o.Status == OrderStatus.Paused);
+        var cancelledOrders = orders.Count(o => o.Status == OrderStatus.Cancelled);
         var guestOrders = orders.Count(o => o.IsGuestOrder);
         var activeGuestOrders = orders.Count(o => o.IsGuestOrder && o.Status == OrderStatus.Active);
         var pausedGuestOrders = orders.Count(o => o.IsGuestOrder && o.Status == OrderStatus.Paused);
@@ -150,6 +162,7 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
             TotalOrders: orders.Count,
             ActiveOrders: activeOrders,
             PausedOrders: pausedOrders,
+            CancelledOrders: cancelledOrders,
             GuestOrders: guestOrders,
             ActiveGuestOrders: activeGuestOrders,
             PausedGuestOrders: pausedGuestOrders,
@@ -209,6 +222,7 @@ public sealed class DashboardMetricsService : IDashboardMetricsService
         int TotalOrders,
         int ActiveOrders,
         int PausedOrders,
+        int CancelledOrders,
         int GuestOrders,
         int ActiveGuestOrders,
         int PausedGuestOrders,

@@ -46,6 +46,7 @@ public class EmployeesService : IEmployeesService
         decimal? maxBudget = null,
         bool? hasSubscription = null,
         Guid? projectId = null,
+        string? serviceType = null,
         CancellationToken cancellationToken = default)
     {
         // Load orders for the current subscription period to correctly count future/completed
@@ -124,6 +125,13 @@ public class EmployeesService : IEmployeesService
             query = hasSubscription.Value
                 ? query.Where(e => e.LunchSubscription != null && e.LunchSubscription.IsActive == true)
                 : query.Where(e => e.LunchSubscription == null || e.LunchSubscription.IsActive != true);
+        }
+
+        // Apply service type filter
+        if (!string.IsNullOrWhiteSpace(serviceType))
+        {
+            var parsedServiceType = ServiceTypeExtensions.FromDatabase(serviceType);
+            query = query.Where(e => e.ServiceType == parsedServiceType);
         }
 
         // Apply sorting
@@ -456,6 +464,7 @@ public class EmployeesService : IEmployeesService
         var employee = await _context.Employees
             .Include(e => e.Budget)
             .Include(e => e.Orders)
+            .Include(e => e.LunchSubscription)
             .FirstOrDefaultAsync(e => e.Id == id && e.CompanyId == companyId, cancellationToken);
 
         if (employee == null)

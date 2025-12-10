@@ -85,7 +85,7 @@ export function getCompanyStatusConfig(status?: string) {
       return {
         label: 'Активный',
         variant: 'default' as const,
-        className: 'bg-emerald-500/10 text-emerald-600 border-emerald-200',
+        className: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400',
       }
     case COMPANY_STATUS.INACTIVE:
     case 'INACTIVE':
@@ -97,7 +97,7 @@ export function getCompanyStatusConfig(status?: string) {
       return {
         label: 'Не активный',
         variant: 'secondary' as const,
-        className: 'bg-gray-500/10 text-gray-600 border-gray-200',
+        className: 'bg-gray-500/10 text-gray-600 dark:bg-gray-500/20 dark:text-gray-400',
       }
     default:
       return {
@@ -131,7 +131,7 @@ export function getEmployeeStatusConfig(status?: string) {
       return {
         label: 'Активный',
         variant: 'default' as const,
-        className: 'bg-emerald-500/10 text-emerald-600 border-emerald-200',
+        className: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400',
       }
     case EMPLOYEE_STATUS.DEACTIVATED:
     case 'DEACTIVATED':
@@ -141,7 +141,7 @@ export function getEmployeeStatusConfig(status?: string) {
       return {
         label: 'Деактивирован',
         variant: 'secondary' as const,
-        className: 'bg-gray-500/10 text-gray-600 border-gray-200',
+        className: 'bg-gray-500/10 text-gray-600 dark:bg-gray-500/20 dark:text-gray-400',
       }
     default:
       return {
@@ -188,7 +188,7 @@ export function getOrderStatusConfig(status?: string) {
       return {
         label: 'Активен',
         variant: 'default' as const,
-        className: 'bg-emerald-500/10 text-emerald-600 border-emerald-200',
+        className: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400',
       }
     case ORDER_STATUS.PAUSED:
     case 'Приостановлен':
@@ -196,7 +196,7 @@ export function getOrderStatusConfig(status?: string) {
       return {
         label: 'Приостановлен',
         variant: 'secondary' as const,
-        className: 'bg-amber-500/10 text-amber-600 border-amber-200',
+        className: 'bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400',
       }
     case ORDER_STATUS.COMPLETED:
     case 'Выполнен':
@@ -206,7 +206,7 @@ export function getOrderStatusConfig(status?: string) {
       return {
         label: 'Выполнен',
         variant: 'outline' as const,
-        className: 'bg-gray-500/10 text-gray-600 border-gray-200',
+        className: 'bg-gray-500/10 text-gray-600 dark:bg-gray-500/20 dark:text-gray-400',
       }
     case ORDER_STATUS.CANCELLED:
     case 'Отменён':
@@ -216,7 +216,7 @@ export function getOrderStatusConfig(status?: string) {
       return {
         label: 'Отменён',
         variant: 'destructive' as const,
-        className: 'bg-red-500/10 text-red-600 border-red-200',
+        className: 'bg-red-500/10 text-red-600 dark:bg-red-500/20 dark:text-red-400',
       }
     default:
       return {
@@ -309,7 +309,7 @@ export function getSubscriptionStatusConfig(status?: string) {
       return {
         label: 'Активна',
         variant: 'default' as const,
-        className: 'bg-emerald-500/10 text-emerald-600 border-emerald-200',
+        className: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400',
       }
     case SUBSCRIPTION_STATUS.PAUSED:
     case 'Приостановлена':
@@ -317,7 +317,7 @@ export function getSubscriptionStatusConfig(status?: string) {
       return {
         label: 'Приостановлена',
         variant: 'secondary' as const,
-        className: 'bg-amber-500/10 text-amber-600 border-amber-200',
+        className: 'bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400',
       }
     case SUBSCRIPTION_STATUS.COMPLETED:
     case 'Завершена':
@@ -325,7 +325,7 @@ export function getSubscriptionStatusConfig(status?: string) {
       return {
         label: 'Завершена',
         variant: 'outline' as const,
-        className: 'bg-gray-500/10 text-gray-600 border-gray-200',
+        className: 'bg-gray-500/10 text-gray-600 dark:bg-gray-500/20 dark:text-gray-400',
       }
     default:
       return {
@@ -389,19 +389,19 @@ export function getInviteStatusConfig(status?: string) {
       return {
         label: 'Принято',
         variant: 'default' as const,
-        className: 'bg-emerald-500/10 text-emerald-600 border-emerald-200',
+        className: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400',
       }
     case INVITE_STATUS.PENDING:
       return {
         label: 'Ожидает',
         variant: 'secondary' as const,
-        className: 'bg-amber-500/10 text-amber-600 border-amber-200',
+        className: 'bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400',
       }
     case INVITE_STATUS.REJECTED:
       return {
         label: 'Отклонено',
         variant: 'destructive' as const,
-        className: 'bg-red-500/10 text-red-600 border-red-200',
+        className: 'bg-red-500/10 text-red-600 dark:bg-red-500/20 dark:text-red-400',
       }
     default:
       return {
@@ -433,7 +433,8 @@ export function getStatusClasses(status?: string) {
   const key = getStatusColorKey(status)
   const colors = STATUS_COLORS[key]
   return {
-    badge: `${colors.bg} ${colors.text} ${colors.border}`,
+    // Badge: no border in dark mode for cleaner look
+    badge: `${colors.bg} ${colors.bgDark} ${colors.text} ${colors.textDark}`,
     card: `${colors.bg} ${colors.bgDark} ${colors.border} ${colors.borderDark}`,
     text: `${colors.text} ${colors.textDark}`,
     icon: colors.icon,

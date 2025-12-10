@@ -1,4 +1,5 @@
 import { AxiosError } from 'axios'
+import type { FieldValues, UseFormSetError, FieldPath } from 'react-hook-form'
 
 /**
  * Error types matching backend ErrorType enum
@@ -209,12 +210,20 @@ export function parseError(error: unknown): AppError {
 
   // Axios error with response
   if (isAxiosError(error) && error.response) {
-    const data = error.response.data as ApiErrorResponse | MultiValidationErrorResponse | { message?: string }
+    const data = error.response.data
 
     // Structured error response from backend
-    if ('success' in data && data.success === false && 'error' in data) {
+    // IMPORTANT: Check that data is an object before using 'in' operator
+    // Backend may return plain string like "Internal Server Error" on 500 errors
+    if (
+      typeof data === 'object' &&
+      data !== null &&
+      'success' in data &&
+      (data as ApiErrorResponse).success === false &&
+      'error' in data
+    ) {
       // Check for multi-validation error
-      if (data.error.code === 'MULTI_VALIDATION_ERROR' && 'fieldErrors' in data.error) {
+      if ((data as ApiErrorResponse).error.code === 'MULTI_VALIDATION_ERROR' && 'fieldErrors' in (data as ApiErrorResponse).error) {
         const multiError = data as MultiValidationErrorResponse
         return {
           code: multiError.error.code,
@@ -245,8 +254,14 @@ export function parseError(error: unknown): AppError {
       }
     }
 
-    // Legacy error response (just message)
-    const message = (data as { message?: string }).message ?? 'Произошла ошибка'
+    // Legacy error response (just message or plain string)
+    let message = 'Произошла ошибка'
+    if (typeof data === 'string') {
+      // Backend returned plain string (e.g., "Internal Server Error")
+      message = data
+    } else if (typeof data === 'object' && data !== null && 'message' in data) {
+      message = (data as { message?: string }).message ?? 'Произошла ошибка'
+    }
     const statusCode = error.response.status
 
     return {
@@ -317,12 +332,15 @@ export function isRetryableError(error: AppError): boolean {
 /**
  * Apply field errors to a react-hook-form instance
  * Returns true if any field errors were applied
+ *
+ * @param error - The AppError object containing field errors
+ * @param setError - The setError function from react-hook-form's useForm()
+ * @param fieldMapping - Optional mapping from backend field names to form field names
  */
-export function applyFieldErrors<T extends string>(
+export function applyFieldErrors<TFieldValues extends FieldValues>(
   error: AppError,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  setError: (field: T | `root.${string}` | 'root', error: { message: string }) => void,
-  fieldMapping?: Record<string, T>
+  setError: UseFormSetError<TFieldValues>,
+  fieldMapping?: Record<string, FieldPath<TFieldValues>>
 ): boolean {
   if (!error.isMultiValidationError || !error.fieldErrors?.length) {
     return false
@@ -330,9 +348,9 @@ export function applyFieldErrors<T extends string>(
 
   for (const fieldError of error.fieldErrors) {
     // Map backend field name to form field name if mapping provided
-    const formField = fieldMapping?.[fieldError.field] ?? (fieldError.field as T)
+    const formField = (fieldMapping?.[fieldError.field] ?? fieldError.field) as FieldPath<TFieldValues>
     try {
-      setError(formField, { message: fieldError.message })
+      setError(formField, { type: 'server', message: fieldError.message })
     } catch {
       // Field not in form, ignore
     }

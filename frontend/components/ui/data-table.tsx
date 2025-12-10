@@ -35,6 +35,7 @@ export function DataTable<TData, TValue>({
   emptyMessage = "Нет данных",
   onRowClick,
 }: DataTableProps<TData, TValue>) {
+  // @tanstack/react-table is fully compatible with React 19 hooks
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,

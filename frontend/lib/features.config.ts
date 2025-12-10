@@ -1,6 +1,6 @@
 /**
  * Feature Flags Configuration
- * 
+ *
  * Управляет доступностью функционала в зависимости от окружения.
  * В production — только MVP фичи (берутся из /config.json).
  * В staging/development — все фичи включены.
@@ -8,7 +8,7 @@
 
 import { FEATURES } from './config'
 
-export type FeatureFlag = 
+export type FeatureFlag =
   // MVP Features (enabled in production)
   | 'auth'              // Авторизация
   | 'projects'          // Проекты (филиалы)
@@ -47,7 +47,7 @@ const PRODUCTION_FEATURES: Record<FeatureFlag, boolean> = {
 }
 
 /**
- * Development/Staging features — всё включено (кроме compensation - не готово)
+ * Development/Staging features — всё включено
  */
 const DEVELOPMENT_FEATURES: Record<FeatureFlag, boolean> = {
   auth: true,
@@ -57,7 +57,7 @@ const DEVELOPMENT_FEATURES: Record<FeatureFlag, boolean> = {
   lunch: true,
   dashboard: true,
   guestOrders: true,
-  compensation: false, // DISABLED: Компенсации не готовы
+  compensation: true, // ENABLED: Service type switching is ready
   passwordReset: true,
   payments: true,
   analytics: true,
@@ -91,7 +91,7 @@ export const isFeatureEnabled = (feature: FeatureFlag): boolean => {
  */
 export const getBlockedReason = (feature: FeatureFlag): string | null => {
   if (isFeatureEnabled(feature)) return null
-  
+
   const reasons: Partial<Record<FeatureFlag, string>> = {
     users: 'Управление пользователями будет доступно в следующем обновлении',
     compensation: 'Компенсации будут доступны после запуска Client Web',
@@ -101,7 +101,7 @@ export const getBlockedReason = (feature: FeatureFlag): string | null => {
     news: 'Новости будут доступны в следующем обновлении',
     partners: 'Карта партнёров будет доступна в следующем обновлении',
   }
-  
+
   return reasons[feature] || 'Функционал будет доступен в следующем обновлении'
 }
 
@@ -110,7 +110,7 @@ export const getBlockedReason = (feature: FeatureFlag): string | null => {
  */
 export const getBlockedFeatures = (): FeatureFlag[] => {
   const allFeatures: FeatureFlag[] = [
-    'auth', 'projects', 'users', 'employees', 'lunch', 
+    'auth', 'projects', 'users', 'employees', 'lunch',
     'dashboard', 'guestOrders', 'compensation', 'passwordReset',
     'payments', 'analytics', 'news', 'partners'
   ]
@@ -142,7 +142,7 @@ export const routeToFeature: Record<string, FeatureFlag | null> = {
   '/forgot-password': 'passwordReset',
   '/reset-password': 'passwordReset',
   '/payments': 'payments',
-  '/analytics': 'analytics', 
+  '/analytics': 'analytics',
   '/news': 'news',
   '/partners': 'partners',
   '/profile': null, // profile всегда доступен

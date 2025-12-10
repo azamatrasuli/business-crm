@@ -134,8 +134,7 @@ public class InvoicesService : IInvoicesService
             Type = TransactionType.Deposit,
             Amount = request.Amount,
             InvoiceId = invoice.Id,
-            BalanceAfter = company.Budget,
-            Description = $"Оплата счета #{invoice.ExternalId ?? invoice.Id.ToString()[..8]}",
+            Description = invoice.ExternalId != null ? $"Счёт #{invoice.ExternalId}" : "Пополнение",
             CreatedAt = DateTime.UtcNow
         };
 
