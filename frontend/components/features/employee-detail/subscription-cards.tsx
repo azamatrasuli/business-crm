@@ -23,6 +23,7 @@ import { format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 import type { EmployeeDetail } from '@/lib/api/employees'
+import { getSubscriptionStatusConfig } from '@/lib/constants/entity-statuses'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -62,24 +63,13 @@ interface NoSubscriptionCardProps {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Helper Functions
+// Helper Functions - Use centralized status config
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function getStatusConfig(status: string) {
-  switch (status) {
-    case 'Активен':
-    case 'Активна':
-      return { className: 'bg-emerald-500/10 text-emerald-600 border-emerald-200' }
-    case 'Приостановлена':
-    case 'Приостановлен':
-    case 'На паузе':  // DEPRECATED: Legacy alias
-      return { className: 'bg-amber-500/10 text-amber-600 border-amber-200' }
-    case 'Завершен':
-    case 'Завершена':
-      return { className: 'bg-gray-500/10 text-gray-600 border-gray-200' }
-    default:
-      return { className: '' }
-  }
+  // Use centralized subscription status config
+  const config = getSubscriptionStatusConfig(status)
+  return { className: config.className }
 }
 
 /**

@@ -101,3 +101,4 @@ public class ConfigController : ControllerBase
 
 public record UpdateConfigRequest(object Value);
 
+

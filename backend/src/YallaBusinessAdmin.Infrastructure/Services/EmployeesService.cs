@@ -163,16 +163,29 @@ public class EmployeesService : IEmployeesService
     {
         var employee = await _context.Employees
             .AsNoTracking()
+            .IgnoreQueryFilters() // FIX: Ignore global query filters to load LunchSubscription for paused subscriptions
             .Include(e => e.Budget)
             .Include(e => e.Project)
             // Load ALL orders for the employee to correctly count future/completed for subscription stats
             .Include(e => e.Orders)
             .Include(e => e.LunchSubscription)
-            .FirstOrDefaultAsync(e => e.Id == id && e.CompanyId == companyId, cancellationToken);
+            .FirstOrDefaultAsync(e => e.Id == id && e.CompanyId == companyId && e.DeletedAt == null, cancellationToken);
 
         if (employee == null)
         {
             throw new KeyNotFoundException("Сотрудник не найден");
+        }
+
+        // FIX: Always load LunchSubscription separately with IgnoreQueryFilters to handle paused subscriptions
+        // This avoids issues with Company query filter affecting Include through the required relationship
+        var lunchSubscription = await _context.LunchSubscriptions
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(s => s.EmployeeId == employee.Id && s.Status != SubscriptionStatus.Completed, cancellationToken);
+
+        if (lunchSubscription != null)
+        {
+            employee.LunchSubscription = lunchSubscription;
         }
 
         return MapToResponse(employee);
@@ -508,11 +521,11 @@ public class EmployeesService : IEmployeesService
         // - Create audit log
         // ═══════════════════════════════════════════════════════════════
         var strategy = _context.Database.CreateExecutionStrategy();
-        
+
         await strategy.ExecuteAsync(async () =>
         {
             await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-            
+
             try
             {
                 // Use Rich Domain Model method - handles all cascading operations
@@ -527,6 +540,85 @@ public class EmployeesService : IEmployeesService
                     AuditEntityTypes.Employee,
                     employee.Id,
                     oldValues: oldValues,
+                    cancellationToken: cancellationToken);
+
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                throw;
+            }
+        });
+    }
+
+    /// <summary>
+    /// Permanently deletes an employee and all related data from the database.
+    /// WARNING: This action is irreversible!
+    /// Use this only for test/fake data cleanup.
+    /// </summary>
+    public async Task HardDeleteAsync(Guid id, Guid companyId, Guid? currentUserId = null, CancellationToken cancellationToken = default)
+    {
+        var employee = await _context.Employees
+            .IgnoreQueryFilters()
+            .Include(e => e.Budget)
+            .Include(e => e.Orders)
+            .Include(e => e.LunchSubscription)
+            .FirstOrDefaultAsync(e => e.Id == id && e.CompanyId == companyId, cancellationToken);
+
+        if (employee == null)
+        {
+            throw new KeyNotFoundException("Сотрудник не найден");
+        }
+
+        var employeeInfo = new { employee.FullName, employee.Phone, employee.Email };
+
+        // ═══════════════════════════════════════════════════════════════
+        // TRANSACTION: Hard delete employee with all related data atomically
+        // - Delete all orders
+        // - Delete lunch subscription
+        // - Delete employee budget
+        // - Delete employee
+        // - Create audit log
+        // ═══════════════════════════════════════════════════════════════
+        var strategy = _context.Database.CreateExecutionStrategy();
+
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+            try
+            {
+                // Delete all orders first (FK constraint)
+                if (employee.Orders.Any())
+                {
+                    _context.Orders.RemoveRange(employee.Orders);
+                }
+
+                // Delete lunch subscription if exists
+                if (employee.LunchSubscription != null)
+                {
+                    _context.LunchSubscriptions.Remove(employee.LunchSubscription);
+                }
+
+                // Delete employee budget if exists
+                if (employee.Budget != null)
+                {
+                    _context.EmployeeBudgets.Remove(employee.Budget);
+                }
+
+                // Finally delete employee
+                _context.Employees.Remove(employee);
+
+                await _context.SaveChangesAsync(cancellationToken);
+
+                // Audit log
+                await _auditService.LogAsync(
+                    currentUserId,
+                    "HARD_DELETE",
+                    AuditEntityTypes.Employee,
+                    employee.Id,
+                    oldValues: employeeInfo,
                     cancellationToken: cancellationToken);
 
                 await transaction.CommitAsync(cancellationToken);
@@ -589,6 +681,9 @@ public class EmployeesService : IEmployeesService
 
         // Use Rich Domain Model properties
         var hasActiveLunchSubscription = employee.HasActiveLunchSubscription;
+        // FIX: Check for existing subscription (active OR paused) - use direct check since LunchSubscription was loaded separately
+        var hasExistingLunchSubscription = employee.LunchSubscription != null &&
+            employee.LunchSubscription.Status != SubscriptionStatus.Completed;
 
         // TODO: Add real compensation tracking when available
         var hasActiveCompensation = false; // placeholder
@@ -608,7 +703,8 @@ public class EmployeesService : IEmployeesService
         string subscriptionScheduleType = "EVERY_DAY";
         List<string>? customDays = null;
 
-        if (hasActiveLunchSubscription && employee.LunchSubscription != null)
+        // FIX: Show subscription info for both active AND paused subscriptions
+        if (hasExistingLunchSubscription && employee.LunchSubscription != null)
         {
             var sub = employee.LunchSubscription;
 
@@ -616,18 +712,17 @@ public class EmployeesService : IEmployeesService
             subscriptionEndDate = sub.EndDate;
             subscriptionStatus = sub.Status.ToRussian();
 
-            // Count future orders (today and forward, Active or Frozen status)
+            // Count future orders (today and forward, Active or Paused status)
             // NOTE: Using UTC - acceptable for counts as orders are stored with UTC dates
             var futureOrders = employee.Orders
                 .Where(o => o.OrderDate.Date >= todayUtc &&
-                           (o.Status == Domain.Enums.OrderStatus.Active || o.Status == Domain.Enums.OrderStatus.Frozen))
+                           (o.Status == Domain.Enums.OrderStatus.Active || o.Status == Domain.Enums.OrderStatus.Paused))
                 .ToList();
-            
+
             futureOrdersCount = futureOrders.Count;
 
-            // Count completed orders (Delivered or Completed status)
+            // Count completed orders
             completedOrdersCount = employee.Orders.Count(o =>
-                o.Status == Domain.Enums.OrderStatus.Delivered ||
                 o.Status == Domain.Enums.OrderStatus.Completed);
 
             // ═══════════════════════════════════════════════════════════════
@@ -638,7 +733,7 @@ public class EmployeesService : IEmployeesService
             {
                 var subStartDateTime = subscriptionStartDate.Value.ToDateTime(TimeOnly.MinValue);
                 var subEndDateTime = subscriptionEndDate.Value.ToDateTime(TimeOnly.MaxValue);
-                totalDays = employee.Orders.Count(o => 
+                totalDays = employee.Orders.Count(o =>
                     o.Status != Domain.Enums.OrderStatus.Cancelled &&
                     o.OrderDate >= subStartDateTime &&
                     o.OrderDate <= subEndDateTime);
@@ -650,7 +745,7 @@ public class EmployeesService : IEmployeesService
 
             // Use futureOrdersCount as remaining days (more accurate than domain method)
             remainingDays = futureOrdersCount;
-            
+
             // ═══════════════════════════════════════════════════════════════
             // DYNAMIC TOTAL PRICE: Calculate as sum of actual future order prices
             // This is always accurate - no need to update manually anywhere!
@@ -725,10 +820,11 @@ public class EmployeesService : IEmployeesService
 
             // ═══════════════════════════════════════════════════════════════
             // Active Subscriptions
+            // FIX: Use hasExistingLunchSubscription to include paused subscriptions in response
             // ═══════════════════════════════════════════════════════════════
-            ActiveLunchSubscriptionId = hasActiveLunchSubscription ? employee.LunchSubscription!.Id : null,
+            ActiveLunchSubscriptionId = hasExistingLunchSubscription ? employee.LunchSubscription!.Id : null,
             ActiveCompensationId = null, // TODO: Add when compensation tracking is implemented
-            LunchSubscription = hasActiveLunchSubscription ? new LunchSubscriptionInfo
+            LunchSubscription = hasExistingLunchSubscription ? new LunchSubscriptionInfo
             {
                 Id = employee.LunchSubscription!.Id,
                 ComboType = employee.LunchSubscription.ComboType,
@@ -762,7 +858,7 @@ public class EmployeesService : IEmployeesService
                 Status = latestOrder.Status.ToRussian(),
                 Type = latestOrder.ComboType
             } : null,
-            HasSubscription = hasActiveLunchSubscription
+            HasSubscription = hasExistingLunchSubscription
         };
     }
 

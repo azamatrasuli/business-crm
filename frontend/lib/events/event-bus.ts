@@ -109,8 +109,9 @@ export const AppEvents = {
   ORDER_CREATED: 'order:created',
   ORDER_UPDATED: 'order:updated',
   ORDER_CANCELLED: 'order:cancelled',
-  ORDER_FROZEN: 'order:frozen',
-  ORDER_UNFROZEN: 'order:unfrozen',
+  // FREEZE DISABLED (2025-01-09): events kept for type compatibility
+  ORDER_FROZEN: 'order:frozen',      // DEPRECATED: do not use
+  ORDER_UNFROZEN: 'order:unfrozen',  // DEPRECATED: do not use
 
   // Subscription events
   SUBSCRIPTION_CREATED: 'subscription:created',

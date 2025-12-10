@@ -10,13 +10,13 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Progress } from '@/components/ui/progress'
-import { 
-  ArrowLeft, 
-  Pencil, 
-  Wallet, 
-  History, 
-  UtensilsCrossed, 
-  Calendar as CalendarIcon, 
+import {
+  ArrowLeft,
+  Pencil,
+  Wallet,
+  History,
+  UtensilsCrossed,
+  Calendar as CalendarIcon,
   Phone,
   Mail,
   FolderKanban,
@@ -34,10 +34,10 @@ import {
   ChevronRight,
   MapPin,
   PauseCircle,
-  Snowflake,
   Table,
   PlayCircle,
   Trash2,
+  AlertCircle,
 } from 'lucide-react'
 import {
   Tooltip,
@@ -63,14 +63,15 @@ import { cn } from '@/lib/utils'
 import { format, differenceInDays, parseISO, isAfter, addDays, startOfMonth, startOfWeek, isSameDay, isToday, isSameMonth, getDay, startOfDay } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { employeesApi, type EmployeeOrder, type DayOfWeek } from '@/lib/api/employees'
+import { servicesApi } from '@/lib/api/services'
 import { getEffectiveWorkingDays } from '@/lib/constants/employee'
 import { isFeatureEnabled } from '@/lib/features.config'
-import { getEmployeeFreezeInfo, freezeOrder, unfreezeOrder } from '@/lib/api/orders'
 import { toast } from 'sonner'
 import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import type { ColumnDef } from '@tanstack/react-table'
+import { STATUS_COLORS, getStatusColorKey, isOrderCancelled as checkOrderCancelled, isOrderPaused as checkOrderPaused, getOrderStatusConfig } from '@/lib/constants/entity-statuses'
 
 // День недели названия
 const DAYS_OF_WEEK_SHORT = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
@@ -87,7 +88,7 @@ export default function EmployeeDetailPage() {
   const [lunchCreateOpen, setLunchCreateOpen] = useState(false)
   const [compensationCreateOpen, setCompensationCreateOpen] = useState(false)
   const fetchedIdRef = useRef<string | null>(null)
-  
+
   // Orders state
   const [orders, setOrders] = useState<EmployeeOrder[]>([])
   const [ordersLoading, setOrdersLoading] = useState(true)
@@ -95,17 +96,23 @@ export default function EmployeeDetailPage() {
   const [ordersTotalPages, setOrdersTotalPages] = useState(0)
   const [ordersTotal, setOrdersTotal] = useState(0)
   const { sortConfig, toggleSort } = useSort<string>()
-  
+
   // Calendar state
   const [calendarDate, setCalendarDate] = useState(new Date())
   const [selectedOrderDate, setSelectedOrderDate] = useState<Date | null>(null)
   const [orderDetailOpen, setOrderDetailOpen] = useState(false)
   const [selectedDayOrders, setSelectedDayOrders] = useState<EmployeeOrder[]>([])
-  
+
   // Action dialogs state
   const [cancelDialogOrder, setCancelDialogOrder] = useState<EmployeeOrder | null>(null)
-  const [freezeDialogOrder, setFreezeDialogOrder] = useState<EmployeeOrder | null>(null)
-  
+
+  // Hard delete employee state
+  const [hardDeleteDialogOpen, setHardDeleteDialogOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  // Orders filter state
+  const [ordersStatusFilter, setOrdersStatusFilter] = useState<string>('all')
+
   // Single order edit dialog (for changing combo of one order, not entire subscription)
   const [editSingleOrderOpen, setEditSingleOrderOpen] = useState(false)
   const [editSingleOrder, setEditSingleOrder] = useState<Order | null>(null)
@@ -149,21 +156,24 @@ export default function EmployeeDetailPage() {
   const canEdit = Boolean(currentEmployee?.isActive)
   const hasAcceptedInvite = currentEmployee?.inviteStatus === 'Принято'
   const canManageBudget = Boolean(currentEmployee?.isActive && hasAcceptedInvite)
-  
+
   // ═══════════════════════════════════════════════════════════════
   // Проверка типа услуги сотрудника (привязан к сотруднику, не к проекту)
+  // FIX: Use activeLunchSubscriptionId which now includes paused subscriptions
   // ═══════════════════════════════════════════════════════════════
   const hasActiveLunch = Boolean(currentEmployee?.activeLunchSubscriptionId)
+  // FIX: Also check if lunchSubscription exists (for paused state display)
+  const hasLunchSubscription = Boolean(currentEmployee?.lunchSubscription)
   const hasActiveCompensation = Boolean(currentEmployee?.activeCompensationId)
   const employeeServiceType = currentEmployee?.serviceType // LUNCH | COMPENSATION | null
-  
+
   // Business rule: can switch to compensation only if no active lunch subscription
   const _canSwitchToCompensation = currentEmployee?.canSwitchToCompensation ?? !hasActiveLunch
   const _canSwitchToLunch = currentEmployee?.canSwitchToLunch ?? !hasActiveCompensation
-  
+
   // Для ланча: доступно если тип услуги НЕ компенсация
   const canManageLunch = canManageBudget && employeeServiceType !== 'COMPENSATION'
-  
+
   // Для компенсации: доступно если тип услуги НЕ ланч и НЕТ активной подписки на ланч
   // + проверка feature flag
   const compensationFeatureEnabled = isFeatureEnabled('compensation')
@@ -180,13 +190,13 @@ export default function EmployeeDetailPage() {
   // Lunch progress calculation - using actual working days from backend
   const lunchProgress = useMemo(() => {
     if (!lunchSub) return { total: 0, used: 0, percent: 0 }
-    
+
     // Use totalDays from backend (calculated by WORKING days, not calendar days)
     const total = lunchSub.totalDays ?? 0
-    
+
     // Used = completed orders count (actual delivered/completed orders)
     const used = lunchSub.completedOrdersCount ?? 0
-    
+
     const percent = total > 0 ? Math.min((used / total) * 100, 100) : 0
     return { total, used, percent }
   }, [lunchSub])
@@ -243,7 +253,7 @@ export default function EmployeeDetailPage() {
   // Calendar calculations
   const monthStart = useMemo(() => startOfMonth(calendarDate), [calendarDate])
   const calendarStart = useMemo(() => startOfWeek(monthStart, { weekStartsOn: 1 }), [monthStart])
-  
+
   const calendarDays = useMemo(() => {
     const days: Date[] = []
     let day = calendarStart
@@ -255,15 +265,24 @@ export default function EmployeeDetailPage() {
   }, [calendarStart])
 
   // BUSINESS RULE: Employee can have EITHER lunch OR compensation, NOT both
-  // Filter orders by employee's serviceType
+  // Filter orders by employee's serviceType and status filter
   const filteredOrders = useMemo(() => {
+    let result = orders
+
+    // Filter by service type
     if (employeeServiceType === 'LUNCH') {
-      return orders.filter(o => o.serviceType === 'LUNCH')
+      result = result.filter(o => o.serviceType === 'LUNCH')
     } else if (employeeServiceType === 'COMPENSATION') {
-      return orders.filter(o => o.serviceType === 'COMPENSATION')
+      result = result.filter(o => o.serviceType === 'COMPENSATION')
     }
-    return orders // null/undefined = show all for backward compatibility
-  }, [orders, employeeServiceType])
+
+    // Filter by status
+    if (ordersStatusFilter !== 'all') {
+      result = result.filter(o => o.status === ordersStatusFilter)
+    }
+
+    return result
+  }, [orders, employeeServiceType, ordersStatusFilter])
 
   const getOrdersForDate = useCallback((date: Date) => {
     return filteredOrders.filter(o => o.date && isSameDay(parseISO(o.date), date))
@@ -274,77 +293,27 @@ export default function EmployeeDetailPage() {
     return workingDays.includes(dow)
   }, [workingDays])
 
-  // Action handlers for orders (using new Orders API)
-  const handleFreezeOrder = useCallback(async (order: EmployeeOrder) => {
-    if (!id) {
-      toast.error('Невозможно заморозить заказ')
-      return
-    }
+  // Hard delete employee handler
+  const handleHardDeleteEmployee = useCallback(async () => {
+    if (!id || !currentEmployee) return
+    setIsDeleting(true)
     try {
-      const freezeInfo = await getEmployeeFreezeInfo(id)
-      if (freezeInfo.remainingFreezes <= 0) {
-        toast.error(`Лимит заморозок исчерпан (${freezeInfo.freezesThisWeek}/${freezeInfo.maxFreezesPerWeek} на этой неделе)`)
-        return
-      }
-      setFreezeDialogOrder(order)
-    } catch {
-      toast.error('Не удалось проверить лимит заморозок')
-    }
-  }, [id])
-
-  const handleUnfreezeOrder = useCallback(async (order: EmployeeOrder) => {
-    if (!id || !order.id) return
-    setActionLoading(true)
-    try {
-      const result = await unfreezeOrder(order.id)
-      toast.success('Заказ разморожен', {
-        description: `Подписка сокращена до ${result.subscription.endDate}`,
+      await employeesApi.hardDeleteEmployee(id)
+      toast.success('Сотрудник удалён', {
+        description: 'Все данные сотрудника были безвозвратно удалены',
       })
-      loadOrders()
+      router.push('/employees')
     } catch (error) {
       const appError = parseError(error)
-      logger.error('Failed to unfreeze order', error instanceof Error ? error : new Error(appError.message), {
+      logger.error('Failed to hard delete employee', error instanceof Error ? error : new Error(appError.message), {
         errorCode: appError.code,
       })
       toast.error(appError.message, { description: appError.action })
     } finally {
-      setActionLoading(false)
+      setIsDeleting(false)
+      setHardDeleteDialogOpen(false)
     }
-  }, [id, loadOrders])
-
-  const confirmFreezeOrder = useCallback(async () => {
-    if (!freezeDialogOrder || !id || !freezeDialogOrder.id) return
-    setActionLoading(true)
-    try {
-      const result = await freezeOrder(freezeDialogOrder.id, 'Заморозка через админ панель')
-      toast.success('Заказ заморожен', {
-        description: `Подписка продлена до ${result.subscription.endDate}`,
-      })
-      setFreezeDialogOrder(null)
-      loadOrders()
-    } catch (error) {
-      const appError = parseError(error)
-      logger.error('Failed to freeze order', error instanceof Error ? error : new Error(appError.message), {
-        errorCode: appError.code,
-      })
-      
-      // Special handling for freeze limit
-      if (appError.code === ErrorCodes.FREEZE_LIMIT_EXCEEDED) {
-        toast.error('Лимит заморозок исчерпан!', {
-          description: 'Вы уже использовали 2 заморозки на этой неделе. Дождитесь следующей недели.',
-          duration: 10000,
-        })
-      } else if (appError.code === ErrorCodes.ORDER_CUTOFF_PASSED) {
-        toast.error('Время для заморозки истекло', {
-          description: 'Заморозка на сегодня невозможна после времени отсечки',
-        })
-      } else {
-        toast.error(appError.message, { description: appError.action })
-      }
-    } finally {
-      setActionLoading(false)
-    }
-  }, [freezeDialogOrder, id, loadOrders])
+  }, [id, currentEmployee, router])
 
   const handleCancelOrder = useCallback((order: EmployeeOrder) => {
     setCancelDialogOrder(order)
@@ -372,7 +341,7 @@ export default function EmployeeDetailPage() {
       logger.error('Failed to cancel order', error instanceof Error ? error : new Error(appError.message), {
         errorCode: appError.code,
       })
-      
+
       if (appError.code === ErrorCodes.ORDER_CUTOFF_PASSED) {
         toast.error('Время для отмены истекло', {
           description: 'Отмена заказов на сегодня невозможна после времени отсечки',
@@ -385,22 +354,60 @@ export default function EmployeeDetailPage() {
     }
   }, [cancelDialogOrder, loadOrders, fetchEmployee, id])
 
-  // Pause/Resume subscription 
-  // Note: Now using freezePeriod for subscription pause, as Orders is the source of truth
+  // Pause/Resume subscription via API
   const handlePauseSubscription = useCallback(async () => {
-    // Pause is now handled via freeze period API - freeze all future orders
-    toast.info('Для приостановки подписки используйте заморозку будущих заказов', {
-      description: 'Перейдите на главную страницу и выберите период для заморозки',
-    })
-    setPauseSubscriptionDialog(false)
-  }, [])
+    if (!lunchSub?.id) {
+      toast.error('Подписка не найдена')
+      setPauseSubscriptionDialog(false)
+      return
+    }
+
+    setActionLoading(true)
+    try {
+      await servicesApi.pauseLunchSubscription(lunchSub.id)
+      toast.success('Подписка приостановлена', {
+        description: 'Все будущие заказы поставлены на паузу',
+      })
+      // Refresh data
+      await fetchEmployee(id as string)
+      await loadOrders()
+    } catch (err) {
+      const error = parseError(err)
+      logger.error('Error pausing subscription', { error, subscriptionId: lunchSub.id })
+      toast.error('Ошибка приостановки', {
+        description: error.message || 'Не удалось приостановить подписку',
+      })
+    } finally {
+      setActionLoading(false)
+      setPauseSubscriptionDialog(false)
+    }
+  }, [lunchSub?.id, fetchEmployee, id, loadOrders])
 
   const handleResumeSubscription = useCallback(async () => {
-    // Resume is now handled via unfreeze API - unfreeze individual orders
-    toast.info('Для возобновления разморозьте заказы по отдельности', {
-      description: 'Или создайте новую подписку',
-    })
-  }, [])
+    if (!lunchSub?.id) {
+      toast.error('Подписка не найдена')
+      return
+    }
+
+    setActionLoading(true)
+    try {
+      await servicesApi.resumeLunchSubscription(lunchSub.id)
+      toast.success('Подписка возобновлена', {
+        description: 'Заказы снова активны',
+      })
+      // Refresh data
+      await fetchEmployee(id as string)
+      await loadOrders()
+    } catch (err) {
+      const error = parseError(err)
+      logger.error('Error resuming subscription', { error, subscriptionId: lunchSub.id })
+      toast.error('Ошибка возобновления', {
+        description: error.message || 'Не удалось возобновить подписку',
+      })
+    } finally {
+      setActionLoading(false)
+    }
+  }, [lunchSub?.id, fetchEmployee, id, loadOrders])
 
   // Sort orders with custom comparators
   const sortedOrders = useMemo(() => {
@@ -411,53 +418,23 @@ export default function EmployeeDetailPage() {
         return dateA - dateB
       },
       status: (a, b) => {
-        // Priority: Active > Paused > Frozen > Delivered/Completed
-        // NOTE: 'На паузе' is DEPRECATED legacy alias for 'Приостановлен'
-        const order = { 'Активен': 5, 'Приостановлен': 4, 'На паузе': 4, 'Заморожен': 3, 'Выходной': 2, 'Доставлен': 1, 'Выполнен': 1, 'Завершен': 1, 'Отменён': 0 }
+        // Priority: Active > Paused > Completed > Cancelled
+        const order = { 'Активен': 4, 'Приостановлен': 3, 'Выполнен': 2, 'Завершен': 2, 'Отменён': 1 }
         return (order[a.status as keyof typeof order] || 0) - (order[b.status as keyof typeof order] || 0)
       },
     })
   }, [filteredOrders, sortConfig])
 
-  // Helper function for status color (like on main page)
+  // Helper function for status color - uses centralized config
   const getStatusColor = useCallback((status: string) => {
-    switch (status) {
-      case 'Активен':
-        return 'default'
-      case 'Приостановлен':
-      case 'На паузе':  // DEPRECATED legacy alias
-        return 'secondary'
-      case 'Завершен':
-      case 'Выполнен':
-      case 'Доставлен':
-        return 'outline'
-      case 'Заморожен':
-        return 'secondary'
-      default:
-        return 'outline'
-    }
+    const config = getOrderStatusConfig(status)
+    return config.variant || 'outline'
   }, [])
-  
-  // Helper function for status config (badge styling)
+
+  // Helper function for status config (badge styling) - uses centralized config
   const getStatusConfig = useCallback((status: string) => {
-    switch (status) {
-      case 'Активен':
-        return { className: 'bg-emerald-500/10 text-emerald-600 border-emerald-200' }
-      case 'Активна':
-        return { className: 'bg-emerald-500/10 text-emerald-600 border-emerald-200' }
-      case 'Приостановлен':
-      case 'На паузе':  // DEPRECATED legacy alias
-        return { className: 'bg-amber-500/10 text-amber-600 border-amber-200' }
-      case 'Завершен':
-      case 'Завершена':
-      case 'Выполнен':
-      case 'Доставлен':
-        return { className: 'bg-gray-500/10 text-gray-600 border-gray-200' }
-      case 'Заморожен':
-        return { className: 'bg-blue-500/10 text-blue-600 border-blue-200' }
-      default:
-        return { className: '' }
-    }
+    const config = getOrderStatusConfig(status)
+    return { className: config.className }
   }, [])
 
   // Order columns (memoized) - 1:1 copy from main page
@@ -515,7 +492,7 @@ export default function EmployeeDetailPage() {
         const today = startOfDay(new Date())
         const isPastOrder = orderDate && orderDate < today
         const isTodayOrder = orderDate && orderDate.getTime() === today.getTime()
-        
+
         // LUNCH: показываем комбо и цену
         if (order.serviceType === 'LUNCH' || !order.serviceType) {
           return (
@@ -529,12 +506,12 @@ export default function EmployeeDetailPage() {
             </div>
           )
         }
-        
+
         // COMPENSATION: показываем потрачено/лимит в зависимости от времени
         const limit = order.compensationLimit || 0
         const spent = order.compensationSpent || 0
         const remaining = limit - spent
-        
+
         // Прошлое: показываем сколько потрачено из лимита
         if (isPastOrder) {
           const percentUsed = limit > 0 ? (spent / limit) * 100 : 0
@@ -549,7 +526,7 @@ export default function EmployeeDetailPage() {
                 </span>
               </div>
               <div className="w-16 h-1 bg-muted rounded-full overflow-hidden">
-                <div 
+                <div
                   className="h-full bg-emerald-500 rounded-full transition-all"
                   style={{ width: `${Math.min(percentUsed, 100)}%` }}
                 />
@@ -557,7 +534,7 @@ export default function EmployeeDetailPage() {
             </div>
           )
         }
-        
+
         // Сегодня: показываем текущий расход и остаток
         if (isTodayOrder) {
           return (
@@ -573,7 +550,7 @@ export default function EmployeeDetailPage() {
             </div>
           )
         }
-        
+
         // Будущее: показываем доступный лимит
         return (
           <div className="flex flex-col gap-0.5">
@@ -600,7 +577,7 @@ export default function EmployeeDetailPage() {
       cell: ({ row }) => {
         const order = row.original
         const isCompensation = order.serviceType === 'COMPENSATION'
-        
+
         // Для компенсаций показываем ресторан
         if (isCompensation) {
           const restaurant = order.restaurantName || order.address
@@ -616,7 +593,7 @@ export default function EmployeeDetailPage() {
             </div>
           )
         }
-        
+
         // Для ланчей показываем адрес
         const orderAddress = order.address || 'Адрес не указан'
         return (
@@ -651,13 +628,13 @@ export default function EmployeeDetailPage() {
       cell: ({ row }) => {
         const order = row.original
         const isCompensation = order.serviceType === 'COMPENSATION'
-        
+
         const orderDate = order.date ? startOfDay(new Date(order.date)) : null
         const today = startOfDay(new Date())
         const isPastOrder = orderDate && orderDate < today
         const isTodayOrder = orderDate && orderDate.getTime() === today.getTime()
         const isFutureOrder = orderDate && orderDate > today
-        
+
         // Прошлые заказы — только просмотр (история)
         if (isPastOrder) {
           return (
@@ -671,27 +648,69 @@ export default function EmployeeDetailPage() {
             </TooltipProvider>
           )
         }
-        
-        // Завершённые/доставленные заказы
-        const isDeliveredOrder = order.status === 'Завершен' || order.status === 'Выполнен' || order.status === 'Доставлен'
-        if (isDeliveredOrder) {
+
+        // Завершённые заказы
+        const isCompletedOrder = order.status === 'Завершен' || order.status === 'Выполнен'
+        if (isCompletedOrder) {
           return (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="text-emerald-500 text-xs px-2 py-1 bg-emerald-50 dark:bg-emerald-950 rounded">✓ Доставлен</span>
+                  <span className="text-emerald-500 text-xs px-2 py-1 bg-emerald-50 dark:bg-emerald-950 rounded">✓ Выполнен</span>
                 </TooltipTrigger>
-                <TooltipContent>Заказ доставлен</TooltipContent>
+                <TooltipContent>Заказ выполнен</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           )
         }
-        
+
+        // Отменённые заказы - кнопки заблокированы
+        if (order.status === 'Отменён') {
+          return (
+            <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground"
+                        disabled
+                      >
+                        <UtensilsCrossed className="h-4 w-4" />
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>Заказ отменён</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground"
+                        disabled
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>Заказ отменён</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          )
+        }
+
         // COMPENSATION заказы
         if (isCompensation) {
-          const canEdit = !isPastOrder && !isDeliveredOrder
-          const canCancel = isTodayOrder || isFutureOrder
-          
+          const canEdit = !isPastOrder && !isCompletedOrder
+          const canCancel = (isTodayOrder || isFutureOrder) && order.status === 'Активен'
+
           return (
             <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
               {/* Управлять компенсацией */}
@@ -714,7 +733,7 @@ export default function EmployeeDetailPage() {
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-              
+
               {/* Отменить */}
               {canCancel && (
                 <TooltipProvider>
@@ -739,15 +758,24 @@ export default function EmployeeDetailPage() {
             </div>
           )
         }
-        
+
         // LUNCH заказы
-        const canFreeze = isTodayOrder && order.status === 'Активен'
-        const canUnfreeze = order.status === 'Заморожен'
-        // NOTE: Pause/Resume removed for individual orders - use subscription-level pause instead
-        // 'На паузе' is DEPRECATED, use 'Приостановлен'
-        const canResume = order.status === 'Приостановлен' || order.status === 'На паузе'
-        const canCancel = isTodayOrder || isFutureOrder
-        
+        const isPaused = order.status === 'Приостановлен'
+        const isActive = order.status === 'Активен'
+        const canEdit = isActive && !actionLoading
+        const canCancel = (isTodayOrder || isFutureOrder) && isActive && !actionLoading
+
+        // Tooltip text
+        const getEditTooltip = () => {
+          if (isPaused) return 'Заказ приостановлен'
+          return 'Управлять обедом'
+        }
+        const getCancelTooltip = () => {
+          if (isPaused) return 'Заказ приостановлен'
+          if (canCancel) return 'Отменить заказ'
+          return 'Недоступно'
+        }
+
         return (
           <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
             {/* Управлять обедом */}
@@ -758,88 +786,41 @@ export default function EmployeeDetailPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-amber-600 hover:text-amber-700"
-                      disabled={actionLoading}
+                      className={isPaused ? "h-8 w-8 text-muted-foreground" : "h-8 w-8 text-amber-600 hover:text-amber-700"}
+                      disabled={!canEdit}
                     >
                       <UtensilsCrossed className="h-4 w-4" />
                     </Button>
                   </span>
                 </TooltipTrigger>
-                <TooltipContent>Управлять обедом</TooltipContent>
+                <TooltipContent>{getEditTooltip()}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
-            
-            {/* Заморозить / Разморозить (только для сегодня) */}
-            {(canFreeze || canUnfreeze) && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn(
-                          "h-8 w-8",
-                          canUnfreeze 
-                            ? "text-blue-400 hover:text-blue-500" 
-                            : "text-blue-600 hover:text-blue-700"
-                        )}
-                        onClick={() => canUnfreeze ? handleUnfreezeOrder(order) : handleFreezeOrder(order)}
-                        disabled={actionLoading}
-                      >
-                        <Snowflake className="h-4 w-4" />
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {canUnfreeze ? 'Разморозить' : 'Заморозить на сегодня (лимит: 2/нед.)'}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-            
-            {/* Статус "Приостановлен" - показываем только индикатор */}
-            {canResume && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <Badge variant="outline" className="text-orange-600 border-orange-300">
-                        Приостановлен
-                      </Badge>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>Возобновите подписку через блок услуг</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-            
+
             {/* Отменить */}
-            {canCancel && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => handleCancelOrder(order)}
-                        disabled={actionLoading}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>Отменить заказ</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={isPaused || !canCancel ? "h-8 w-8 text-muted-foreground" : "h-8 w-8 text-destructive hover:text-destructive"}
+                      onClick={() => canCancel && handleCancelOrder(order)}
+                      disabled={!canCancel}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>{getCancelTooltip()}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         )
       },
     },
-  ], [handleFreezeOrder, handleUnfreezeOrder, handleCancelOrder, actionLoading, sortConfig, toggleSort, getStatusColor])
+  ], [handleCancelOrder, actionLoading, sortConfig, toggleSort, getStatusColor])
 
   // Effects that depend on currentEmployee
   useEffect(() => {
@@ -946,6 +927,26 @@ export default function EmployeeDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* Кнопка удаления сотрудника */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive gap-2"
+                onClick={() => setHardDeleteDialogOpen(true)}
+              >
+                <Trash2 className="h-4 w-4" />
+                Удалить навсегда
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Полное удаление сотрудника и всех связанных данных
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
 
       {/* ALERT - Показываем только критичные предупреждения */}
@@ -978,10 +979,10 @@ export default function EmployeeDetailPage() {
 
       {/* MAIN CONTENT - Двухколоночный layout */}
       <div className="grid gap-4 lg:grid-cols-3">
-        
+
         {/* ЛЕВАЯ КОЛОНКА - Профиль сотрудника */}
         <div className="lg:col-span-1 space-y-4">
-          
+
           {/* Кнопка редактирования профиля */}
           <TooltipProvider>
             <Tooltip>
@@ -991,8 +992,8 @@ export default function EmployeeDetailPage() {
                     variant="outline"
                     className={cn(
                       "w-full gap-2 h-11 border-dashed",
-                      canEdit 
-                        ? "hover:bg-primary/5 hover:border-primary/50 hover:text-primary transition-colors" 
+                      canEdit
+                        ? "hover:bg-primary/5 hover:border-primary/50 hover:text-primary transition-colors"
                         : "opacity-50"
                     )}
                     onClick={() => canEdit && setEditOpen(true)}
@@ -1074,8 +1075,8 @@ export default function EmployeeDetailPage() {
               <div className="grid grid-cols-2 gap-2">
                 <div className={cn(
                   "rounded-lg p-3 text-center",
-                  currentEmployee.shiftType === 'DAY' 
-                    ? "bg-amber-500/10" 
+                  currentEmployee.shiftType === 'DAY'
+                    ? "bg-amber-500/10"
                     : currentEmployee.shiftType === 'NIGHT'
                       ? "bg-indigo-500/10"
                       : "bg-muted/50"
@@ -1091,8 +1092,8 @@ export default function EmployeeDetailPage() {
                   </div>
                   <p className="text-xs text-muted-foreground">Смена</p>
                   <p className="text-sm font-medium">
-                    {currentEmployee.shiftType === 'DAY' 
-                      ? 'Дневная' 
+                    {currentEmployee.shiftType === 'DAY'
+                      ? 'Дневная'
                       : currentEmployee.shiftType === 'NIGHT'
                         ? 'Ночная'
                         : '—'}
@@ -1115,7 +1116,7 @@ export default function EmployeeDetailPage() {
           </Card>
 
           {/* Тип услуги */}
-          <Card 
+          <Card
             className={cn(
               "border-2 transition-colors cursor-pointer group",
               employeeServiceType === 'LUNCH' && "border-amber-500/30 bg-amber-500/5",
@@ -1129,8 +1130,8 @@ export default function EmployeeDetailPage() {
               <div className="flex items-center gap-3">
                 <div className={cn(
                   "rounded-xl p-2.5 transition-colors",
-                  employeeServiceType === 'LUNCH' 
-                    ? "bg-amber-500/20" 
+                  employeeServiceType === 'LUNCH'
+                    ? "bg-amber-500/20"
                     : employeeServiceType === 'COMPENSATION'
                       ? "bg-emerald-500/20"
                       : "bg-muted",
@@ -1151,8 +1152,8 @@ export default function EmployeeDetailPage() {
                     employeeServiceType === 'LUNCH' && "text-amber-600",
                     employeeServiceType === 'COMPENSATION' && "text-emerald-600"
                   )}>
-                    {employeeServiceType === 'LUNCH' 
-                      ? 'Комплексные обеды' 
+                    {employeeServiceType === 'LUNCH'
+                      ? 'Комплексные обеды'
                       : employeeServiceType === 'COMPENSATION'
                         ? 'Компенсация'
                         : 'Не выбран'}
@@ -1177,7 +1178,7 @@ export default function EmployeeDetailPage() {
               Услуги питания
             </CardTitle>
           </CardHeader>
-          
+
           <CardContent className="pt-0">
             <Tabs defaultValue={defaultServiceTab} className="space-y-3">
               <TabsList className={`grid w-full ${compensationFeatureEnabled ? 'grid-cols-2' : 'grid-cols-1'}`}>
@@ -1204,8 +1205,9 @@ export default function EmployeeDetailPage() {
               </TabsList>
 
               {/* LUNCH TAB */}
+              {/* FIX: Show subscription info for both active AND paused subscriptions */}
               <TabsContent value="lunch" className="space-y-3 mt-0">
-                {hasActiveLunch && lunchSub ? (
+                {(hasActiveLunch || hasLunchSubscription) && lunchSub ? (
                   <div className="space-y-3">
                     {/* Метрики ланча */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -1216,7 +1218,7 @@ export default function EmployeeDetailPage() {
                         </div>
                         <p className="text-lg font-bold">{lunchSub.comboType || 'Комбо'}</p>
                       </div>
-                      
+
                       <div className="rounded-xl bg-muted p-2.5">
                         <div className="flex items-center gap-2 text-muted-foreground mb-1">
                           <CalendarDays className="h-3.5 w-3.5" />
@@ -1234,7 +1236,7 @@ export default function EmployeeDetailPage() {
                           Осталось: {lunchDaysRemaining !== null ? `${lunchDaysRemaining} дн.` : '—'}
                         </p>
                       </div>
-                      
+
                       <div className="rounded-xl bg-muted p-2.5">
                         <div className="flex items-center gap-2 text-muted-foreground mb-1">
                           <TrendingUp className="h-3.5 w-3.5" />
@@ -1249,7 +1251,7 @@ export default function EmployeeDetailPage() {
                           будущих / выполнено
                         </p>
                       </div>
-                      
+
                       <div className="rounded-xl bg-muted p-2.5">
                         <div className="flex items-center gap-2 text-muted-foreground mb-1">
                           <Wallet className="h-3.5 w-3.5" />
@@ -1273,10 +1275,10 @@ export default function EmployeeDetailPage() {
                         <span>Всего: {lunchProgress.total} дн.</span>
                       </div>
                     </div>
-                    
+
                     {/* Кнопки управления */}
                     <div className="flex gap-2">
-                      <Button 
+                      <Button
                         className="gap-2 bg-amber-600 hover:bg-amber-700"
                         onClick={() => setLunchDialogOpen(true)}
                         disabled={!canManageLunch}
@@ -1284,10 +1286,10 @@ export default function EmployeeDetailPage() {
                         <Pencil className="h-4 w-4" />
                         Редактировать
                       </Button>
-                      
+
                       {/* Пауза / Возобновить подписку */}
                       {lunchSub.status === 'Активна' && (
-                        <Button 
+                        <Button
                           variant="outline"
                           className="gap-2 text-orange-600 border-orange-300 hover:bg-orange-50"
                           onClick={() => setPauseSubscriptionDialog(true)}
@@ -1298,7 +1300,7 @@ export default function EmployeeDetailPage() {
                         </Button>
                       )}
                       {lunchSub.status === 'Приостановлена' && (
-                        <Button 
+                        <Button
                           variant="outline"
                           className="gap-2 text-green-600 border-green-300 hover:bg-green-50"
                           onClick={handleResumeSubscription}
@@ -1318,7 +1320,7 @@ export default function EmployeeDetailPage() {
                     <div className="space-y-1.5">
                       <h3 className="text-base font-semibold">Подписка на обеды не активна</h3>
                       <p className="text-muted-foreground text-sm max-w-md mx-auto">
-                        {!currentEmployee.isActive 
+                        {!currentEmployee.isActive
                           ? 'Активируйте сотрудника для назначения услуги'
                           : currentEmployee.inviteStatus !== 'Принято'
                             ? 'Дождитесь подтверждения приглашения'
@@ -1331,7 +1333,7 @@ export default function EmployeeDetailPage() {
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span>
-                            <Button 
+                            <Button
                               className="gap-2 bg-amber-600 hover:bg-amber-700"
                               onClick={() => setLunchCreateOpen(true)}
                               disabled={!canManageLunch}
@@ -1343,7 +1345,7 @@ export default function EmployeeDetailPage() {
                         </TooltipTrigger>
                         {!canManageLunch && (
                           <TooltipContent>
-                            {!currentEmployee.isActive 
+                            {!currentEmployee.isActive
                               ? 'Сотрудник деактивирован'
                               : currentEmployee.inviteStatus !== 'Принято'
                                 ? 'Сотрудник ещё не принял приглашение'
@@ -1370,7 +1372,7 @@ export default function EmployeeDetailPage() {
                         </div>
                         <p className="text-lg font-bold">{compensation.dailyLimit || 0} TJS</p>
                       </div>
-                      
+
                       <div className="rounded-xl bg-muted p-2.5">
                         <div className="flex items-center gap-2 text-muted-foreground mb-1">
                           <TrendingUp className="h-3.5 w-3.5" />
@@ -1378,7 +1380,7 @@ export default function EmployeeDetailPage() {
                         </div>
                         <p className="text-lg font-bold">{compensation.totalBudget || 0} TJS</p>
                       </div>
-                      
+
                       <div className="rounded-xl bg-muted p-2.5">
                         <div className="flex items-center gap-2 text-muted-foreground mb-1">
                           <CalendarDays className="h-3.5 w-3.5" />
@@ -1391,7 +1393,7 @@ export default function EmployeeDetailPage() {
                           {compensationDaysRemaining !== null ? `${compensationDaysRemaining} дн.` : '—'}
                         </p>
                       </div>
-                      
+
                       <div className="rounded-xl bg-muted p-2.5">
                         <div className="flex items-center gap-2 text-muted-foreground mb-1">
                           <RefreshCw className="h-3.5 w-3.5" />
@@ -1429,9 +1431,9 @@ export default function EmployeeDetailPage() {
                         </div>
                       </div>
                     </div>
-                    
+
                     {/* Кнопка редактирования */}
-                    <Button 
+                    <Button
                       className="gap-2 bg-emerald-600 hover:bg-emerald-700"
                       onClick={() => setCompensationDialogOpen(true)}
                       disabled={!canManageCompensation}
@@ -1448,7 +1450,7 @@ export default function EmployeeDetailPage() {
                     <div className="space-y-1.5">
                       <h3 className="text-base font-semibold">Компенсация не активна</h3>
                       <p className="text-muted-foreground text-sm max-w-md mx-auto">
-                        {!currentEmployee.isActive 
+                        {!currentEmployee.isActive
                           ? 'Активируйте сотрудника для назначения услуги'
                           : currentEmployee.inviteStatus !== 'Принято'
                             ? 'Дождитесь подтверждения приглашения'
@@ -1463,7 +1465,7 @@ export default function EmployeeDetailPage() {
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span>
-                            <Button 
+                            <Button
                               className="gap-2 bg-emerald-600 hover:bg-emerald-700"
                               onClick={() => setCompensationCreateOpen(true)}
                               disabled={!canManageCompensation}
@@ -1475,7 +1477,7 @@ export default function EmployeeDetailPage() {
                         </TooltipTrigger>
                         {!canManageCompensation && (
                           <TooltipContent>
-                            {!currentEmployee.isActive 
+                            {!currentEmployee.isActive
                               ? 'Сотрудник деактивирован'
                               : currentEmployee.inviteStatus !== 'Принято'
                                 ? 'Сотрудник ещё не принял приглашение'
@@ -1508,7 +1510,7 @@ export default function EmployeeDetailPage() {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="table" className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-3">
               <TabsList>
                 <TabsTrigger value="table" className="gap-2">
                   <Table className="h-4 w-4" />
@@ -1519,6 +1521,32 @@ export default function EmployeeDetailPage() {
                   Календарь
                 </TabsTrigger>
               </TabsList>
+
+              {/* Status filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Статус:</span>
+                <select
+                  value={ordersStatusFilter}
+                  onChange={(e) => setOrdersStatusFilter(e.target.value)}
+                  className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="all">Все</option>
+                  <option value="Активен">Активен</option>
+                  <option value="Приостановлен">Приостановлен</option>
+                  <option value="Выполнен">Выполнен</option>
+                  <option value="Отменён">Отменён</option>
+                </select>
+                {ordersStatusFilter !== 'all' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setOrdersStatusFilter('all')}
+                    className="h-9 px-2 text-muted-foreground hover:text-foreground"
+                  >
+                    <XCircle className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
             </div>
 
             {/* TABLE VIEW */}
@@ -1592,13 +1620,16 @@ export default function EmployeeDetailPage() {
                     <ChevronRight className="h-4 w-4" />
                   </Button>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={goToToday}
-                >
-                  Сегодня
-                </Button>
+                {/* Показываем кнопку "Сегодня" только если смотрим не текущий месяц */}
+                {!isSameMonth(calendarDate, new Date()) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={goToToday}
+                  >
+                    Сегодня
+                  </Button>
+                )}
               </div>
 
               {/* Legend */}
@@ -1626,8 +1657,8 @@ export default function EmployeeDetailPage() {
                 {/* Header */}
                 <div className="grid grid-cols-7 bg-muted/30">
                   {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((day, i) => (
-                    <div 
-                      key={day} 
+                    <div
+                      key={day}
                       className={cn(
                         "py-3 text-center text-sm font-medium",
                         i >= 5 && "text-muted-foreground"
@@ -1637,16 +1668,20 @@ export default function EmployeeDetailPage() {
                     </div>
                   ))}
                 </div>
-                
+
                 {/* Days */}
                 <div className="grid grid-cols-7">
                   {calendarDays.map((date, idx) => {
                     const dayOrders = getOrdersForDate(date)
                     const isCurrentMonth = isSameMonth(date, calendarDate)
                     const isWorking = isWorkingDay(date)
-                    const hasLunch = dayOrders.some(o => o.serviceType === 'LUNCH')
-                    const hasCompensationOrder = dayOrders.some(o => o.serviceType === 'COMPENSATION')
-                    
+                    const lunchOrder = dayOrders.find(o => o.serviceType === 'LUNCH')
+                    const compensationOrder = dayOrders.find(o => o.serviceType === 'COMPENSATION')
+                    const hasLunch = !!lunchOrder
+                    const hasCompensationOrder = !!compensationOrder
+                    const isCancelled = lunchOrder?.status === 'Отменён' || compensationOrder?.status === 'Отменён'
+                    const isPaused = lunchOrder?.status === 'Приостановлен' || compensationOrder?.status === 'Приостановлен'
+
                     return (
                       <TooltipProvider key={idx}>
                         <Tooltip>
@@ -1662,7 +1697,8 @@ export default function EmployeeDetailPage() {
                                 isWorking && isCurrentMonth && "bg-primary/5",
                                 !isWorking && isCurrentMonth && "bg-muted/30",
                                 dayOrders.length > 0 && "cursor-pointer",
-                                dayOrders.length === 0 && "cursor-default"
+                                dayOrders.length === 0 && "cursor-default",
+                                isCancelled && "bg-red-500/5"
                               )}
                             >
                               <span className={cn(
@@ -1672,41 +1708,68 @@ export default function EmployeeDetailPage() {
                               )}>
                                 {format(date, 'd')}
                               </span>
-                              
+
                               {/* Order indicators */}
                               {dayOrders.length > 0 && (
                                 <div className="mt-1 space-y-1">
                                   {hasLunch && (
-                                    <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-400">
+                                    <div className={cn(
+                                      "flex items-center gap-1 px-1.5 py-0.5 rounded border",
+                                      isCancelled
+                                        ? `${STATUS_COLORS.cancelled.bg} ${STATUS_COLORS.cancelled.text} ${STATUS_COLORS.cancelled.border} line-through`
+                                        : isPaused
+                                          ? `${STATUS_COLORS.paused.bg} ${STATUS_COLORS.paused.text} ${STATUS_COLORS.paused.border}`
+                                          : "bg-amber-500/20 text-amber-700 dark:text-amber-400 border-transparent"
+                                    )}>
                                       <UtensilsCrossed className="h-3 w-3" />
                                       <span className="text-[10px] font-medium truncate">
-                                        {dayOrders.find(o => o.serviceType === 'LUNCH')?.comboType || 'Ланч'}
+                                        {lunchOrder?.comboType || 'Ланч'}
                                       </span>
+                                      {isCancelled && <XCircle className={cn("h-3 w-3 ml-auto", STATUS_COLORS.cancelled.icon)} />}
+                                      {isPaused && <PauseCircle className={cn("h-3 w-3 ml-auto", STATUS_COLORS.paused.icon)} />}
                                     </div>
                                   )}
                                   {hasCompensationOrder && (
-                                    <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-400">
+                                    <div className={cn(
+                                      "flex items-center gap-1 px-1.5 py-0.5 rounded border",
+                                      compensationOrder?.status === 'Отменён'
+                                        ? `${STATUS_COLORS.cancelled.bg} ${STATUS_COLORS.cancelled.text} ${STATUS_COLORS.cancelled.border} line-through`
+                                        : "bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-transparent"
+                                    )}>
                                       <Wallet className="h-3 w-3" />
                                       <span className="text-[10px] font-medium">
-                                        {dayOrders.find(o => o.serviceType === 'COMPENSATION')?.compensationSpent || 0} TJS
+                                        {compensationOrder?.compensationSpent || 0} TJS
                                       </span>
+                                      {compensationOrder?.status === 'Отменён' && <XCircle className={cn("h-3 w-3 ml-auto", STATUS_COLORS.cancelled.icon)} />}
                                     </div>
                                   )}
                                 </div>
                               )}
                             </button>
                           </TooltipTrigger>
-                          <TooltipContent side="top" className="max-w-[200px]">
+                          <TooltipContent side="top" className="max-w-[220px]">
                             <div className="space-y-1">
                               <p className="font-medium">{format(date, 'd MMMM yyyy', { locale: ru })}</p>
                               <p className="text-xs text-muted-foreground">
                                 {isWorking ? 'Рабочий день' : 'Выходной'}
                               </p>
                               {dayOrders.length > 0 ? (
-                                <p className="text-xs">
-                                  {dayOrders.length} {dayOrders.length === 1 ? 'заказ' : 'заказа'}. 
-                                  <span className="text-primary"> Нажмите для деталей</span>
-                                </p>
+                                <div className="space-y-1">
+                                  <p className="text-xs">
+                                    {dayOrders.length} {dayOrders.length === 1 ? 'заказ' : 'заказа'}
+                                  </p>
+                                  {isCancelled && (
+                                    <p className="text-xs text-red-500 font-medium flex items-center gap-1">
+                                      <XCircle className="h-3 w-3" /> Заказ отменён
+                                    </p>
+                                  )}
+                                  {isPaused && (
+                                    <p className="text-xs text-orange-500 font-medium flex items-center gap-1">
+                                      <PauseCircle className="h-3 w-3" /> Заказ приостановлен
+                                    </p>
+                                  )}
+                                  <p className="text-xs text-primary">Нажмите для деталей</p>
+                                </div>
                               ) : (
                                 <p className="text-xs text-muted-foreground">Нет заказов</p>
                               )}
@@ -1739,7 +1802,7 @@ export default function EmployeeDetailPage() {
               </div>
             </DialogTitle>
           </DialogHeader>
-          
+
           <div className="px-6 py-5 space-y-4 max-h-[60vh] overflow-y-auto">
             {selectedDayOrders.map((order, idx) => {
               const orderDate = order.date ? new Date(order.date) : null
@@ -1748,46 +1811,97 @@ export default function EmployeeDetailPage() {
               const isTodayOrder = orderDate && orderDate.getTime() === today.getTime()
               const isFutureOrder = orderDate && orderDate > today
               const isCompensation = order.serviceType === 'COMPENSATION'
-              const canFreeze = !isCompensation && isTodayOrder && order.status === 'Активен'
-              const canUnfreeze = !isCompensation && order.status === 'Заморожен'
-              // NOTE: Pause/Resume removed for individual orders - use subscription-level pause instead
-              // 'На паузе' is DEPRECATED, use 'Приостановлен'
-              const isPaused = !isCompensation && (order.status === 'Приостановлен' || order.status === 'На паузе')
-              const isOrderDelivered = order.status === 'Завершен' || order.status === 'Выполнен' || order.status === 'Доставлен'
-              const canCancel = (isTodayOrder || isFutureOrder) && !isOrderDelivered
-              
+              const isPaused = !isCompensation && order.status === 'Приостановлен'
+              const isOrderCompleted = order.status === 'Завершен' || order.status === 'Выполнен'
+              const isOrderCancelled = order.status === 'Отменён'
+              const canCancel = (isTodayOrder || isFutureOrder) && order.status === 'Активен'
+
+              // Get status color key for consistent styling
+              const statusColorKey = isOrderCancelled ? 'cancelled' : isPaused ? 'paused' : 'active'
+              const statusColors = STATUS_COLORS[statusColorKey]
+
               return (
-                <div 
+                <div
                   key={order.id || idx}
                   className={cn(
-                    "rounded-xl border-2 overflow-hidden",
-                    order.serviceType === 'LUNCH' && "border-amber-200 dark:border-amber-800",
-                    order.serviceType === 'COMPENSATION' && "border-emerald-200 dark:border-emerald-800"
+                    "rounded-xl border-2 overflow-hidden relative",
+                    isOrderCancelled
+                      ? `${STATUS_COLORS.cancelled.border} ${STATUS_COLORS.cancelled.borderDark} opacity-80`
+                      : isPaused
+                        ? `${STATUS_COLORS.paused.border} ${STATUS_COLORS.paused.borderDark}`
+                        : order.serviceType === 'LUNCH'
+                          ? "border-amber-200 dark:border-amber-800"
+                          : "border-emerald-200 dark:border-emerald-800"
                   )}
                 >
+                  {/* Cancelled/Paused overlay indicator */}
+                  {isOrderCancelled && (
+                    <div className="absolute top-2 right-2 z-10">
+                      <div className={cn(
+                        "text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1",
+                        "bg-red-500"
+                      )}>
+                        <XCircle className="h-3 w-3" />
+                        ОТМЕНЁН
+                      </div>
+                    </div>
+                  )}
+                  {isPaused && !isOrderCancelled && (
+                    <div className="absolute top-2 right-2 z-10">
+                      <div className={cn(
+                        "text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1",
+                        "bg-amber-500"
+                      )}>
+                        <PauseCircle className="h-3 w-3" />
+                        ПАУЗА
+                      </div>
+                    </div>
+                  )}
+
                   {/* Header */}
                   <div className={cn(
                     "px-4 py-3 flex items-center justify-between",
-                    order.serviceType === 'LUNCH' && "bg-amber-50 dark:bg-amber-950/40",
-                    order.serviceType === 'COMPENSATION' && "bg-emerald-50 dark:bg-emerald-950/40"
+                    isOrderCancelled
+                      ? `${STATUS_COLORS.cancelled.bg} ${STATUS_COLORS.cancelled.bgDark}`
+                      : isPaused
+                        ? `${STATUS_COLORS.paused.bg} ${STATUS_COLORS.paused.bgDark}`
+                        : order.serviceType === 'LUNCH'
+                          ? "bg-amber-50 dark:bg-amber-950/40"
+                          : "bg-emerald-50 dark:bg-emerald-950/40"
                   )}>
                     <div className="flex items-center gap-3">
                       <div className={cn(
                         "rounded-lg p-2",
-                        order.serviceType === 'LUNCH' && "bg-amber-500/20",
-                        order.serviceType === 'COMPENSATION' && "bg-emerald-500/20"
+                        isOrderCancelled
+                          ? STATUS_COLORS.cancelled.bg
+                          : isPaused
+                            ? STATUS_COLORS.paused.bg
+                            : order.serviceType === 'LUNCH'
+                              ? "bg-amber-500/20"
+                              : "bg-emerald-500/20"
                       )}>
                         {order.serviceType === 'LUNCH' ? (
-                          <UtensilsCrossed className="h-4 w-4 text-amber-600" />
+                          <UtensilsCrossed className={cn(
+                            "h-4 w-4",
+                            isOrderCancelled ? STATUS_COLORS.cancelled.text : isPaused ? STATUS_COLORS.paused.text : "text-amber-600"
+                          )} />
                         ) : (
-                          <Wallet className="h-4 w-4 text-emerald-600" />
+                          <Wallet className={cn(
+                            "h-4 w-4",
+                            isOrderCancelled ? STATUS_COLORS.cancelled.text : "text-emerald-600"
+                          )} />
                         )}
                       </div>
                       <div>
                         <span className={cn(
                           "font-semibold",
-                          order.serviceType === 'LUNCH' && "text-amber-700 dark:text-amber-400",
-                          order.serviceType === 'COMPENSATION' && "text-emerald-700 dark:text-emerald-400"
+                          isOrderCancelled
+                            ? `${STATUS_COLORS.cancelled.text} ${STATUS_COLORS.cancelled.textDark} line-through`
+                            : isPaused
+                              ? `${STATUS_COLORS.paused.text} ${STATUS_COLORS.paused.textDark}`
+                              : order.serviceType === 'LUNCH'
+                                ? "text-amber-700 dark:text-amber-400"
+                                : "text-emerald-700 dark:text-emerald-400"
                         )}>
                           {order.serviceType === 'LUNCH' ? 'Комплексный обед' : 'Компенсация'}
                         </span>
@@ -1796,7 +1910,7 @@ export default function EmployeeDetailPage() {
                         </p>
                       </div>
                     </div>
-                    {order.status && (
+                    {order.status && !isOrderCancelled && !isPaused && (
                       <Badge variant="outline" className={cn(
                         "font-medium",
                         getStatusConfig(order.status).className
@@ -1805,20 +1919,27 @@ export default function EmployeeDetailPage() {
                       </Badge>
                     )}
                   </div>
-                  
+
                   {/* Content */}
-                  <div className="p-4 space-y-4">
+                  <div className={cn("p-4 space-y-4", isOrderCancelled && "opacity-60")}>
                     {order.serviceType === 'LUNCH' && (
                       <div className="grid grid-cols-2 gap-3">
                         <div className="rounded-lg bg-muted/50 p-3">
                           <p className="text-xs text-muted-foreground mb-1">Комбо</p>
-                          <p className="font-semibold text-amber-700 dark:text-amber-400">
+                          <p className={cn(
+                            "font-semibold",
+                            isOrderCancelled
+                              ? "text-muted-foreground line-through"
+                              : "text-amber-700 dark:text-amber-400"
+                          )}>
                             {order.comboType || 'Комбо'}
                           </p>
                         </div>
                         <div className="rounded-lg bg-muted/50 p-3">
                           <p className="text-xs text-muted-foreground mb-1">Стоимость</p>
-                          <p className="font-semibold">{order.amount || 0} TJS</p>
+                          <p className={cn("font-semibold", isOrderCancelled && "line-through")}>
+                            {order.amount || 0} TJS
+                          </p>
                         </div>
                         {order.address && (
                           <div className="col-span-2 rounded-lg bg-muted/50 p-3">
@@ -1831,7 +1952,7 @@ export default function EmployeeDetailPage() {
                         )}
                       </div>
                     )}
-                    
+
                     {order.serviceType === 'COMPENSATION' && (
                       <div className="space-y-3">
                         <div className="grid grid-cols-2 gap-3">
@@ -1862,8 +1983,8 @@ export default function EmployeeDetailPage() {
                                 {Math.round((order.compensationSpent / order.compensationLimit) * 100)}%
                               </span>
                             </div>
-                            <Progress 
-                              value={(order.compensationSpent / order.compensationLimit) * 100} 
+                            <Progress
+                              value={(order.compensationSpent / order.compensationLimit) * 100}
                               className="h-2"
                             />
                           </div>
@@ -1871,17 +1992,17 @@ export default function EmployeeDetailPage() {
                       </div>
                     )}
 
-                    {/* Actions - hide for delivered/completed orders */}
-                    {!isPastOrder && !(order.status === 'Завершен' || order.status === 'Выполнен' || order.status === 'Доставлен') && (
+                    {/* Actions - hide for completed/cancelled orders */}
+                    {!isPastOrder && !isOrderCompleted && !isOrderCancelled && (
                       <div className="pt-3 border-t space-y-2">
                         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
                           Действия
                         </p>
-                        
+
                         {/* Row 1: Main actions */}
                         <div className="grid grid-cols-2 gap-2">
                           {/* Edit single order combo (not entire subscription!) */}
-                          {!isCompensation && (
+                          {!isCompensation && !isPaused && (
                             <Button
                               variant="outline"
                               size="sm"
@@ -1913,7 +2034,7 @@ export default function EmployeeDetailPage() {
                               Изменить комбо
                             </Button>
                           )}
-                          
+
                           {/* Manage compensation */}
                           {isCompensation && (
                             <Button
@@ -1931,23 +2052,6 @@ export default function EmployeeDetailPage() {
                             </Button>
                           )}
 
-                          {/* Freeze/Unfreeze (today only, lunch only) */}
-                          {!isCompensation && (canFreeze || canUnfreeze) && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-1.5 h-9 text-blue-600 border-blue-200 hover:bg-blue-50 dark:hover:bg-blue-950"
-                              onClick={() => {
-                                setOrderDetailOpen(false)
-                                canUnfreeze ? handleUnfreezeOrder(order) : handleFreezeOrder(order)
-                              }}
-                              disabled={actionLoading}
-                            >
-                              <Snowflake className="h-3.5 w-3.5" />
-                              {canUnfreeze ? 'Разморозить' : 'Заморозить'}
-                            </Button>
-                          )}
-
                           {/* Paused status indicator */}
                           {isPaused && (
                             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-50 dark:bg-orange-950/30 text-orange-600">
@@ -1957,7 +2061,7 @@ export default function EmployeeDetailPage() {
                           )}
                         </div>
 
-                        {/* Row 2: Cancel (full width) */}
+                        {/* Row 2: Cancel (full width) - only for active orders */}
                         {canCancel && (
                           <Button
                             variant="outline"
@@ -1975,7 +2079,7 @@ export default function EmployeeDetailPage() {
                         )}
                       </div>
                     )}
-                    
+
                     {isPastOrder && (
                       <div className="pt-3 border-t">
                         <div className="flex items-center justify-center gap-2 py-2 text-muted-foreground">
@@ -1984,12 +2088,30 @@ export default function EmployeeDetailPage() {
                         </div>
                       </div>
                     )}
-                    
-                    {(order.status === 'Завершен' || order.status === 'Выполнен' || order.status === 'Доставлен') && !isPastOrder && (
+
+                    {isOrderCompleted && !isPastOrder && (
                       <div className="pt-3 border-t">
                         <div className="flex items-center justify-center gap-2 py-2 text-emerald-600">
                           <CheckCircle2 className="h-4 w-4" />
-                          <span className="text-sm font-medium">Заказ успешно доставлен</span>
+                          <span className="text-sm font-medium">Заказ выполнен</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {isOrderCancelled && (
+                      <div className={cn(
+                        "pt-3 border-t -mx-4 -mb-4 px-4 py-3",
+                        STATUS_COLORS.cancelled.bg,
+                        STATUS_COLORS.cancelled.bgDark
+                      )}>
+                        <div className="flex flex-col items-center gap-2">
+                          <div className={cn("flex items-center gap-2", STATUS_COLORS.cancelled.text)}>
+                            <XCircle className="h-5 w-5" />
+                            <span className="font-semibold">Заказ отменён</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground text-center">
+                            Стоимость возвращена на баланс. Отменённый заказ нельзя восстановить.
+                          </p>
                         </div>
                       </div>
                     )}
@@ -1998,7 +2120,7 @@ export default function EmployeeDetailPage() {
               )
             })}
           </div>
-          
+
           {/* Footer */}
           <div className="px-6 py-4 border-t bg-muted/20 flex justify-end">
             <Button variant="outline" onClick={() => setOrderDetailOpen(false)}>
@@ -2078,16 +2200,16 @@ export default function EmployeeDetailPage() {
               Отменить заказ?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {cancelDialogOrder?.serviceType === 'COMPENSATION' 
+              {cancelDialogOrder?.serviceType === 'COMPENSATION'
                 ? 'Компенсация на этот день будет отменена. Бюджет будет возвращён.'
-                : 'Заказ на обед будет отменён. Стоимость будет возвращена на баланс.'
+                : 'Заказ на обед будет отменён. Стоимость будет возвращена на баланс. Отменённый заказ нельзя восстановить.'
               }
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={actionLoading}>Отмена</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={confirmCancelOrder} 
+            <AlertDialogAction
+              onClick={confirmCancelOrder}
               disabled={actionLoading}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
@@ -2097,31 +2219,41 @@ export default function EmployeeDetailPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Dialog: Заморозить заказ */}
-      <AlertDialog open={freezeDialogOrder !== null} onOpenChange={(open) => !open && setFreezeDialogOrder(null)}>
+      {/* Dialog: Удалить сотрудника навсегда */}
+      <AlertDialog open={hardDeleteDialogOpen} onOpenChange={setHardDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <Snowflake className="h-5 w-5 text-blue-500" />
-              Заморозить заказ?
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="h-5 w-5" />
+              Удалить сотрудника навсегда?
             </AlertDialogTitle>
-            <AlertDialogDescription>
-              Заказ на сегодня будет заморожен. День будет перенесён на конец периода подписки.
-              <br />
-              <span className="text-amber-600 text-sm mt-2 block">
-                ⚠️ Лимит заморозок: 2 раза в неделю
-              </span>
+            <AlertDialogDescription className="space-y-3">
+              <p>
+                Вы собираетесь <span className="font-semibold text-destructive">безвозвратно удалить</span> сотрудника{' '}
+                <span className="font-semibold">{currentEmployee.fullName}</span>.
+              </p>
+              <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 space-y-2">
+                <p className="text-sm font-medium text-destructive">Будут удалены:</p>
+                <ul className="text-sm space-y-1 list-disc list-inside text-muted-foreground">
+                  <li>Профиль сотрудника</li>
+                  <li>Все подписки на питание</li>
+                  <li>Вся история заказов</li>
+                  <li>Все компенсации</li>
+                </ul>
+              </div>
+              <p className="text-sm text-amber-600 font-medium">
+                ⚠️ Это действие нельзя отменить!
+              </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={actionLoading}>Отмена</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={confirmFreezeOrder} 
-              disabled={actionLoading}
-              className="bg-blue-600 text-white hover:bg-blue-700"
+            <AlertDialogCancel disabled={isDeleting}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleHardDeleteEmployee}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              <Snowflake className="mr-2 h-4 w-4" />
-              Заморозить
+              {isDeleting ? 'Удаление...' : 'Удалить навсегда'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -2146,8 +2278,8 @@ export default function EmployeeDetailPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={actionLoading}>Отмена</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handlePauseSubscription} 
+            <AlertDialogAction
+              onClick={handlePauseSubscription}
               disabled={actionLoading}
               className="bg-orange-600 hover:bg-orange-700"
             >

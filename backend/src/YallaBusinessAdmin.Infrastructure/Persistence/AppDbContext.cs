@@ -263,11 +263,6 @@ public class AppDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");
 
-            // Freeze-related fields
-            entity.Property(e => e.FrozenAt).HasColumnName("frozen_at");
-            entity.Property(e => e.FrozenReason).HasColumnName("frozen_reason");
-            entity.Property(e => e.ReplacementOrderId).HasColumnName("replacement_order_id");
-
             entity.HasOne(e => e.Company)
                 .WithMany(c => c.Orders)
                 .HasForeignKey(e => e.CompanyId)
@@ -283,10 +278,6 @@ public class AppDbContext : DbContext
             entity.HasOne(e => e.CreatedByUser)
                 .WithMany(u => u.CreatedGuestOrders)
                 .HasForeignKey(e => e.CreatedByUserId)
-                .OnDelete(DeleteBehavior.SetNull);
-            entity.HasOne(e => e.ReplacementOrder)
-                .WithOne()
-                .HasForeignKey<Order>(e => e.ReplacementOrderId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
 
@@ -314,10 +305,6 @@ public class AppDbContext : DbContext
             entity.Property(e => e.ScheduleType).HasColumnName("schedule_type").HasMaxLength(50).HasDefaultValue("EVERY_DAY");
             entity.Property(e => e.PausedAt).HasColumnName("paused_at");
             entity.Property(e => e.PausedDaysCount).HasColumnName("paused_days_count").HasDefaultValue(0);
-
-            // Freeze tracking fields
-            entity.Property(e => e.OriginalEndDate).HasColumnName("original_end_date");
-            entity.Property(e => e.FrozenDaysCount).HasColumnName("frozen_days_count").HasDefaultValue(0);
 
             entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at");

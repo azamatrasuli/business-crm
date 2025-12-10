@@ -3,8 +3,9 @@
  * XState-like state machine for managing subscription lifecycle.
  * Provides predictable state transitions and prevents invalid states.
  * 
- * Note: This is a lightweight implementation without XState dependency.
- * For more complex scenarios, consider installing xstate package.
+ * REFACTORED: 2025-01-09
+ * Simplified states: pending, active, paused, expired, cancelled, completed
+ * Frozen state REMOVED (temporarily disabled)
  */
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -16,7 +17,6 @@ export type SubscriptionState =
   | 'pending'    // Created but not yet active
   | 'active'     // Currently active
   | 'paused'     // Temporarily paused
-  | 'frozen'     // Specific dates frozen
   | 'expired'    // End date passed
   | 'cancelled'  // Manually cancelled
   | 'completed'  // Successfully completed
@@ -26,8 +26,6 @@ export type SubscriptionEvent =
   | { type: 'ACTIVATE' }
   | { type: 'PAUSE'; reason?: string }
   | { type: 'RESUME' }
-  | { type: 'FREEZE'; dates: string[] }
-  | { type: 'UNFREEZE'; dates: string[] }
   | { type: 'CANCEL'; reason?: string }
   | { type: 'EXPIRE' }
   | { type: 'COMPLETE' }
@@ -38,8 +36,6 @@ export interface SubscriptionContext {
   pauseCount: number
   /** Total paused days */
   totalPausedDays: number
-  /** Dates that are frozen */
-  frozenDates: string[]
   /** Reason for pause/cancel */
   reason?: string
   /** Timestamps */
@@ -77,7 +73,6 @@ const subscriptionMachineConfig: MachineConfig = {
   context: {
     pauseCount: 0,
     totalPausedDays: 0,
-    frozenDates: [],
   },
   states: {
     pending: {
@@ -111,28 +106,6 @@ const subscriptionMachineConfig: MachineConfig = {
             pausedAt: new Date(),
             reason: (event as { type: 'PAUSE'; reason?: string }).reason,
           }),
-        },
-        FREEZE: {
-          target: 'active', // Stay in active state
-          action: (ctx, event) => ({
-            ...ctx,
-            frozenDates: [
-              ...new Set([
-                ...ctx.frozenDates,
-                ...(event as { type: 'FREEZE'; dates: string[] }).dates,
-              ]),
-            ],
-          }),
-        },
-        UNFREEZE: {
-          target: 'active',
-          action: (ctx, event) => {
-            const datesToRemove = (event as { type: 'UNFREEZE'; dates: string[] }).dates
-            return {
-              ...ctx,
-              frozenDates: ctx.frozenDates.filter((d) => !datesToRemove.includes(d)),
-            }
-          },
         },
         CANCEL: {
           target: 'cancelled',
@@ -180,11 +153,6 @@ const subscriptionMachineConfig: MachineConfig = {
           }),
         },
       },
-    },
-
-    frozen: {
-      // Frozen is a sub-state of active, handled via frozenDates array
-      on: {},
     },
 
     expired: {
@@ -292,11 +260,6 @@ export class SubscriptionMachine {
     }
   }
 
-  /** Check if a date is frozen */
-  isDateFrozen(date: string): boolean {
-    return this._context.frozenDates.includes(date)
-  }
-
   /** Get remaining freezable slots (if there's a limit) */
   get canPause(): boolean {
     return this.can('PAUSE')
@@ -318,7 +281,7 @@ export class SubscriptionMachine {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Factory & Hook
+// Factory & Helpers
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -346,7 +309,8 @@ export function mapApiStatusToState(apiStatus: string): SubscriptionState {
     'Завершен': 'completed',
     'Отменена': 'cancelled',
     'Истекла': 'expired',
-    'Заморожена': 'frozen',
+    // Legacy: frozen -> treat as paused
+    'Заморожена': 'paused',
   }
   
   // English status map (for compatibility)
@@ -354,7 +318,7 @@ export function mapApiStatusToState(apiStatus: string): SubscriptionState {
     PENDING: 'pending',
     ACTIVE: 'active',
     PAUSED: 'paused',
-    FROZEN: 'frozen',
+    FROZEN: 'paused', // Legacy: frozen -> paused
     EXPIRED: 'expired',
     CANCELLED: 'cancelled',
     COMPLETED: 'completed',
@@ -371,8 +335,7 @@ export function getStateLabel(state: SubscriptionState): string {
   const labels: Record<SubscriptionState, string> = {
     pending: 'Ожидает активации',
     active: 'Активна',
-    paused: 'Приостановлена',  // NOTE: "На паузе" is deprecated
-    frozen: 'Заморожена',
+    paused: 'Приостановлена',
     expired: 'Истекла',
     cancelled: 'Отменена',
     completed: 'Завершена',
@@ -388,11 +351,9 @@ export function getStateColor(state: SubscriptionState): string {
     pending: 'yellow',
     active: 'green',
     paused: 'orange',
-    frozen: 'blue',
     expired: 'gray',
     cancelled: 'red',
     completed: 'green',
   }
   return colors[state]
 }
-

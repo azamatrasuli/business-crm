@@ -64,15 +64,23 @@ public static class TimezoneHelper
     }
     
     /// <summary>
-    /// Gets today's date in the specified timezone.
+    /// Gets today's date in the specified timezone as a UTC DateTime.
     /// IMPORTANT: Use this instead of DateTime.UtcNow.Date when comparing with order dates!
+    /// Returns the start of the local day converted to UTC with Kind=Utc for PostgreSQL compatibility.
     /// </summary>
     /// <param name="timezone">The timezone identifier.</param>
-    /// <returns>Today's date in the specified timezone.</returns>
+    /// <returns>Today's date in the specified timezone as UTC DateTime.</returns>
     public static DateTime GetLocalToday(string? timezone)
     {
-        var localNow = ToLocalTime(DateTime.UtcNow, timezone);
-        return localNow.Date;
+        var tzInfo = GetTimeZoneInfo(timezone);
+        var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tzInfo);
+        
+        // Get start of local day
+        var localMidnight = localNow.Date;
+        
+        // Convert back to UTC and specify Kind=Utc for PostgreSQL
+        var utcMidnight = TimeZoneInfo.ConvertTimeToUtc(localMidnight, tzInfo);
+        return DateTime.SpecifyKind(utcMidnight, DateTimeKind.Utc);
     }
     
     /// <summary>

@@ -29,16 +29,6 @@ public class Order
     public OrderStatus Status { get; set; } = OrderStatus.Active;
     public DateTime OrderDate { get; set; }
     
-    // Freeze-related fields
-    /// <summary>Когда заказ был заморожен</summary>
-    public DateTime? FrozenAt { get; set; }
-    
-    /// <summary>Причина заморозки</summary>
-    public string? FrozenReason { get; set; }
-    
-    /// <summary>ID заменяющего заказа (создаётся в конце подписки)</summary>
-    public Guid? ReplacementOrderId { get; set; }
-    
     // Timestamps
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
@@ -50,23 +40,9 @@ public class Order
     public AdminUser? CreatedByUser { get; set; }
     public ICollection<CompanyTransaction> Transactions { get; set; } = new List<CompanyTransaction>();
     
-    /// <summary>Заменяющий заказ (создан при заморозке)</summary>
-    public Order? ReplacementOrder { get; set; }
-    
     // ═══════════════════════════════════════════════════════════════
     // RICH DOMAIN MODEL - Business Logic Methods
     // ═══════════════════════════════════════════════════════════════
-    
-    /// <summary>
-    /// Checks if the order is for today (APPROXIMATE - uses UTC).
-    /// WARNING: For accurate timezone-aware checks, use TimezoneHelper.IsToday() in service layer.
-    /// </summary>
-    /// <remarks>
-    /// This property uses UTC time and may not be accurate for edge cases near midnight.
-    /// Always use TimezoneHelper.IsToday(orderDate, project.Timezone) for business-critical validations.
-    /// </remarks>
-    [Obsolete("Use TimezoneHelper.IsToday() for timezone-accurate checks")]
-    public bool IsForToday => OrderDate.Date == DateTime.UtcNow.Date;
     
     /// <summary>
     /// Checks if the order is active (can be modified).
@@ -74,39 +50,27 @@ public class Order
     public bool IsActive => Status == OrderStatus.Active;
     
     /// <summary>
-    /// Checks if the order is frozen.
-    /// </summary>
-    public bool IsFrozen => Status == OrderStatus.Frozen;
-    
-    /// <summary>
     /// Checks if the order is in the past (APPROXIMATE - uses UTC).
     /// WARNING: For accurate timezone-aware checks, use TimezoneHelper.IsPastDate() in service layer.
     /// </summary>
-    /// <remarks>
-    /// This property uses UTC time. It's conservative - an order that appears "past" in UTC
-    /// might still be "today" in a local timezone, which is safe for preventing modifications
-    /// to past orders but may block some valid operations near midnight.
-    /// </remarks>
     public bool IsPastOrderUtc => OrderDate.Date < DateTime.UtcNow.Date;
     
     /// <summary>
     /// Checks if the order can be cancelled.
     /// Business rule: Can cancel only active orders for today or future.
-    /// NOTE: Uses UTC-based check. Service layer should add timezone-accurate cutoff validation.
     /// </summary>
     public bool CanBeCancelled => IsActive && !IsPastOrderUtc;
     
     /// <summary>
     /// Checks if the order can be modified.
     /// Business rule: Can modify only active orders for today or future.
-    /// NOTE: Uses UTC-based check. Service layer should add timezone-accurate cutoff validation.
     /// </summary>
     public bool CanBeModified => IsActive && !IsPastOrderUtc;
     
     /// <summary>
-    /// Pauses the order.
+    /// Pauses the order (internal - called when subscription is paused).
     /// </summary>
-    public void Pause()
+    internal void Pause()
     {
         if (Status != OrderStatus.Active)
             return;
@@ -116,9 +80,9 @@ public class Order
     }
     
     /// <summary>
-    /// Resumes a paused order.
+    /// Resumes a paused order (internal - called when subscription is resumed).
     /// </summary>
-    public void Resume()
+    internal void Resume()
     {
         if (Status != OrderStatus.Paused)
             return;
@@ -138,6 +102,7 @@ public class Order
     
     /// <summary>
     /// Cancels the order with business rule validation.
+    /// Cancelled orders remain in the system (visible in history) but cannot be restored.
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown when the order cannot be cancelled.</exception>
     public void Cancel()
@@ -148,53 +113,6 @@ public class Order
         }
         
         Status = OrderStatus.Cancelled;
-        UpdatedAt = DateTime.UtcNow;
-    }
-    
-    /// <summary>
-    /// Checks if the order can be frozen.
-    /// Business rule: Can freeze only active orders for today or future.
-    /// </summary>
-    public bool CanBeFrozen => IsActive && !IsPastOrderUtc;
-    
-    /// <summary>
-    /// Checks if the order can be unfrozen.
-    /// Business rule: Can unfreeze only frozen orders for today or future.
-    /// </summary>
-    public bool CanBeUnfrozen => IsFrozen && !IsPastOrderUtc;
-    
-    /// <summary>
-    /// Freezes the order (отмена обеда с переносом в конец подписки).
-    /// </summary>
-    /// <param name="reason">Причина заморозки</param>
-    /// <exception cref="InvalidOperationException">Thrown when the order cannot be frozen.</exception>
-    public void Freeze(string? reason = null)
-    {
-        if (!CanBeFrozen)
-        {
-            throw new InvalidOperationException("Невозможно заморозить заказ. Заказы можно замораживать только активные на текущий или будущий день.");
-        }
-        
-        Status = OrderStatus.Frozen;
-        FrozenAt = DateTime.UtcNow;
-        FrozenReason = reason;
-        UpdatedAt = DateTime.UtcNow;
-    }
-    
-    /// <summary>
-    /// Unfreezes the order (возврат в активное состояние).
-    /// </summary>
-    /// <exception cref="InvalidOperationException">Thrown when the order cannot be unfrozen.</exception>
-    public void Unfreeze()
-    {
-        if (!CanBeUnfrozen)
-        {
-            throw new InvalidOperationException("Невозможно разморозить заказ. Можно разморозить только замороженные заказы на текущий или будущий день.");
-        }
-        
-        Status = OrderStatus.Active;
-        FrozenAt = null;
-        FrozenReason = null;
         UpdatedAt = DateTime.UtcNow;
     }
     

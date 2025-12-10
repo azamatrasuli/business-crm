@@ -36,7 +36,7 @@ public class LunchSubscription
     /// <summary>Общая стоимость подписки</summary>
     public decimal TotalPrice { get; set; }
 
-    /// <summary>Статус: Активна, Приостановлена</summary>
+    /// <summary>Статус: Активна, Приостановлена, Завершена</summary>
     public SubscriptionStatus Status { get; set; } = SubscriptionStatus.Active;
 
     /// <summary>Тип графика: EVERY_DAY, EVERY_OTHER_DAY, CUSTOM</summary>
@@ -47,12 +47,6 @@ public class LunchSubscription
 
     /// <summary>Количество дней на паузе (переносятся в конец)</summary>
     public int PausedDaysCount { get; set; }
-
-    /// <summary>Оригинальная дата окончания подписки (до заморозок)</summary>
-    public DateOnly? OriginalEndDate { get; set; }
-
-    /// <summary>Количество замороженных заказов (отдельных дней)</summary>
-    public int FrozenDaysCount { get; set; }
 
     // Timestamps
     public DateTime CreatedAt { get; set; }
@@ -78,34 +72,9 @@ public class LunchSubscription
     public bool IsCompleted => Status == SubscriptionStatus.Completed;
 
     /// <summary>
-    /// Checks if the subscription has expired based on UTC date.
-    /// NOTE: Uses UTC - may be off by 1 day in local timezone (Asia/Dushanbe UTC+5).
-    /// For critical timezone-accurate checks, use TimezoneHelper in service layer.
+    /// Checks if the subscription has expired.
     /// </summary>
     public bool IsExpired => EndDate.HasValue && EndDate.Value < DateOnly.FromDateTime(DateTime.UtcNow);
-
-    /// <summary>
-    /// DEPRECATED: Returns calendar days until EndDate, NOT actual remaining orders!
-    /// Use EmployeesService.futureOrdersCount or count Orders directly for accurate remaining days.
-    /// This property counts all calendar days (including weekends and holidays).
-    /// </summary>
-    /// <remarks>
-    /// KNOWN ISSUES:
-    /// 1. Uses UTC - may be off by 1 day in local timezone (Asia/Dushanbe UTC+5)
-    /// 2. Counts calendar days, not actual orders
-    /// For accurate "remaining days", query Orders table:
-    /// <c>orders.Count(o =&gt; o.EmployeeId == employeeId &amp;&amp; o.Status != Cancelled &amp;&amp; o.OrderDate &gt;= today)</c>
-    /// </remarks>
-    [Obsolete("Use futureOrdersCount from API response. This returns calendar days, not actual order count.")]
-    public int RemainingDaysCalendar
-    {
-        get
-        {
-            if (!EndDate.HasValue) return 0;
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
-            return Math.Max(0, EndDate.Value.DayNumber - today.DayNumber);
-        }
-    }
 
     /// <summary>
     /// Checks if the subscription can be paused.
@@ -173,7 +142,6 @@ public class LunchSubscription
 
     /// <summary>
     /// Extends the subscription end date by the specified number of days.
-    /// NOTE: TotalDays is calculated dynamically based on actual orders - no manual update needed.
     /// </summary>
     /// <param name="days">Number of days to extend.</param>
     /// <exception cref="InvalidOperationException">Thrown when EndDate is not set.</exception>
@@ -186,54 +154,6 @@ public class LunchSubscription
             throw new InvalidOperationException("Cannot extend subscription without EndDate set. Set EndDate first.");
 
         EndDate = EndDate.Value.AddDays(days);
-
-        // NOTE: TotalDays is NOT updated here - it's calculated dynamically from actual orders
-        UpdatedAt = DateTime.UtcNow;
-    }
-
-    /// <summary>
-    /// Продлевает подписку на 1 день при заморозке заказа.
-    /// Сохраняет оригинальную дату окончания если ещё не сохранена.
-    /// </summary>
-    public void ExtendByFrozenOrder()
-    {
-        // Сохраняем оригинальную дату окончания при первой заморозке
-        if (!OriginalEndDate.HasValue && EndDate.HasValue)
-        {
-            OriginalEndDate = EndDate.Value;
-        }
-
-        FrozenDaysCount++;
-
-        if (EndDate.HasValue)
-        {
-            EndDate = EndDate.Value.AddDays(1);
-        }
-
-        UpdatedAt = DateTime.UtcNow;
-    }
-
-    /// <summary>
-    /// Сокращает подписку на 1 день при разморозке заказа.
-    /// </summary>
-    public void ShrinkByUnfrozenOrder()
-    {
-        if (FrozenDaysCount <= 0)
-            return;
-
-        FrozenDaysCount--;
-
-        if (EndDate.HasValue)
-        {
-            EndDate = EndDate.Value.AddDays(-1);
-        }
-
-        // Если все заморозки отменены, очищаем OriginalEndDate
-        if (FrozenDaysCount == 0)
-        {
-            OriginalEndDate = null;
-        }
-
         UpdatedAt = DateTime.UtcNow;
     }
 
@@ -259,18 +179,9 @@ public class LunchSubscription
     /// <param name="comboType">'Комбо 25' or 'Комбо 35'</param>
     /// <param name="startDate">Subscription start date (inclusive)</param>
     /// <param name="endDate">Subscription end date (inclusive) - should be calculated by caller based on working days</param>
-    /// <param name="totalDays">LEGACY: Total days count. Now dynamically calculated from Orders table.</param>
-    /// <param name="totalPrice">LEGACY: Total price. Now dynamically calculated from Orders table.</param>
+    /// <param name="totalDays">Total days count (dynamically calculated from Orders table)</param>
+    /// <param name="totalPrice">Total price (dynamically calculated from Orders table)</param>
     /// <param name="scheduleType">EVERY_DAY, EVERY_OTHER_DAY, or CUSTOM</param>
-    /// <remarks>
-    /// IMPORTANT: EndDate should be the LAST day of the subscription (inclusive).
-    /// For example: StartDate=Dec 1, EndDate=Dec 5 means 5 days (1,2,3,4,5).
-    /// The caller is responsible for calculating EndDate based on:
-    /// - For EVERY_DAY: last working day after startDate for the desired period
-    /// - For CUSTOM: max date from custom days array
-    /// TotalDays and TotalPrice are stored for legacy compatibility but are
-    /// dynamically recalculated from Orders table when reading.
-    /// </remarks>
     public static LunchSubscription Create(
         Guid employeeId,
         Guid companyId,
@@ -308,4 +219,3 @@ public class LunchSubscription
         };
     }
 }
-

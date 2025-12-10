@@ -20,6 +20,7 @@ interface EmployeesFilter {
   maxBudget: number | null
   hasSubscription: boolean | null
   serviceType: ServiceType | null
+  projectId: string | null
 }
 
 interface EmployeesState {
@@ -57,6 +58,7 @@ const defaultFilter: EmployeesFilter = {
   maxBudget: null,
   hasSubscription: null,
   serviceType: null,
+  projectId: null,
 }
 
 const mapStatusFilter = (status: EmployeesFilter['status']) => {
@@ -106,10 +108,16 @@ const parseActiveFilters = (filters: ActiveFilter[]): Partial<EmployeesFilter> =
         }
         break
       case 'hasSubscription':
-        if (filter.operator === 'is_true') {
+        // Поддержка select (equals operator) и boolean operator
+        if (filter.value === 'true' || filter.operator === 'is_true') {
           result.hasSubscription = true
-        } else if (filter.operator === 'is_false') {
+        } else if (filter.value === 'false' || filter.operator === 'is_false') {
           result.hasSubscription = false
+        }
+        break
+      case 'projectId':
+        if (filter.value) {
+          result.projectId = filter.value as string
         }
         break
     }
@@ -149,7 +157,8 @@ export const useEmployeesStore = create<EmployeesState>((set, get) => ({
         parsedFilters.maxBudget ?? undefined,
         parsedFilters.hasSubscription ?? undefined,
         parsedFilters.mealStatus !== 'all' ? parsedFilters.mealStatus : undefined,
-        parsedFilters.serviceType ?? undefined
+        parsedFilters.serviceType ?? undefined,
+        parsedFilters.projectId ?? undefined
       )
 
       // Force new array reference to trigger React re-render

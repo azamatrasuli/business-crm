@@ -24,7 +24,7 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import { useProjectsStore } from '@/stores/projects-store'
-import { EMPLOYEE_STATUS, INVITE_STATUS, ORDER_STATUS, getEmployeeStatusConfig } from '@/lib/constants/entity-statuses'
+import { EMPLOYEE_STATUS, INVITE_STATUS, ORDER_STATUS, getEmployeeStatusConfig, getOrderStatusConfig, getSubscriptionStatusConfig } from '@/lib/constants/entity-statuses'
 import {
   Dialog,
   DialogContent,
@@ -77,56 +77,59 @@ const formatWorkingDays = (workingDays?: number[]) => {
   return workingDays.map(d => DAYS_SHORT[d]).join(', ')
 }
 
-// Цвет статуса услуги (для подписок и заказов)
+// Цвет статуса услуги (для подписок и заказов) - uses centralized config
 const getServiceStatusColor = (status?: string) => {
-  switch (status) {
-    case 'Активна':
-    case ORDER_STATUS.ACTIVE:
-    case 'Активен':
-      return 'default'
-    case 'Приостановлена':
-    case ORDER_STATUS.PAUSED:
-    case 'Приостановлен':
-    case 'На паузе':  // DEPRECATED legacy alias
-      return 'secondary'
-    case ORDER_STATUS.FROZEN:
-    case 'Заморожен':
-      return 'secondary'
-    case 'Завершена':
-    case ORDER_STATUS.DELIVERED:
-    case 'Завершен':
-    case 'Выполнен':
-    case 'Доставлен':
-      return 'outline'
-    default:
-      return 'outline'
+  // Try order status first, then subscription status
+  const orderConfig = getOrderStatusConfig(status)
+  if (orderConfig.variant !== 'outline' || orderConfig.label !== 'Неизвестно') {
+    return orderConfig.variant
   }
+  const subConfig = getSubscriptionStatusConfig(status)
+  return subConfig.variant
 }
 
 
 // Filter configuration for employees table
-const employeeFilterFields: FilterField[] = [
-  {
-    id: 'status',
-    label: 'Статус сотрудника',
-    type: 'select',
-    operators: ['equals'],
-    options: [
-      { value: 'active', label: 'Активный' },
-      { value: 'inactive', label: 'Деактивирован' },
-    ],
-  },
-  {
-    id: 'serviceType',
-    label: 'Тип услуги',
-    type: 'select',
-    operators: ['equals'],
-    options: [
-      { value: 'LUNCH', label: 'Ланч' },
-      { value: 'COMPENSATION', label: 'Компенсация' },
-    ],
-  },
-]
+// Фильтры соответствуют видимым колонкам таблицы
+const getEmployeeFilterFields = (projects: { id: string; name: string }[]): FilterField[] => {
+  const fields: FilterField[] = [
+    // Колонка "Статус услуги" — Активна / Не активна
+    {
+      id: 'hasSubscription',
+      label: 'Статус услуги',
+      type: 'select',
+      operators: ['equals'],
+      options: [
+        { value: 'true', label: 'Активна' },
+        { value: 'false', label: 'Не активна' },
+      ],
+    },
+    // Колонка "Тип услуги" — Ланч / Компенсация
+    {
+      id: 'serviceType',
+      label: 'Тип услуги',
+      type: 'select',
+      operators: ['equals'],
+      options: [
+        { value: 'LUNCH', label: 'Ланч' },
+        { value: 'COMPENSATION', label: 'Компенсация' },
+      ],
+    },
+  ]
+
+  // Колонка "Проект" — только если проектов > 1
+  if (projects.length > 1) {
+    fields.push({
+      id: 'projectId',
+      label: 'Проект',
+      type: 'select',
+      operators: ['equals'],
+      options: projects.map(p => ({ value: p.id, label: p.name })),
+    })
+  }
+
+  return fields
+}
 
 export default function EmployeesPage() {
   const router = useRouter()
@@ -767,7 +770,7 @@ export default function EmployeesPage() {
         </div>
 
         <FilterBuilder
-          fields={employeeFilterFields}
+          fields={getEmployeeFilterFields(projects)}
           activeFilters={activeFilters}
           onFiltersChange={handleFiltersChange}
         />

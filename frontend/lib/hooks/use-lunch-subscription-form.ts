@@ -93,7 +93,7 @@ export interface UseLunchSubscriptionFormReturn {
   availableEmployees: Employee[]
   filteredEmployees: Employee[]
   isLoadingEmployees: boolean
-  
+
   // Shift filter helpers
   invisibleSelectionCount: number
   visibleSelectionCount: number
@@ -237,8 +237,8 @@ export function useLunchSubscriptionForm({
   }, [mode, startDate, endDate, selectedEmployeeIds, employees, scheduleType, customDates, selectedCombo.price])
 
   // Total price: use bulk calculation for bulk mode, simple calculation for individual
-  const totalPrice = mode === 'bulk' 
-    ? bulkCalculatedData.totalPrice 
+  const totalPrice = mode === 'bulk'
+    ? bulkCalculatedData.totalPrice
     : calculatedDays * selectedCombo.price
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -343,19 +343,19 @@ export function useLunchSubscriptionForm({
     () => new Set(filteredEmployees.map(e => e.id)),
     [filteredEmployees]
   )
-  
+
   // Count selected employees that are NOT visible due to current shift filter
   const invisibleSelectionCount = useMemo(() => {
     if (mode !== 'bulk') return 0
     return selectedEmployeeIds.filter(id => !validEmployeeIdsSet.has(id)).length
   }, [mode, selectedEmployeeIds, validEmployeeIdsSet])
-  
+
   // Count selected employees that ARE visible (match current shift filter)
   const visibleSelectionCount = useMemo(() => {
     if (mode !== 'bulk') return 0
     return selectedEmployeeIds.filter(id => validEmployeeIdsSet.has(id)).length
   }, [mode, selectedEmployeeIds, validEmployeeIdsSet])
-  
+
   // Helper to clear only invisible selections (employees from other shift)
   const clearInvisibleSelections = useCallback(() => {
     setSelectedEmployeeIds(prev => prev.filter(id => validEmployeeIdsSet.has(id)))
@@ -407,21 +407,21 @@ export function useLunchSubscriptionForm({
     try {
       // CRITICAL: Filter selectedEmployeeIds by current shift filter to avoid sending
       // employees from wrong shift that might still be in selection after filter change
-      const employeeIds = mode === 'individual' && employee 
-        ? [employee.id] 
+      const employeeIds = mode === 'individual' && employee
+        ? [employee.id]
         : selectedEmployeeIds.filter(id => validEmployeeIdsSet.has(id))
 
       // IMPORTANT: Use local date formatting to avoid timezone shift
       const formatDateLocal = (d: Date) => format(d, 'yyyy-MM-dd')
-      
+
       // Backend now properly handles all schedule types:
       // - EVERY_DAY: creates orders for all working days (Mon-Fri or employee's schedule)
       // - EVERY_OTHER_DAY: creates orders only for Mon, Wed, Fri
       // - CUSTOM: creates orders only for specified dates
-      const customDaysFormatted = scheduleType === 'CUSTOM' 
-        ? customDates.map((d) => formatDateLocal(d)) 
+      const customDaysFormatted = scheduleType === 'CUSTOM'
+        ? customDates.map((d) => formatDateLocal(d))
         : undefined
-      
+
       if (isEditing && existingSubscription) {
         await servicesApi.updateLunchSubscription(existingSubscription.id, {
           comboType,
@@ -430,7 +430,7 @@ export function useLunchSubscriptionForm({
         })
         toast.success('Подписка обновлена')
       } else {
-        await servicesApi.createLunchSubscriptions({
+        const result = await servicesApi.createLunchSubscriptions({
           employeeIds,
           comboType,
           startDate: formatDateLocal(startDate),
@@ -438,6 +438,16 @@ export function useLunchSubscriptionForm({
           scheduleType: scheduleType,
           customDays: customDaysFormatted,
         })
+
+        // Check for errors in the response
+        if (!result.success || (result.errors && result.errors.length > 0)) {
+          const errorMessages = result.errors?.map(e => e.message).join('; ') || 'Не удалось создать подписку'
+          toast.error('Ошибка создания подписки', {
+            description: errorMessages,
+          })
+          return
+        }
+
         toast.success(
           employeeIds.length === 1
             ? 'Подписка создана'
@@ -556,7 +566,7 @@ export function useLunchSubscriptionForm({
     availableEmployees,
     filteredEmployees,
     isLoadingEmployees,
-    
+
     // Shift filter helpers
     invisibleSelectionCount,
     visibleSelectionCount,

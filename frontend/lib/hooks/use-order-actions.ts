@@ -1,18 +1,18 @@
 /**
  * @fileoverview Order Actions Hook
- * Handles order-related actions like freeze, unfreeze, cancel, pause, resume.
+ * Handles order-related actions like cancel, pause, resume.
  * Extracted from page.tsx to follow Single Responsibility Principle.
+ * 
+ * FREEZE FUNCTIONALITY DISABLED (2025-01-09)
+ * Freeze/unfreeze methods are kept as stubs for backward compatibility.
  */
 
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import { useHomeStore } from '@/stores/home-store'
 import type { Order } from '@/lib/api/home'
-import {
-  getEmployeeFreezeInfo,
-  freezeOrder,
-  unfreezeOrder,
-} from '@/lib/api/orders'
+// FREEZE DISABLED: imports kept for type compatibility only
+// import { getEmployeeFreezeInfo, freezeOrder, unfreezeOrder } from '@/lib/api/orders'
 import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 
@@ -30,7 +30,7 @@ export interface UseOrderActionsReturn {
   // Dialog states
   singleActionDialog: SingleActionDialog | null
   cancelDialogOrder: Order | null
-  freezeDialogOrder: Order | null
+  freezeDialogOrder: Order | null  // FREEZE DISABLED: kept for type compatibility
   compensationDialogOrder: Order | null
   subscriptionDialogOrder: Order | null
 
@@ -43,6 +43,7 @@ export interface UseOrderActionsReturn {
   confirmSingleAction: () => Promise<void>
   closeSingleActionDialog: () => void
 
+  // FREEZE DISABLED: methods kept as no-ops for backward compatibility
   handleFreezeOrder: (order: Order) => Promise<void>
   handleUnfreezeOrder: (order: Order) => Promise<void>
   confirmFreezeOrder: () => Promise<void>
@@ -121,93 +122,28 @@ export function useOrderActions(onRefresh: () => void): UseOrderActionsReturn {
   }, [])
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Freeze/Unfreeze
+  // Freeze/Unfreeze - DISABLED (2025-01-09)
+  // These methods are kept as stubs for backward compatibility.
+  // They show a toast message that freeze is disabled.
   // ─────────────────────────────────────────────────────────────────────────────
 
-  const handleFreezeOrder = useCallback(async (order: Order) => {
-    if (!order.employeeId) {
-      toast.error('Невозможно заморозить гостевой заказ')
-      return
-    }
-
-    try {
-      const freezeInfo = await getEmployeeFreezeInfo(order.employeeId)
-      if (freezeInfo.remainingFreezes <= 0) {
-        toast.error(
-          `Лимит заморозок исчерпан (${freezeInfo.freezesThisWeek}/${freezeInfo.maxFreezesPerWeek} на этой неделе)`
-        )
-        return
-      }
-      setFreezeDialogOrder(order)
-    } catch {
-      toast.error('Не удалось проверить лимит заморозок')
-    }
+  const handleFreezeOrder = useCallback(async (_order: Order) => {
+    // FREEZE DISABLED
+    toast.info('Функционал заморозки временно отключён', {
+      description: 'Используйте паузу для приостановки заказов',
+    })
   }, [])
 
-  const handleUnfreezeOrder = useCallback(
-    async (order: Order) => {
-      if (!order.employeeId) return
-
-      setActionLoading(true)
-      try {
-        // Use new orders API - unfreeze by order ID directly
-        const result = await unfreezeOrder(order.id)
-        toast.success(`Заказ для ${order.employeeName} разморожен`, {
-          description: `Подписка сокращена до ${result.subscription.endDate}`,
-        })
-        onRefresh()
-      } catch (error) {
-        const appError = parseError(error)
-        logger.error(
-          'Failed to unfreeze order',
-          error instanceof Error ? error : new Error(appError.message),
-          { errorCode: appError.code }
-        )
-        toast.error(appError.message, { description: appError.action })
-      } finally {
-        setActionLoading(false)
-      }
-    },
-    [onRefresh]
-  )
+  const handleUnfreezeOrder = useCallback(async (_order: Order) => {
+    // FREEZE DISABLED
+    toast.info('Функционал заморозки временно отключён')
+  }, [])
 
   const confirmFreezeOrder = useCallback(async () => {
-    if (!freezeDialogOrder || !freezeDialogOrder.employeeId) return
-    setActionLoading(true)
-    try {
-      // Use new orders API - freeze by order ID directly
-      const result = await freezeOrder(freezeDialogOrder.id, 'Заморозка через админ панель')
-      toast.success(`Заказ для ${freezeDialogOrder.employeeName} заморожен`, {
-        description: `Подписка продлена до ${result.subscription.endDate}`,
-      })
-      setFreezeDialogOrder(null)
-      onRefresh()
-    } catch (error) {
-      const appError = parseError(error)
-      logger.error(
-        'Failed to freeze order',
-        error instanceof Error ? error : new Error(appError.message),
-        { errorCode: appError.code }
-      )
-
-      if (appError.code === ErrorCodes.FREEZE_LIMIT_EXCEEDED) {
-        toast.error('Лимит заморозок исчерпан!', {
-          description: 'Вы уже использовали 2 заморозки на этой неделе. Дождитесь следующей недели.',
-          duration: 10000,
-        })
-      } else if (appError.code === ErrorCodes.ORDER_CUTOFF_PASSED) {
-        toast.error('Время для заморозки истекло', {
-          description: 'Заморозка на сегодня невозможна после времени отсечки',
-        })
-      } else if (appError.code === ErrorCodes.ORDER_GUEST_CANNOT_FREEZE) {
-        toast.error('Гостевые заказы нельзя замораживать')
-      } else {
-        toast.error(appError.message, { description: appError.action })
-      }
-    } finally {
-      setActionLoading(false)
-    }
-  }, [freezeDialogOrder, onRefresh])
+    // FREEZE DISABLED
+    setFreezeDialogOrder(null)
+    toast.info('Функционал заморозки временно отключён')
+  }, [])
 
   const closeFreezeDialog = useCallback(() => {
     setFreezeDialogOrder(null)

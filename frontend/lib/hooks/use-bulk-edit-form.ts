@@ -2,13 +2,17 @@
  * @fileoverview Bulk Edit Form Hook
  * Manages bulk order editing form state and actions.
  * Extracted from bulk-edit-dialog.tsx to follow Single Responsibility Principle.
+ * 
+ * FREEZE FUNCTIONALITY DISABLED (2025-01-09)
+ * The freeze action is kept in UI but shows a disabled message.
  */
 
 import { useState, useMemo, useCallback } from 'react'
 import { toast } from 'sonner'
 import { useHomeStore } from '@/stores/home-store'
 import type { Order, ComboType } from '@/lib/api/home'
-import { freezeOrder } from '@/lib/api/orders'
+// FREEZE DISABLED: import kept but function throws error
+// import { freezeOrder } from '@/lib/api/orders'
 import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import { ORDER_STATUS } from '@/lib/constants/entity-statuses'
@@ -81,7 +85,7 @@ export const ACTION_OPTIONS: ActionOption[] = [
   {
     id: 'pause',
     label: 'Приостановить подписки',
-    description: 'Дни переносятся в конец периода',
+    description: 'Временная остановка доставки',
     color: 'text-amber-500',
     bgColor: 'bg-amber-50 dark:bg-amber-950/30',
     available: (orders) =>
@@ -117,26 +121,16 @@ export const ACTION_OPTIONS: ActionOption[] = [
           (o.serviceType === 'LUNCH' || !o.serviceType)
       ).length,
   },
-  {
-    id: 'freeze',
-    label: 'Заморозить на сегодня',
-    description: 'День переносится в конец периода',
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-50 dark:bg-blue-950/30',
-    available: (orders, isToday) =>
-      isToday &&
-      orders.some(
-        (o) =>
-          (o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен') && 
-          (o.serviceType === 'LUNCH' || !o.serviceType)
-      ),
-    getApplicableCount: (orders) =>
-      orders.filter(
-        (o) =>
-          (o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен') && 
-          (o.serviceType === 'LUNCH' || !o.serviceType)
-      ).length,
-  },
+  // FREEZE DISABLED (2025-01-09): action hidden from UI
+  // {
+  //   id: 'freeze',
+  //   label: 'Заморозить на сегодня',
+  //   description: 'День переносится в конец периода',
+  //   color: 'text-blue-600',
+  //   bgColor: 'bg-blue-50 dark:bg-blue-950/30',
+  //   available: () => false, // Always disabled
+  //   getApplicableCount: () => 0,
+  // },
   {
     id: 'cancel',
     label: 'Отменить заказы',
@@ -272,22 +266,10 @@ export function useBulkEditForm({
           break
 
         case 'freeze':
-          // Freeze requires individual API calls via new orders API
-          for (let i = 0; i < applicableOrders.length; i++) {
-            const order = applicableOrders[i]
-            try {
-              // Use the order ID directly with the new freeze API
-              await freezeOrder(order.id, 'Массовая заморозка')
-              newResults.push({ orderId: order.id, success: true })
-            } catch (error) {
-              const appError = parseError(error)
-              newResults.push({ orderId: order.id, success: false, error: appError.message })
-            }
-            setProgress(Math.round(((i + 1) / applicableOrders.length) * 100))
-          }
-          setResults(newResults)
-          const successCount = newResults.filter((r) => r.success).length
-          toast.success(`Заморожено ${successCount} из ${applicableOrders.length} заказов`)
+          // FREEZE DISABLED (2025-01-09)
+          toast.info('Функционал заморозки временно отключён', {
+            description: 'Используйте паузу для приостановки заказов',
+          })
           break
 
         case 'cancel':

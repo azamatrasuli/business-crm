@@ -3,7 +3,8 @@ import apiClient from './client'
 export type ShiftType = 'DAY' | 'NIGHT'
 export type ServiceType = 'LUNCH' | 'COMPENSATION'
 export type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6 // 0 = Sunday, 1 = Monday, etc.
-export type EmployeeStatusType = 'Активный' | 'Деактивирован' | 'Отпуск'
+// Simplified: only Active and Deactivated (Vacation removed)
+export type EmployeeStatusType = 'Активный' | 'Деактивирован'
 
 export interface Employee {
   id: string
@@ -167,7 +168,7 @@ export interface EmployeeOrder {
   id: string
   date?: string
   type?: string // Сотрудник / Гость
-  status?: string // Активен / Приостановлен / Заморожен / Выходной / Доставлен / Выполнен / Отменён (+ DEPRECATED legacy: На паузе, Завершен)
+  status?: string // Активен / Приостановлен / Выполнен / Отменён (DEPRECATED legacy: На паузе, Завершен, Заморожен, Выходной, Доставлен)
   amount?: number
   // Расширенные поля (как на Dashboard)
   serviceType?: 'LUNCH' | 'COMPENSATION' | null
@@ -204,7 +205,8 @@ export const employeesApi = {
     maxBudget?: number,
     hasSubscription?: boolean,
     mealStatus?: string,
-    serviceType?: ServiceType
+    serviceType?: ServiceType,
+    projectId?: string
   ): Promise<EmployeesResponse> {
     const params: Record<string, string | number | boolean> = { page, pageSize }
     if (search) params.search = search
@@ -216,6 +218,7 @@ export const employeesApi = {
     if (hasSubscription !== undefined) params.hasSubscription = hasSubscription
     if (mealStatus) params.mealStatus = mealStatus
     if (serviceType) params.serviceType = serviceType
+    if (projectId) params.projectId = projectId
 
     const response = await apiClient.get<EmployeesResponse>('/employees', { params })
     return response.data
@@ -239,6 +242,21 @@ export const employeesApi = {
   async toggleActivation(id: string): Promise<Employee> {
     const response = await apiClient.patch<Employee>(`/employees/${id}/activate`)
     return response.data
+  },
+
+  /**
+   * Soft delete employee (deactivate, mark as deleted)
+   */
+  async deleteEmployee(id: string): Promise<void> {
+    await apiClient.delete(`/employees/${id}`)
+  },
+
+  /**
+   * Permanently delete employee and all related data.
+   * WARNING: This action is irreversible! Use only for test/fake data cleanup.
+   */
+  async hardDeleteEmployee(id: string): Promise<void> {
+    await apiClient.delete(`/employees/${id}/permanent`)
   },
 
   async updateBudget(id: string, data: UpdateBudgetRequest): Promise<void> {

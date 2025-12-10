@@ -17,22 +17,28 @@ export interface Order {
   currencyCode: string;
   status: string;
   orderDate: string;
-  frozenAt: string | null;
-  frozenReason: string | null;
-  replacementOrderId: string | null;
-  replacementOrder: Order | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface SubscriptionInfo {
   id: string;
-  originalEndDate: string | null;
   endDate: string | null;
-  frozenDaysCount: number;
   totalDays: number;
 }
 
+// =============================================================================
+// API Functions
+// =============================================================================
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FREEZE FUNCTIONALITY DISABLED (2025-01-09)
+// The freeze feature has been temporarily removed from the system.
+// These stub functions throw errors to prevent accidental usage.
+// Backend endpoints: OrdersController.cs - COMMENTED OUT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Freeze types (stub - for type compatibility only)
 export interface FreezeOrderResponse {
   order: Order;
   replacementOrder: Order | null;
@@ -59,61 +65,53 @@ export interface EmployeeFreezeInfo {
   weekEnd: string;
 }
 
-export interface FreezeOrderRequest {
-  reason?: string;
-}
-
-export interface FreezePeriodRequest {
-  employeeId: string;
-  startDate: string;
-  endDate: string;
-  reason?: string;
-}
-
-// =============================================================================
-// API Functions
-// =============================================================================
-
 /**
- * Заморозить заказ (отменить обед с переносом в конец подписки)
+ * @deprecated FREEZE FUNCTIONALITY DISABLED
+ * This function will throw an error. Do not use.
  */
-export async function freezeOrder(orderId: string, reason?: string): Promise<FreezeOrderResponse> {
-  const response = await apiClient.post<FreezeOrderResponse>(`/orders/${orderId}/freeze`, { reason });
-  return response.data;
+export async function freezeOrder(_orderId: string, _reason?: string): Promise<FreezeOrderResponse> {
+  throw new Error('FREEZE_DISABLED: Функционал заморозки временно отключён')
 }
 
 /**
- * Разморозить заказ (вернуть в активное состояние)
+ * @deprecated FREEZE FUNCTIONALITY DISABLED  
+ * This function will throw an error. Do not use.
  */
-export async function unfreezeOrder(orderId: string): Promise<FreezeOrderResponse> {
-  const response = await apiClient.post<FreezeOrderResponse>(`/orders/${orderId}/unfreeze`);
-  return response.data;
+export async function unfreezeOrder(_orderId: string): Promise<FreezeOrderResponse> {
+  throw new Error('FREEZE_DISABLED: Функционал заморозки временно отключён')
 }
 
 /**
- * Заморозить период (несколько дней, например отпуск)
+ * @deprecated FREEZE FUNCTIONALITY DISABLED
+ * This function will throw an error. Do not use.
  */
 export async function freezePeriod(
-  employeeId: string,
-  startDate: string,
-  endDate: string,
-  reason?: string
+  _employeeId: string,
+  _startDate: string,
+  _endDate: string,
+  _reason?: string
 ): Promise<FreezePeriodResponse> {
-  const response = await apiClient.post<FreezePeriodResponse>('/orders/freeze-period', {
-    employeeId,
-    startDate,
-    endDate,
-    reason,
-  });
-  return response.data;
+  throw new Error('FREEZE_DISABLED: Функционал заморозки временно отключён')
 }
 
 /**
- * Получить информацию о заморозках сотрудника
+ * @deprecated FREEZE FUNCTIONALITY DISABLED
+ * Returns stub data to prevent UI crashes. Freeze info always shows 0 available.
  */
 export async function getEmployeeFreezeInfo(employeeId: string): Promise<EmployeeFreezeInfo> {
-  const response = await apiClient.get<EmployeeFreezeInfo>(`/orders/employee/${employeeId}/freeze-info`);
-  return response.data;
+  // Return stub data instead of throwing to prevent UI crashes
+  return {
+    employeeId,
+    employeeName: '',
+    freezesThisWeek: 2, // Max out to disable freeze buttons
+    maxFreezesPerWeek: 2,
+    canFreeze: false,
+    remainingFreezes: 0,
+    frozenOrders: [],
+    subscription: null,
+    weekStart: new Date().toISOString(),
+    weekEnd: new Date().toISOString(),
+  }
 }
 
 /**
@@ -130,4 +128,3 @@ export async function getEmployeeOrders(
   const response = await apiClient.get<Order[]>(`/orders/employee/${employeeId}${query}`);
   return response.data;
 }
-

@@ -44,17 +44,17 @@ export function countWorkingDaysInRange(
   endDate: Date
 ): number {
   if (startDate > endDate) return 0
-  
+
   let count = 0
   let current = new Date(startDate)
-  
+
   while (current <= endDate) {
     if (isWorkingDay(employeeWorkingDays as DayOfWeek[], current)) {
       count++
     }
     current = addDays(current, 1)
   }
-  
+
   return count
 }
 
@@ -97,6 +97,48 @@ export const ROUTE_LABELS: Record<string, string> = {
 // =============================================================================
 // HELPERS
 // =============================================================================
+
+/**
+ * Format working days as human-readable description.
+ * Examples:
+ * - [1,2,3,4,5] → "Понедельник — Пятница"
+ * - [1,2,3,4,5,6] → "Понедельник — Суббота"
+ * - [0,1,2,3,4,5,6] → "Все дни"
+ * - [1,3,5] → "Понедельник, Среда, Пятница"
+ */
+export function formatWorkingDaysDescription(days: DayOfWeek[]): string {
+  if (!days || days.length === 0) return 'Нет рабочих дней'
+
+  const sorted = sortWorkingDays(days)
+
+  // Check for preset patterns
+  if (sorted.length === 7) return 'Все дни'
+
+  // Check if consecutive days (excluding Sunday which is 0)
+  const weekdaysOnly = sorted.filter(d => d !== 0)
+  if (weekdaysOnly.length >= 2) {
+    const isConsecutive = weekdaysOnly.every((d, i, arr) =>
+      i === 0 || d === arr[i - 1] + 1
+    )
+
+    if (isConsecutive) {
+      const firstDay = DAYS_OF_WEEK.find(d => d.value === weekdaysOnly[0])?.label || ''
+      const lastDay = DAYS_OF_WEEK.find(d => d.value === weekdaysOnly[weekdaysOnly.length - 1])?.label || ''
+
+      // Add Sunday if present
+      if (sorted.includes(0)) {
+        return `${firstDay} — ${lastDay}, Воскресенье`
+      }
+      return `${firstDay} — ${lastDay}`
+    }
+  }
+
+  // For non-consecutive, list all days
+  return sorted
+    .map(d => DAYS_OF_WEEK.find(day => day.value === d)?.label || '')
+    .filter(Boolean)
+    .join(', ')
+}
 
 /**
  * Sort days so Sunday (0) comes after Saturday (6)

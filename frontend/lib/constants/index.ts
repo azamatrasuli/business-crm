@@ -6,6 +6,13 @@
  * Use imports from '@/lib/config' for those.
  */
 
+// Импортируем из dictionaries для labels (внутренний импорт)
+import { 
+  SERVICE_TYPES as _SERVICE_TYPES, 
+  SHIFT_TYPES as _SHIFT_TYPES, 
+  ORDER_STATUSES as _ORDER_STATUSES 
+} from './dictionaries'
+
 // Re-export employee constants
 export {
   DAYS_OF_WEEK,
@@ -41,7 +48,7 @@ export {
   COMBO_PRICES,
   COMBO_OPTIONS,
   COMBO_OPTIONS_EXTENDED,
-  BUDGET_PERIODS,
+  BUDGET_PERIODS,  // From config (simplified period options)
   // Defaults (DEFAULT_WORKING_DAYS now in employee.ts with helpers)
   DEFAULT_WORK_START_TIME,
   DEFAULT_WORK_END_TIME,
@@ -87,43 +94,17 @@ export const BREAKPOINTS = {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Enum-like Constants (labels/mappings)
+// Основные константы теперь в dictionaries.ts - здесь только labels для обратной совместимости
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const SERVICE_TYPES = {
-  LUNCH: 'LUNCH',
-  COMPENSATION: 'COMPENSATION',
-} as const
-
 export const SERVICE_TYPE_LABELS = {
-  [SERVICE_TYPES.LUNCH]: 'Обеды',
-  [SERVICE_TYPES.COMPENSATION]: 'Компенсация',
-} as const
-
-export const SHIFT_TYPES = {
-  DAY: 'DAY',
-  NIGHT: 'NIGHT',
+  [_SERVICE_TYPES.LUNCH]: 'Обеды',
+  [_SERVICE_TYPES.COMPENSATION]: 'Компенсация',
 } as const
 
 export const SHIFT_TYPE_LABELS = {
-  [SHIFT_TYPES.DAY]: 'Дневная',
-  [SHIFT_TYPES.NIGHT]: 'Ночная',
-} as const
-
-/**
- * Order statuses - synced with PostgreSQL enum order_status
- * @deprecated Use ORDER_STATUS from '@/lib/constants/entity-statuses' instead
- */
-export const ORDER_STATUSES = {
-  ACTIVE: 'Активен',
-  PAUSED: 'Приостановлен',
-  FROZEN: 'Заморожен',
-  DAY_OFF: 'Выходной',
-  DELIVERED: 'Доставлен',
-  COMPLETED: 'Выполнен',  // Legacy DB value
-  CANCELLED: 'Отменён',
-  // DEPRECATED: Legacy UI values - kept for backward compatibility only
-  PAUSED_LEGACY: 'На паузе',      // Use PAUSED ('Приостановлен') instead
-  COMPLETED_LEGACY: 'Завершен',   // Use COMPLETED ('Выполнен') instead
+  [_SHIFT_TYPES.DAY]: 'Дневная',
+  [_SHIFT_TYPES.NIGHT]: 'Ночная',
 } as const
 
 // Re-export status helpers from entity-statuses (preferred)
@@ -151,18 +132,18 @@ export {
 // Re-export dictionaries (единый источник данных для справочников и фильтров)
 export {
   // Статусы заказов
-  ORDER_STATUSES as ORDER_STATUS_VALUES,
+  ORDER_STATUSES,
   ORDER_STATUS_OPTIONS,
   // Типы заказчиков
   ORDER_TYPES,
   ORDER_TYPE_OPTIONS,
   // Типы комбо
-  COMBO_TYPES as COMBO_TYPE_VALUES,
+  COMBO_TYPES,
   COMBO_TYPE_OPTIONS,
   COMBO_METADATA,
   getComboPrice,
   // Типы услуг
-  SERVICE_TYPES as SERVICE_TYPE_VALUES,
+  SERVICE_TYPES,
   SERVICE_TYPE_OPTIONS,
   // Статусы подписок
   SUBSCRIPTION_STATUSES,
@@ -174,10 +155,10 @@ export {
   INVITE_STATUSES,
   INVITE_STATUS_OPTIONS,
   // Типы смен
-  SHIFT_TYPES as SHIFT_TYPE_VALUES,
+  SHIFT_TYPES,
   SHIFT_TYPE_OPTIONS,
-  // Периоды бюджета
-  BUDGET_PERIODS as BUDGET_PERIOD_VALUES,
+  // Периоды бюджета (расширенные с описаниями)
+  BUDGET_PERIODS as BUDGET_PERIOD_DICT,
   BUDGET_PERIOD_OPTIONS,
   // Типы расписания
   SCHEDULE_TYPES,
@@ -193,15 +174,12 @@ export {
 } from './dictionaries'
 
 export const ORDER_STATUS_COLORS = {
-  [ORDER_STATUSES.ACTIVE]: 'bg-green-100 text-green-800',
-  [ORDER_STATUSES.PAUSED]: 'bg-yellow-100 text-yellow-800',
-  [ORDER_STATUSES.FROZEN]: 'bg-blue-100 text-blue-800',
-  [ORDER_STATUSES.DAY_OFF]: 'bg-gray-100 text-gray-600',
-  [ORDER_STATUSES.DELIVERED]: 'bg-green-100 text-green-800',
-  [ORDER_STATUSES.COMPLETED]: 'bg-gray-100 text-gray-800',
-  [ORDER_STATUSES.CANCELLED]: 'bg-red-100 text-red-800',
-  [ORDER_STATUSES.PAUSED_LEGACY]: 'bg-yellow-100 text-yellow-800',
-  [ORDER_STATUSES.COMPLETED_LEGACY]: 'bg-gray-100 text-gray-800',
+  [_ORDER_STATUSES.ACTIVE]: 'bg-green-100 text-green-800',
+  [_ORDER_STATUSES.PAUSED]: 'bg-yellow-100 text-yellow-800',
+  [_ORDER_STATUSES.COMPLETED]: 'bg-gray-100 text-gray-800',
+  [_ORDER_STATUSES.CANCELLED]: 'bg-red-100 text-red-800',
+  // Legacy values for backward compatibility
+  'Завершен': 'bg-gray-100 text-gray-800',
 } as const
 
 export const USER_ROLES = {
@@ -215,9 +193,3 @@ export const USER_ROLE_LABELS = {
   [USER_ROLES.ADMIN]: 'Администратор',
   [USER_ROLES.OPERATOR]: 'Оператор',
 } as const
-
-export const COMBO_TYPES = {
-  COMBO_25: 'Комбо 25',
-  COMBO_35: 'Комбо 35',
-} as const
-

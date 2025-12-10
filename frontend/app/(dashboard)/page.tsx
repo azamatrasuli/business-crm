@@ -3,20 +3,19 @@
 import { useEffect, useMemo, useState, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { cn } from '@/lib/utils'
 import { ORDER_STATUS, getOrderStatusConfig } from '@/lib/constants/entity-statuses'
-import { 
-  ORDER_STATUS_OPTIONS, 
-  ORDER_TYPE_OPTIONS, 
-  COMBO_TYPE_OPTIONS, 
+import {
+  ORDER_STATUS_OPTIONS,
+  ORDER_TYPE_OPTIONS,
+  COMBO_TYPE_OPTIONS,
   SERVICE_TYPE_OPTIONS,
-  toFilterOptions 
+  toFilterOptions
 } from '@/lib/constants/dictionaries'
 import { useHomeStore } from '@/stores/home-store'
 import { useProjectsStore } from '@/stores/projects-store'
 import { useAuthStore } from '@/stores/auth-store'
 import type { Order } from '@/lib/api/home'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -36,7 +35,6 @@ import {
   ChevronRight,
   Calendar,
   X,
-  Snowflake,
   Trash2,
   AlertTriangle,
   RefreshCw,
@@ -50,7 +48,6 @@ import { ManageLunchDialog } from '@/components/features/meals/manage-lunch-dial
 import { ManageCompensationDialog } from '@/components/features/meals/manage-compensation-dialog'
 import { DatePicker } from '@/components/ui/date-picker'
 import { useEmployeesStore } from '@/stores/employees-store'
-import { getEmployeeFreezeInfo, freezeOrder, unfreezeOrder } from '@/lib/api/orders'
 import { debounce } from 'lodash-es'
 import { format, startOfDay } from 'date-fns'
 import {
@@ -131,16 +128,15 @@ function HomePageContent() {
   } | null>(null)
   const [singleActionLoading, setSingleActionLoading] = useState(false)
   const [subscriptionDialogOrder, setSubscriptionDialogOrder] = useState<Order | null>(null)
-  
+
   // States for new action dialogs
   const [compensationDialogOrder, setCompensationDialogOrder] = useState<Order | null>(null)
   const [cancelDialogOrder, setCancelDialogOrder] = useState<Order | null>(null)
-  const [freezeDialogOrder, setFreezeDialogOrder] = useState<Order | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
-  
+
   // Date constants
   const todayIso = formatISODate(new Date())
-  
+
   // Get selected date from activeFilters (single source of truth)
   const selectedDate = useMemo(() => {
     const dateFilter = activeFilters.find(f => f.fieldId === 'date')
@@ -153,16 +149,16 @@ function HomePageContent() {
   useEffect(() => {
     if (hasFetched.current) return
     hasFetched.current = true
-    
+
     // Set today's date as default filter
-    const todayFilter: ActiveFilter = { 
-      id: `date-${todayIso}`, 
-      fieldId: 'date', 
-      operator: 'equals', 
-      value: todayIso 
+    const todayFilter: ActiveFilter = {
+      id: `date-${todayIso}`,
+      fieldId: 'date',
+      operator: 'equals',
+      value: todayIso
     }
     setActiveFilters([todayFilter])
-    
+
     fetchDashboard()
     fetchCutoffTime()
     fetchProjects()
@@ -211,12 +207,16 @@ function HomePageContent() {
       // Custom comparator for status ordering
       // Uses centralized ORDER_STATUS constants (Russian strings)
       status: (a, b) => {
-        const order: Record<string, number> = { 
-          [ORDER_STATUS.ACTIVE]: 4,
-          [ORDER_STATUS.PAUSED]: 3,
-          [ORDER_STATUS.FROZEN]: 2, 
-          [ORDER_STATUS.DELIVERED]: 1,
-          [ORDER_STATUS.CANCELLED]: 0
+        // Order status priority (higher = more important)
+        // Active orders first, then paused, then completed/cancelled
+        // NOTE: ORDER_STATUS.COMPLETED = 'Выполнен', ORDER_STATUS.CANCELLED = 'Отменён'
+        const order: Record<string, number> = {
+          [ORDER_STATUS.ACTIVE]: 4,      // 'Активен'
+          [ORDER_STATUS.PAUSED]: 3,      // 'Приостановлен'
+          [ORDER_STATUS.COMPLETED]: 2,   // 'Выполнен'
+          [ORDER_STATUS.CANCELLED]: 1,   // 'Отменён'
+          // Legacy value (different from COMPLETED)
+          'Завершен': 2,
         }
         return (order[a.status] || 0) - (order[b.status] || 0)
       },
@@ -259,11 +259,11 @@ function HomePageContent() {
   const setDateFilter = useCallback((newDate: string) => {
     const filtersWithoutDate = activeFilters.filter(f => f.fieldId !== 'date')
     if (newDate) {
-      const dateFilter: ActiveFilter = { 
-        id: `date-${newDate}`, 
-        fieldId: 'date', 
-        operator: 'equals', 
-        value: newDate 
+      const dateFilter: ActiveFilter = {
+        id: `date-${newDate}`,
+        fieldId: 'date',
+        operator: 'equals',
+        value: newDate
       }
       setActiveFilters([...filtersWithoutDate, dateFilter])
     } else {
@@ -373,48 +373,8 @@ function HomePageContent() {
     setCancelDialogOrder(order)
   }, [])
 
-  // Handler: Заморозить заказ - сначала проверяем лимит
-  const handleFreezeOrder = useCallback(async (order: Order) => {
-    if (!order.employeeId) {
-      toast.error('Невозможно заморозить гостевой заказ')
-      return
-    }
-    
-    try {
-      // Получаем информацию о доступных заморозках
-      const freezeInfo = await getEmployeeFreezeInfo(order.employeeId)
-      if (freezeInfo.remainingFreezes <= 0) {
-        toast.error(`Лимит заморозок исчерпан (${freezeInfo.freezesThisWeek}/${freezeInfo.maxFreezesPerWeek} на этой неделе)`)
-        return
-      }
-      setFreezeDialogOrder(order)
-    } catch (_error) {
-      toast.error('Не удалось проверить лимит заморозок')
-    }
-  }, [])
-
-  // Handler: Разморозить заказ
-  const handleUnfreezeOrder = useCallback(async (order: Order) => {
-    if (!order.id) return
-    
-    setActionLoading(true)
-    try {
-      // Используем новый API который работает с Order напрямую
-      const result = await unfreezeOrder(order.id)
-      toast.success(`Заказ для ${order.employeeName} разморожен`, {
-        description: `Подписка сокращена до ${result.subscription.endDate}`,
-      })
-      fetchOrders(1)
-    } catch (error) {
-      const appError = parseError(error)
-      logger.error('Failed to unfreeze order', error instanceof Error ? error : new Error(appError.message), {
-        errorCode: appError.code,
-      })
-      toast.error(appError.message, { description: appError.action })
-    } finally {
-      setActionLoading(false)
-    }
-  }, [fetchOrders])
+  // NOTE: Freeze functionality has been removed from the system.
+  // Orders can now only be cancelled, not frozen.
 
   // Confirm cancel order
   const confirmCancelOrder = useCallback(async () => {
@@ -432,7 +392,7 @@ function HomePageContent() {
       logger.error('Failed to cancel order', error instanceof Error ? error : new Error(appError.message), {
         errorCode: appError.code,
       })
-      
+
       if (appError.code === ErrorCodes.ORDER_CUTOFF_PASSED) {
         toast.error('Время для отмены истекло', {
           description: 'Отмена заказов на сегодня невозможна после времени отсечки',
@@ -445,42 +405,6 @@ function HomePageContent() {
     }
   }, [cancelDialogOrder, bulkAction])
 
-  // Confirm freeze order - использует новый API который работает с Order напрямую
-  const confirmFreezeOrder = useCallback(async () => {
-    if (!freezeDialogOrder?.id) return
-    setActionLoading(true)
-    try {
-      const result = await freezeOrder(freezeDialogOrder.id, 'Заморозка через админ панель')
-      toast.success(`Заказ для ${freezeDialogOrder.employeeName} заморожен`, {
-        description: `Подписка продлена до ${result.subscription.endDate}`,
-      })
-      setFreezeDialogOrder(null)
-      fetchOrders(1)
-    } catch (error) {
-      const appError = parseError(error)
-      logger.error('Failed to freeze order', error instanceof Error ? error : new Error(appError.message), {
-        errorCode: appError.code,
-      })
-      
-      // Special handling for freeze limit
-      if (appError.code === ErrorCodes.FREEZE_LIMIT_EXCEEDED) {
-        toast.error('Лимит заморозок исчерпан!', {
-          description: 'Вы уже использовали 2 заморозки на этой неделе. Дождитесь следующей недели.',
-          duration: 10000,
-        })
-      } else if (appError.code === ErrorCodes.ORDER_CUTOFF_PASSED) {
-        toast.error('Время для заморозки истекло', {
-          description: 'Заморозка на сегодня невозможна после времени отсечки',
-        })
-      } else if (appError.code === ErrorCodes.ORDER_GUEST_CANNOT_FREEZE) {
-        toast.error('Гостевые заказы нельзя замораживать')
-      } else {
-        toast.error(appError.message, { description: appError.action })
-      }
-    } finally {
-      setActionLoading(false)
-    }
-  }, [freezeDialogOrder, fetchOrders])
 
   const columns = useMemo<ColumnDef<Order>[]>(() => [
     {
@@ -565,7 +489,7 @@ function HomePageContent() {
           return <div className="font-medium">{order.employeeName}</div>
         }
         return (
-          <Link 
+          <Link
             href={`/employees/${order.employeeId}`}
             className="font-medium text-primary hover:underline"
             onClick={(e) => e.stopPropagation()}
@@ -656,13 +580,13 @@ function HomePageContent() {
         const isPastOrder = orderDate && orderDate < today
         const isTodayOrder = orderDate && orderDate.getTime() === today.getTime()
         // Note: future orders handled by default case below
-        
+
         // LUNCH: показываем комбо и цену
         if (order.serviceType === 'LUNCH' || !order.serviceType) {
           const isEmployee = order.type === 'Сотрудник'
           // Прошлые заказы нельзя редактировать!
           const editDisabled = !isEmployee || isCutoffLocked || Boolean(isPastOrder)
-          
+
           return (
             <TooltipProvider>
               <Tooltip>
@@ -691,8 +615,8 @@ function HomePageContent() {
                 </TooltipTrigger>
                 {editDisabled && isEmployee && (
                   <TooltipContent>
-                    {isPastOrder 
-                      ? 'Прошлые заказы нельзя редактировать' 
+                    {isPastOrder
+                      ? 'Прошлые заказы нельзя редактировать'
                       : cutoffDisabledReason || 'Редактирование недоступно'}
                   </TooltipContent>
                 )}
@@ -700,12 +624,12 @@ function HomePageContent() {
             </TooltipProvider>
           )
         }
-        
+
         // COMPENSATION: показываем потрачено/лимит в зависимости от времени
         const limit = order.compensationLimit || 0
         const spent = order.compensationAmount || 0
         const remaining = limit - spent
-        
+
         // Прошлое: показываем сколько потрачено из лимита
         if (isPastOrder) {
           const percentUsed = limit > 0 ? (spent / limit) * 100 : 0
@@ -720,7 +644,7 @@ function HomePageContent() {
                 </span>
               </div>
               <div className="w-16 h-1 bg-muted rounded-full overflow-hidden">
-                <div 
+                <div
                   className="h-full bg-emerald-500 rounded-full transition-all"
                   style={{ width: `${Math.min(percentUsed, 100)}%` }}
                 />
@@ -728,7 +652,7 @@ function HomePageContent() {
             </div>
           )
         }
-        
+
         // Сегодня: показываем текущий расход и остаток
         if (isTodayOrder) {
           return (
@@ -744,7 +668,7 @@ function HomePageContent() {
             </div>
           )
         }
-        
+
         // Будущее: показываем доступный лимит
         return (
           <div className="flex flex-col gap-0.5">
@@ -772,12 +696,12 @@ function HomePageContent() {
         const order = row.original
         const isEmployee = order.type === 'Сотрудник'
         const isCompensation = order.serviceType === 'COMPENSATION'
-        
+
         // Проверка на прошлые заказы
         const orderDate = order.date ? new Date(order.date) : null
         const today = startOfDay(new Date())
         const isPastOrder = orderDate && orderDate < today
-        
+
         // Для компенсаций показываем ресторан (не редактируемый)
         if (isCompensation) {
           const restaurant = order.restaurantName || order.address
@@ -793,11 +717,11 @@ function HomePageContent() {
             </div>
           )
         }
-        
+
         // Для ланчей показываем адрес (редактируемый, но не для прошлых заказов)
         const addressDisabled = !isEmployee || isCutoffLocked || Boolean(isPastOrder)
         const orderAddress = order.address || 'Адрес не указан'
-        
+
         return (
           <TooltipProvider>
             <Tooltip>
@@ -859,13 +783,13 @@ function HomePageContent() {
         const isEmployee = order.type === 'Сотрудник'
         const isGuest = order.type === 'Гость'
         const isCompensation = order.serviceType === 'COMPENSATION'
-        
+
         const orderDate = order.date ? new Date(order.date) : null
         const today = startOfDay(new Date())
         const isPastOrder = orderDate && orderDate < today
         const isTodayOrder = orderDate && orderDate.getTime() === today.getTime()
         const isFutureOrder = orderDate && orderDate > today
-        
+
         // Прошлые заказы — только просмотр (история)
         if (isPastOrder) {
           return (
@@ -879,13 +803,12 @@ function HomePageContent() {
             </TooltipProvider>
           )
         }
-        
-        // Завершённые/доставленные заказы (all terminal delivery states)
-        const isDeliveredStatus = order.status === ORDER_STATUS.DELIVERED || 
-                                   order.status === ORDER_STATUS.COMPLETED || 
-                                   order.status === 'Завершен' || 
+
+        // Завершённые заказы (all terminal delivery states)
+        const isDeliveredStatus = order.status === ORDER_STATUS.COMPLETED ||
+                                   order.status === 'Завершен' ||
                                    order.status === 'Выполнен' ||
-                                   order.status === 'Доставлен'
+                                   order.status === 'Доставлен'  // Legacy
         if (isDeliveredStatus) {
           return (
             <TooltipProvider>
@@ -898,14 +821,14 @@ function HomePageContent() {
             </TooltipProvider>
           )
         }
-        
+
         const actionDisabled = isCutoffLocked
-        
+
         // COMPENSATION заказы - кнопки в ряд
         if (isCompensation) {
           const canEdit = !isPastOrder && !isDeliveredStatus
           const canCancel = !actionDisabled && (isTodayOrder || isFutureOrder)
-          
+
           return (
             <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
               {/* Управлять компенсацией */}
@@ -929,7 +852,7 @@ function HomePageContent() {
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-              
+
               {/* Отменить */}
               {canCancel && (
                 <TooltipProvider>
@@ -953,7 +876,7 @@ function HomePageContent() {
             </div>
           )
         }
-        
+
         // Гостевые заказы - кнопки в ряд
         if (isGuest) {
           return (
@@ -1004,7 +927,7 @@ function HomePageContent() {
                   </Tooltip>
                 </TooltipProvider>
               )}
-              
+
               {/* Отменить */}
               <TooltipProvider>
                 <Tooltip>
@@ -1029,16 +952,28 @@ function HomePageContent() {
             </div>
           )
         }
-        
+
         // LUNCH для сотрудников — кнопки в ряд как на странице сотрудников
-        const canEdit = !actionDisabled && isEmployee
-        const canFreeze = isTodayOrder && !actionDisabled && isEmployee && (order.status === ORDER_STATUS.ACTIVE || order.status === 'Активен')
-        const canUnfreeze = (order.status === ORDER_STATUS.FROZEN || order.status === 'Заморожен') && !actionDisabled && isEmployee
+        const isActiveOrder = order.status === ORDER_STATUS.ACTIVE || order.status === 'Активен'
+        const isCancelledOrder = order.status === 'Отменён'
+        const canEdit = !actionDisabled && isEmployee && isActiveOrder
         // NOTE: Pause/Resume removed for individual orders - use subscription-level pause instead
-        // 'На паузе' is DEPRECATED, use 'Приостановлен'
-        const canResume = (order.status === ORDER_STATUS.PAUSED || order.status === 'Приостановлен' || order.status === 'На паузе') && !actionDisabled && isEmployee
-        const canCancel = !actionDisabled && isEmployee
-        
+        const canCancel = !actionDisabled && isEmployee && isActiveOrder
+
+        // Tooltip text based on status
+        const getEditTooltip = () => {
+          if (isCancelledOrder) return 'Заказ отменён'
+          if (canEdit) return 'Управлять обедом'
+          if (actionDisabled) return cutoffDisabledReason
+          return 'Недоступно'
+        }
+        const getCancelTooltip = () => {
+          if (isCancelledOrder) return 'Заказ отменён'
+          if (canCancel) return 'Отменить заказ'
+          if (actionDisabled) return cutoffDisabledReason
+          return 'Недоступно'
+        }
+
         return (
           <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
             {/* Управлять обедом */}
@@ -1049,69 +984,18 @@ function HomePageContent() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-amber-600 hover:text-amber-700"
-                        disabled={!canEdit}
+                        className={isCancelledOrder ? "h-8 w-8 text-muted-foreground" : "h-8 w-8 text-amber-600 hover:text-amber-700"}
+                        disabled={!canEdit || isCancelledOrder}
                         onClick={() => handleQuickEditLunch(order)}
                       >
                         <UtensilsCrossed className="h-4 w-4" />
                       </Button>
                   </span>
                 </TooltipTrigger>
-                <TooltipContent>
-                  {canEdit ? 'Управлять обедом' : actionDisabled ? cutoffDisabledReason : 'Недоступно'}
-                </TooltipContent>
+                <TooltipContent>{getEditTooltip()}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
-            
-            {/* Заморозить / Разморозить (только для сегодня) */}
-            {(canFreeze || canUnfreeze) && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn(
-                          "h-8 w-8",
-                          canUnfreeze 
-                            ? "text-blue-400 hover:text-blue-500" 
-                            : "text-blue-600 hover:text-blue-700"
-                        )}
-                        onClick={() => canUnfreeze ? handleUnfreezeOrder(order) : handleFreezeOrder(order)}
-                      >
-                        <Snowflake className="h-4 w-4" />
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {canUnfreeze ? 'Разморозить' : 'Заморозить на сегодня (лимит: 2/нед.)'}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-            
-            {/* Возобновить (для заказов на паузе - обратная совместимость) */}
-            {canResume && (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => startSingleAction(order.id, order.employeeName, 'resume')}
-                      >
-                        <PlayCircle className="h-4 w-4" />
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>Возобновить</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-            
+
             {/* Отменить */}
             <TooltipProvider>
               <Tooltip>
@@ -1120,17 +1004,15 @@ function HomePageContent() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-destructive hover:text-destructive"
-                      disabled={!canCancel}
+                      className={isCancelledOrder ? "h-8 w-8 text-muted-foreground" : "h-8 w-8 text-destructive hover:text-destructive"}
+                      disabled={!canCancel || isCancelledOrder}
                       onClick={() => handleCancelOrder(order)}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </span>
                 </TooltipTrigger>
-                <TooltipContent>
-                  {canCancel ? 'Отменить заказ' : actionDisabled ? cutoffDisabledReason : 'Недоступно'}
-                </TooltipContent>
+                <TooltipContent>{getCancelTooltip()}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </div>
@@ -1151,8 +1033,6 @@ function HomePageContent() {
     handleQuickEditLunch,
     handleManageCompensationFromOrder,
     handleCancelOrder,
-    handleFreezeOrder,
-    handleUnfreezeOrder,
   ])
 
   const confirmSingleAction = async () => {
@@ -1227,9 +1107,9 @@ function HomePageContent() {
         label: 'Локация доставки',
         type: 'select',
         operators: ['equals'],
-        options: projectOptions.map((proj) => ({ 
-          value: proj.id, 
-          label: `${proj.name} — ${proj.addressName || proj.addressFullAddress}` 
+        options: projectOptions.map((proj) => ({
+          value: proj.id,
+          label: `${proj.name} — ${proj.addressName || proj.addressFullAddress}`
         })),
       })
     }
@@ -1255,18 +1135,18 @@ function HomePageContent() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button 
-            variant="outline" 
-            onClick={() => setBulkLunchOpen(true)} 
+          <Button
+            variant="outline"
+            onClick={() => setBulkLunchOpen(true)}
             className="flex-1 sm:flex-initial gap-2 text-amber-600 hover:text-amber-700"
           >
             <UtensilsCrossed className="h-4 w-4" />
             Назначить обеды
           </Button>
           <FeatureVisible feature="compensation">
-          <Button 
-            variant="outline" 
-            onClick={() => setBulkCompensationOpen(true)} 
+          <Button
+            variant="outline"
+            onClick={() => setBulkCompensationOpen(true)}
             className="flex-1 sm:flex-initial gap-2 text-emerald-600 hover:text-emerald-700"
           >
             <Wallet className="h-4 w-4" />
@@ -1324,7 +1204,7 @@ function HomePageContent() {
               </div>
               <p className="text-lg font-bold">{dashboard.forecast.toLocaleString()}<span className="text-xs text-muted-foreground font-normal ml-1">TJS</span></p>
               <p className="text-[10px] text-muted-foreground">
-                {dashboard.totalBudget > 0 
+                {dashboard.totalBudget > 0
                   ? `${((dashboard.forecast / dashboard.totalBudget) * 100).toFixed(0)}% от бюджета`
                   : 'прогноз'
                 }
@@ -1387,7 +1267,7 @@ function HomePageContent() {
                 <Calendar className="h-5 w-5 text-primary" />
                 <span className="text-sm font-medium text-muted-foreground">Выбор даты</span>
               </div>
-              
+
               <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1">
                 <Button
                   variant="ghost"
@@ -1397,14 +1277,14 @@ function HomePageContent() {
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                
+
                 <DatePicker
                   value={displayDate ?? undefined}
                   onChange={selectDate}
                   placeholder="Все даты"
                   className="w-[130px] border-0 bg-background shadow-sm"
                 />
-                
+
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1429,7 +1309,7 @@ function HomePageContent() {
                   Сегодня
                 </Button>
               )}
-              
+
               {hasDateFilter ? (
                 <Button
                   variant="ghost"
@@ -1464,33 +1344,10 @@ function HomePageContent() {
           </div>
         </div>
 
-        {/* Active date filter badge */}
-        {selectedDate && (
-          <Badge 
-            variant="secondary" 
-            className="gap-1.5 pl-2.5 pr-1.5 py-1.5 text-sm font-normal bg-blue-500/10 text-blue-600 border-blue-200 dark:bg-blue-500/20 dark:text-blue-400 dark:border-blue-700"
-          >
-            <Calendar className="h-3.5 w-3.5" />
-            <span className="font-medium">Дата:</span>
-            <span className="opacity-80">{format(parseLocalDate(selectedDate), 'dd.MM.yyyy')}</span>
-            <button
-              type="button"
-              onClick={showAllOrders}
-              className="ml-0.5 rounded-full p-0.5 hover:bg-blue-500/20 transition-colors"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </Badge>
-        )}
-
         <FilterBuilder
           fields={orderFilterFields}
-          activeFilters={activeFilters.filter(f => f.fieldId !== 'date')}
-          onFiltersChange={(filters) => {
-            // Preserve date filter when other filters change
-            const dateFilter = activeFilters.find(f => f.fieldId === 'date')
-            handleFiltersChange(dateFilter ? [...filters, dateFilter] : filters)
-          }}
+          activeFilters={activeFilters}
+          onFiltersChange={handleFiltersChange}
         />
 
         {/* Кнопка редактирования — disabled пока не выбраны заказы */}
@@ -1504,7 +1361,7 @@ function HomePageContent() {
                   disabled={selectedOrders.length === 0 || isCutoffLocked}
                 >
                   <Users className="h-4 w-4" />
-                  {selectedOrders.length > 0 
+                  {selectedOrders.length > 0
                     ? `Редактировать (${selectedOrders.length})`
                     : 'Выберите заказы'
                   }
@@ -1533,9 +1390,9 @@ function HomePageContent() {
               </p>
             </div>
           </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => fetchDashboard()}
             className="w-full sm:w-auto flex-shrink-0 border-destructive/30 hover:bg-destructive/10"
           >
@@ -1662,7 +1519,7 @@ function HomePageContent() {
               Отменить заказ для {cancelDialogOrder?.employeeName}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {cancelDialogOrder?.serviceType === 'COMPENSATION' 
+              {cancelDialogOrder?.serviceType === 'COMPENSATION'
                 ? 'Компенсация на этот день будет отменена. Бюджет будет возвращён.'
                 : 'Заказ на обед будет отменён. Стоимость будет возвращена на баланс.'
               }
@@ -1670,42 +1527,12 @@ function HomePageContent() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={actionLoading}>Отмена</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={confirmCancelOrder} 
+            <AlertDialogAction
+              onClick={confirmCancelOrder}
               disabled={actionLoading}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Отменить заказ
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Dialog: Заморозить заказ */}
-      <AlertDialog open={freezeDialogOrder !== null} onOpenChange={(open) => !open && setFreezeDialogOrder(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <Snowflake className="h-5 w-5 text-blue-500" />
-              Заморозить заказ для {freezeDialogOrder?.employeeName}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Заказ на сегодня будет заморожен. День будет перенесён на конец периода подписки.
-              <br />
-              <span className="text-amber-600 text-sm mt-2 block">
-                ⚠️ Лимит заморозок: 2 раза в неделю
-              </span>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={actionLoading}>Отмена</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={confirmFreezeOrder} 
-              disabled={actionLoading}
-              className="bg-blue-600 text-white hover:bg-blue-700"
-            >
-              <Snowflake className="mr-2 h-4 w-4" />
-              Заморозить
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

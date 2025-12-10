@@ -427,7 +427,7 @@ public sealed class OrderManagementService : IOrderManagementService
             EmployeeName = ct.Employee?.FullName ?? "Сотрудник",
             EmployeePhone = ct.Employee?.Phone,
             Date = ct.TransactionDate.ToString("yyyy-MM-dd"),
-            Status = OrderStatus.Delivered.ToRussian(),  // Compensation transactions are always delivered
+            Status = OrderStatus.Completed.ToRussian(),  // Compensation transactions are always completed
             Address = ct.RestaurantName ?? "",
             ComboType = "",
             Amount = ct.TotalAmount,
@@ -607,7 +607,8 @@ public sealed class OrderManagementService : IOrderManagementService
     {
         if (OrderStateMachine.CanTransition(order.Status, OrderStatus.Paused))
         {
-            order.Pause();
+            order.Status = OrderStatus.Paused;
+            order.UpdatedAt = DateTime.UtcNow;
             return (true, 0, null);
         }
         return (false, 0, $"{order.GuestName ?? order.Employee?.FullName}: {OrderStateMachine.GetAllowedTransitions(order.Status)}");
@@ -617,7 +618,8 @@ public sealed class OrderManagementService : IOrderManagementService
     {
         if (OrderStateMachine.CanTransition(order.Status, OrderStatus.Active))
         {
-            order.Resume();
+            order.Status = OrderStatus.Active;
+            order.UpdatedAt = DateTime.UtcNow;
             return (true, 0, null);
         }
         return (false, 0, $"{order.GuestName ?? order.Employee?.FullName}: невозможно возобновить");
@@ -694,7 +696,31 @@ public sealed class OrderManagementService : IOrderManagementService
             order.Employee.Budget.TotalBudget += order.Price;
         }
 
-        order.Cancel();
+        // ═══════════════════════════════════════════════════════════════
+        // BUSINESS RULE: Если отменяется заказ сотрудника на БУДУЩЕЕ и у сотрудника
+        // НЕТ активной подписки — УДАЛЯЕМ заказ (нет смысла хранить)
+        // Если есть активная подписка или заказ на сегодня/прошлое — меняем статус
+        // ═══════════════════════════════════════════════════════════════
+        var isFutureOrder = order.OrderDate.Date > DateTime.UtcNow.Date;
+        var hasActiveSubscription = false;
+        
+        if (!order.IsGuestOrder && order.EmployeeId.HasValue)
+        {
+            hasActiveSubscription = await _context.LunchSubscriptions
+                .AnyAsync(s => s.EmployeeId == order.EmployeeId && s.IsActive, cancellationToken);
+        }
+
+        if (!order.IsGuestOrder && isFutureOrder && !hasActiveSubscription)
+        {
+            // Удаляем заказ полностью — нет смысла хранить отменённый будущий заказ без подписки
+            _context.Orders.Remove(order);
+        }
+        else
+        {
+            // Стандартное поведение: меняем статус на "Отменён"
+            order.Cancel();
+        }
+        
         return (true, refundAmount, null);
     }
 

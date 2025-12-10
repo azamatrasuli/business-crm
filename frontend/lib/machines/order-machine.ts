@@ -2,6 +2,10 @@
  * @fileoverview Order State Machine
  * State machine for managing order lifecycle.
  * Provides predictable state transitions for orders.
+ * 
+ * FREEZE FUNCTIONALITY DISABLED (2025-01-09)
+ * The 'frozen' state is kept for type compatibility only.
+ * Freeze transitions are removed from the state machine.
  */
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -15,7 +19,7 @@ export type OrderState =
   | 'preparing'   // Being prepared
   | 'ready'       // Ready for delivery/pickup
   | 'delivered'   // Successfully delivered
-  | 'frozen'      // Temporarily frozen (skipped day)
+  | 'frozen'      // DISABLED: kept for type compatibility only
   | 'cancelled'   // Order cancelled
 
 /** Events that can trigger state transitions */
@@ -24,13 +28,14 @@ export type OrderEvent =
   | { type: 'START_PREPARING' }
   | { type: 'MARK_READY' }
   | { type: 'DELIVER' }
+  // FREEZE DISABLED: events kept for type compatibility
   | { type: 'FREEZE'; reason?: string }
   | { type: 'UNFREEZE' }
   | { type: 'CANCEL'; reason?: string }
 
 /** Context data stored in the machine */
 export interface OrderContext {
-  /** Reason for freeze/cancel */
+  /** Reason for cancel */
   reason?: string
   /** Was this order rescheduled */
   rescheduled: boolean
@@ -41,7 +46,7 @@ export interface OrderContext {
   preparedAt?: Date
   deliveredAt?: Date
   cancelledAt?: Date
-  frozenAt?: Date
+  // frozenAt?: Date // FREEZE DISABLED (2025-01-09)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -57,12 +62,12 @@ type TransitionMap = {
 const transitions: TransitionMap = {
   pending: {
     CONFIRM: 'confirmed',
-    FREEZE: 'frozen',
+    // FREEZE: 'frozen', // FREEZE DISABLED (2025-01-09)
     CANCEL: 'cancelled',
   },
   confirmed: {
     START_PREPARING: 'preparing',
-    FREEZE: 'frozen',
+    // FREEZE: 'frozen', // FREEZE DISABLED (2025-01-09)
     CANCEL: 'cancelled',
   },
   preparing: {
@@ -73,10 +78,11 @@ const transitions: TransitionMap = {
     DELIVER: 'delivered',
     CANCEL: 'cancelled',
   },
-  frozen: {
-    UNFREEZE: 'pending',
-    CANCEL: 'cancelled',
-  },
+  // FREEZE DISABLED (2025-01-09): frozen state transitions removed
+  // frozen: {
+  //   UNFREEZE: 'pending',
+  //   CANCEL: 'cancelled',
+  // },
   // delivered and cancelled are final states
 }
 
@@ -154,14 +160,15 @@ export class OrderMachine {
       case 'DELIVER':
         this._context.deliveredAt = new Date()
         break
-      case 'FREEZE':
-        this._context.frozenAt = new Date()
-        this._context.reason = (event as { type: 'FREEZE'; reason?: string }).reason
-        break
-      case 'UNFREEZE':
-        this._context.frozenAt = undefined
-        this._context.reason = undefined
-        break
+      // FREEZE DISABLED (2025-01-09): freeze events ignored
+      // case 'FREEZE':
+      //   this._context.frozenAt = new Date()
+      //   this._context.reason = (event as { type: 'FREEZE'; reason?: string }).reason
+      //   break
+      // case 'UNFREEZE':
+      //   this._context.frozenAt = undefined
+      //   this._context.reason = undefined
+      //   break
       case 'CANCEL':
         this._context.cancelledAt = new Date()
         this._context.reason = (event as { type: 'CANCEL'; reason?: string }).reason
@@ -208,11 +215,12 @@ export function mapApiOrderStatusToState(apiStatus: string): OrderState {
     PREPARING: 'preparing',
     READY: 'ready',
     DELIVERED: 'delivered',
-    FROZEN: 'frozen',
+    // FROZEN: 'frozen', // FREEZE DISABLED (2025-01-09)
     CANCELLED: 'cancelled',
     // Legacy/alternative mappings
     ACTIVE: 'confirmed',
     COMPLETED: 'delivered',
+    FROZEN: 'cancelled',  // Legacy frozen orders treated as cancelled
   }
   return statusMap[apiStatus.toUpperCase()] || 'pending'
 }
@@ -227,7 +235,7 @@ export function getOrderStateLabel(state: OrderState): string {
     preparing: 'Готовится',
     ready: 'Готов',
     delivered: 'Доставлен',
-    frozen: 'Заморожен',
+    frozen: 'Отменён',  // FREEZE DISABLED: treat as cancelled
     cancelled: 'Отменён',
   }
   return labels[state]
@@ -243,7 +251,7 @@ export function getOrderStateColor(state: OrderState): 'default' | 'secondary' |
     preparing: 'default',
     ready: 'default',
     delivered: 'default',
-    frozen: 'outline',
+    frozen: 'destructive',  // FREEZE DISABLED: treat as cancelled
     cancelled: 'destructive',
   }
   return colors[state]
@@ -253,13 +261,15 @@ export function getOrderStateColor(state: OrderState): 'default' | 'secondary' |
  * Check if order can be modified (not in final state).
  */
 export function canModifyOrder(state: OrderState): boolean {
-  return state !== 'delivered' && state !== 'cancelled'
+  return state !== 'delivered' && state !== 'cancelled' && state !== 'frozen'
 }
 
 /**
- * Check if order can be frozen.
+ * @deprecated FREEZE FUNCTIONALITY DISABLED (2025-01-09)
+ * Always returns false. Use pause instead.
  */
-export function canFreezeOrder(state: OrderState): boolean {
-  return state === 'pending' || state === 'confirmed'
+export function canFreezeOrder(_state: OrderState): boolean {
+  // FREEZE DISABLED: always return false
+  return false
 }
 

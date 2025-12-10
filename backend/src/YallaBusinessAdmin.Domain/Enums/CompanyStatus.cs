@@ -11,13 +11,7 @@ public enum CompanyStatus
     Active,
     
     /// <summary>Не активный - Company/Project is inactive (disabled)</summary>
-    Inactive,
-    
-    /// <summary>Заморожен - Company/Project is frozen (temporary block, e.g., due to debt)</summary>
-    Frozen,
-    
-    /// <summary>Приостановлен - Company/Project is suspended (paused by admin)</summary>
-    Suspended
+    Inactive
 }
 
 public static class CompanyStatusExtensions
@@ -29,8 +23,6 @@ public static class CompanyStatusExtensions
     {
         CompanyStatus.Active => "Активный",
         CompanyStatus.Inactive => "Не активный",
-        CompanyStatus.Frozen => "Заморожен",
-        CompanyStatus.Suspended => "Приостановлен",
         _ => throw new ArgumentOutOfRangeException(nameof(status))
     };
 
@@ -41,13 +33,13 @@ public static class CompanyStatusExtensions
     {
         "Активный" or "ACTIVE" or "Active" => CompanyStatus.Active,
         "Не активный" or "INACTIVE" or "Inactive" => CompanyStatus.Inactive,
-        "Заморожен" or "FROZEN" or "Frozen" => CompanyStatus.Frozen,
-        "Приостановлен" or "SUSPENDED" or "Suspended" => CompanyStatus.Suspended,
         // Legacy mappings for backward compatibility
-        "BLOCKED_DEBT" or "BlockedDebt" => CompanyStatus.Frozen,
+        "Заморожен" or "FROZEN" or "Frozen" => CompanyStatus.Inactive,         // Frozen -> Inactive
+        "Приостановлен" or "SUSPENDED" or "Suspended" => CompanyStatus.Inactive, // Suspended -> Inactive
+        "BLOCKED_DEBT" or "BlockedDebt" => CompanyStatus.Inactive,
         "ARCHIVED" or "Archived" => CompanyStatus.Inactive,
         null or "" => CompanyStatus.Active, // Default for empty values
-        _ => CompanyStatus.Active // Default for unknown values (with logging recommended)
+        _ => CompanyStatus.Active // Default for unknown values
     };
 
     /// <summary>
@@ -55,10 +47,4 @@ public static class CompanyStatusExtensions
     /// </summary>
     public static bool IsOperational(this CompanyStatus status) =>
         status == CompanyStatus.Active;
-
-    /// <summary>
-    /// Check if status is a temporary block (can be resumed)
-    /// </summary>
-    public static bool IsTemporaryBlock(this CompanyStatus status) =>
-        status == CompanyStatus.Frozen || status == CompanyStatus.Suspended;
 }

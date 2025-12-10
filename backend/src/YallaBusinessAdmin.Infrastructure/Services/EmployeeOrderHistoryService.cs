@@ -60,17 +60,14 @@ public class EmployeeOrderHistoryService : IEmployeeOrderHistoryService
                 ordersQuery = ordersQuery.Where(o => o.OrderDate <= toDate.Date);
             }
 
-            // Apply status filter - if no status specified, exclude cancelled orders by default
+            // Apply status filter if specified
+            // NOTE: Cancelled orders are now shown by default (business requirement)
             if (!string.IsNullOrWhiteSpace(status))
             {
                 var orderStatus = OrderStatusExtensions.FromRussian(status);
                 ordersQuery = ordersQuery.Where(o => o.Status == orderStatus);
             }
-            else
-            {
-                // By default, don't show cancelled orders in history
-                ordersQuery = ordersQuery.Where(o => o.Status != OrderStatus.Cancelled);
-            }
+            // No default filter - show ALL orders including cancelled
 
             var lunchOrders = await ordersQuery.ToListAsync(cancellationToken);
 
@@ -114,7 +111,7 @@ public class EmployeeOrderHistoryService : IEmployeeOrderHistoryService
                 Id = ct.Id,
                 Date = ct.TransactionDate.ToString("yyyy-MM-dd"),
                 Type = "Сотрудник",
-                Status = OrderStatus.Delivered.ToRussian(),  // Compensation transactions are always delivered
+                Status = OrderStatus.Completed.ToRussian(),  // Compensation transactions are always completed
                 Amount = ct.TotalAmount,
                 Address = ct.RestaurantName ?? "",
                 ServiceType = "COMPENSATION",

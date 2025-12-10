@@ -2,17 +2,23 @@
  * @fileoverview Entity Status Constants and Helpers
  * Centralized status definitions for all entities.
  * Single source of truth for status values and their UI representations.
+ * 
+ * REFACTORED: 2025-01-09
+ * Simplified status system:
+ * - Employee: Active, Deactivated
+ * - Order: Active, Paused, Completed, Cancelled
+ * - Subscription: Active, Paused, Completed
+ * - Company/Project: Active, Inactive
  */
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Company / Project Statuses
+// Only Active and Inactive (Frozen and Suspended removed)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const COMPANY_STATUS = {
   ACTIVE: 'Активный',
   INACTIVE: 'Не активный',
-  FROZEN: 'Заморожен',
-  SUSPENDED: 'Приостановлен',
 } as const
 
 export type CompanyStatusType = typeof COMPANY_STATUS[keyof typeof COMPANY_STATUS]
@@ -20,38 +26,24 @@ export type CompanyStatusType = typeof COMPANY_STATUS[keyof typeof COMPANY_STATU
 export function getCompanyStatusConfig(status?: string) {
   switch (status) {
     case COMPANY_STATUS.ACTIVE:
+    case 'ACTIVE':
       return {
         label: 'Активный',
         variant: 'default' as const,
         className: 'bg-emerald-500/10 text-emerald-600 border-emerald-200',
       }
     case COMPANY_STATUS.INACTIVE:
+    case 'INACTIVE':
+    // Legacy mappings - treat as Inactive
+    case 'Заморожен':
+    case 'FROZEN':
+    case 'Приостановлен':
+    case 'SUSPENDED':
       return {
         label: 'Не активный',
         variant: 'secondary' as const,
         className: 'bg-gray-500/10 text-gray-600 border-gray-200',
       }
-    case COMPANY_STATUS.FROZEN:
-      return {
-        label: 'Заморожен',
-        variant: 'outline' as const,
-        className: 'bg-blue-500/10 text-blue-600 border-blue-200',
-      }
-    case COMPANY_STATUS.SUSPENDED:
-      return {
-        label: 'Приостановлен',
-        variant: 'outline' as const,
-        className: 'bg-amber-500/10 text-amber-600 border-amber-200',
-      }
-    // Legacy support for English status values
-    case 'ACTIVE':
-      return getCompanyStatusConfig(COMPANY_STATUS.ACTIVE)
-    case 'INACTIVE':
-      return getCompanyStatusConfig(COMPANY_STATUS.INACTIVE)
-    case 'FROZEN':
-      return getCompanyStatusConfig(COMPANY_STATUS.FROZEN)
-    case 'SUSPENDED':
-      return getCompanyStatusConfig(COMPANY_STATUS.SUSPENDED)
     default:
       return {
         label: status || 'Неизвестно',
@@ -67,12 +59,12 @@ export function isCompanyOperational(status?: string): boolean {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Employee Statuses
+// Only Active and Deactivated (Vacation removed - handled via working days)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const EMPLOYEE_STATUS = {
   ACTIVE: 'Активный',
   DEACTIVATED: 'Деактивирован',
-  VACATION: 'Отпуск',
 } as const
 
 export type EmployeeStatusType = typeof EMPLOYEE_STATUS[keyof typeof EMPLOYEE_STATUS]
@@ -80,22 +72,21 @@ export type EmployeeStatusType = typeof EMPLOYEE_STATUS[keyof typeof EMPLOYEE_ST
 export function getEmployeeStatusConfig(status?: string) {
   switch (status) {
     case EMPLOYEE_STATUS.ACTIVE:
+    case 'ACTIVE':
       return {
         label: 'Активный',
         variant: 'default' as const,
         className: 'bg-emerald-500/10 text-emerald-600 border-emerald-200',
       }
     case EMPLOYEE_STATUS.DEACTIVATED:
+    case 'DEACTIVATED':
+    // Legacy mappings - treat as Deactivated
+    case 'Отпуск':
+    case 'VACATION':
       return {
         label: 'Деактивирован',
         variant: 'secondary' as const,
         className: 'bg-gray-500/10 text-gray-600 border-gray-200',
-      }
-    case EMPLOYEE_STATUS.VACATION:
-      return {
-        label: 'Отпуск',
-        variant: 'outline' as const,
-        className: 'bg-amber-500/10 text-amber-600 border-amber-200',
       }
     default:
       return {
@@ -106,10 +97,20 @@ export function getEmployeeStatusConfig(status?: string) {
   }
 }
 
+export function isEmployeeActive(status?: string): boolean {
+  return status === EMPLOYEE_STATUS.ACTIVE || status === 'ACTIVE'
+}
+
+export function isEmployeeDeactivated(status?: string): boolean {
+  return status === EMPLOYEE_STATUS.DEACTIVATED || 
+         status === 'DEACTIVATED' ||
+         status === 'Отпуск' // Legacy
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Order Statuses
-// Synced with PostgreSQL enum order_status:
-// {Активен, Выполнен, Отменён, Заморожен, Приостановлен, Выходной, Доставлен}
+// Active, Paused, Completed, Cancelled
+// Frozen, DayOff, Delivered - REMOVED (temporarily disabled)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const ORDER_STATUS = {
@@ -117,15 +118,9 @@ export const ORDER_STATUS = {
   ACTIVE: 'Активен',
   /** Приостановлен - Order is paused (subscription paused) */
   PAUSED: 'Приостановлен',
-  /** Заморожен - Frozen order (day skipped, moved to end of subscription) */
-  FROZEN: 'Заморожен',
-  /** Выходной - Day off (no work on this day) */
-  DAY_OFF: 'Выходной',
-  /** Доставлен - Order has been delivered (primary terminal status) */
-  DELIVERED: 'Доставлен',
-  /** Выполнен - Completed (legacy DB value, maps to DB 'Выполнен') */
+  /** Выполнен - Completed (order was delivered/fulfilled) */
   COMPLETED: 'Выполнен',
-  /** Отменён - Cancelled order */
+  /** Отменён - Cancelled order (visible in history, cannot be restored) */
   CANCELLED: 'Отменён',
 } as const
 
@@ -142,36 +137,17 @@ export function getOrderStatusConfig(status?: string) {
       }
     case ORDER_STATUS.PAUSED:
     case 'Приостановлен':
-    case 'На паузе':  // DEPRECATED: Legacy alias, migrated to "Приостановлен"
+    case 'На паузе':  // DEPRECATED: Legacy alias
       return {
         label: 'Приостановлен',
         variant: 'secondary' as const,
         className: 'bg-amber-500/10 text-amber-600 border-amber-200',
       }
-    case ORDER_STATUS.FROZEN:
-    case 'Заморожен':
-      return {
-        label: 'Заморожен',
-        variant: 'outline' as const,
-        className: 'bg-blue-500/10 text-blue-600 border-blue-200',
-      }
-    case ORDER_STATUS.DAY_OFF:
-    case 'Выходной':
-      return {
-        label: 'Выходной',
-        variant: 'outline' as const,
-        className: 'bg-gray-500/10 text-gray-600 border-gray-200',
-      }
-    case ORDER_STATUS.DELIVERED:
-    case 'Доставлен':
-      return {
-        label: 'Доставлен',
-        variant: 'default' as const,
-        className: 'bg-emerald-500/10 text-emerald-600 border-emerald-200',
-      }
     case ORDER_STATUS.COMPLETED:
-    case 'Выполнен':  // Legacy DB value
+    case 'Выполнен':
     case 'Завершен':  // Legacy UI value
+    // Legacy mappings - treat as Completed
+    case 'Доставлен':
       return {
         label: 'Выполнен',
         variant: 'outline' as const,
@@ -179,6 +155,9 @@ export function getOrderStatusConfig(status?: string) {
       }
     case ORDER_STATUS.CANCELLED:
     case 'Отменён':
+    // Legacy mappings - treat as Cancelled
+    case 'Заморожен':
+    case 'Выходной':
       return {
         label: 'Отменён',
         variant: 'destructive' as const,
@@ -197,13 +176,11 @@ export function getOrderStatusConfig(status?: string) {
  * Check if order is active (can be processed for delivery).
  */
 export function isOrderActive(status?: string): boolean {
-  return status === ORDER_STATUS.ACTIVE ||
-         status === 'Активен'
+  return status === ORDER_STATUS.ACTIVE || status === 'Активен'
 }
 
 /**
  * Check if order is paused (subscription temporarily stopped).
- * Note: "На паузе" is deprecated, use "Приостановлен" - kept for backward compatibility only.
  */
 export function isOrderPaused(status?: string): boolean {
   return status === ORDER_STATUS.PAUSED ||
@@ -212,11 +189,13 @@ export function isOrderPaused(status?: string): boolean {
 }
 
 /**
- * Check if order is frozen (day skipped, moved to end).
+ * Check if order is completed/delivered.
  */
-export function isOrderFrozen(status?: string): boolean {
-  return status === ORDER_STATUS.FROZEN ||
-         status === 'Заморожен'
+export function isOrderCompleted(status?: string): boolean {
+  return status === ORDER_STATUS.COMPLETED ||
+         status === 'Выполнен' ||
+         status === 'Завершен' ||
+         status === 'Доставлен'  // Legacy
 }
 
 /**
@@ -224,26 +203,35 @@ export function isOrderFrozen(status?: string): boolean {
  */
 export function isOrderCancelled(status?: string): boolean {
   return status === ORDER_STATUS.CANCELLED ||
-         status === 'Отменён'
-}
-
-export function canModifyOrder(status?: string): boolean {
-  return isOrderActive(status) || isOrderPaused(status) || isOrderFrozen(status)
-}
-
-export function isOrderTerminal(status?: string): boolean {
-  return isOrderDelivered(status) || isOrderCancelled(status)
+         status === 'Отменён' ||
+         status === 'Заморожен' ||  // Legacy - treat as cancelled
+         status === 'Выходной'      // Legacy - treat as cancelled
 }
 
 /**
- * Check if order was successfully delivered (Delivered or legacy Completed).
+ * Check if order can be modified (only active orders).
+ * Paused orders cannot be manually modified - they are controlled by subscription.
  */
+export function canModifyOrder(status?: string): boolean {
+  return isOrderActive(status)
+}
+
+/**
+ * Check if order is in terminal state (completed or cancelled).
+ */
+export function isOrderTerminal(status?: string): boolean {
+  return isOrderCompleted(status) || isOrderCancelled(status)
+}
+
+// DEPRECATED: Use isOrderCompleted instead
 export function isOrderDelivered(status?: string): boolean {
-  return status === ORDER_STATUS.DELIVERED ||
-         status === ORDER_STATUS.COMPLETED ||
-         status === 'Доставлен' ||
-         status === 'Выполнен' ||
-         status === 'Завершен'  // Legacy UI value
+  return isOrderCompleted(status)
+}
+
+// DEPRECATED: Frozen status removed
+export function isOrderFrozen(status?: string): boolean {
+  // All frozen orders are treated as cancelled now
+  return status === 'Заморожен'
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -261,7 +249,8 @@ export type SubscriptionStatusType = typeof SUBSCRIPTION_STATUS[keyof typeof SUB
 export function getSubscriptionStatusConfig(status?: string) {
   switch (status) {
     case SUBSCRIPTION_STATUS.ACTIVE:
-    case 'Активный': // альтернативное написание
+    case 'Активный':
+    case 'Активна':
       return {
         label: 'Активна',
         variant: 'default' as const,
@@ -269,14 +258,15 @@ export function getSubscriptionStatusConfig(status?: string) {
       }
     case SUBSCRIPTION_STATUS.PAUSED:
     case 'Приостановлена':
-    case 'На паузе': // DEPRECATED: Legacy alias, use "Приостановлена"
+    case 'На паузе':  // DEPRECATED: Legacy alias
       return {
         label: 'Приостановлена',
         variant: 'secondary' as const,
         className: 'bg-amber-500/10 text-amber-600 border-amber-200',
       }
     case SUBSCRIPTION_STATUS.COMPLETED:
-    case 'Завершен': // альтернативное написание (м.р.)
+    case 'Завершена':
+    case 'Завершен':
       return {
         label: 'Завершена',
         variant: 'outline' as const,
@@ -299,7 +289,6 @@ export function isSubscriptionActive(status?: string): boolean {
 
 /**
  * Check if subscription is paused.
- * Note: "На паузе" is deprecated, use "Приостановлена" - kept for backward compatibility only.
  */
 export function isSubscriptionPaused(status?: string): boolean {
   return status === SUBSCRIPTION_STATUS.PAUSED || 
@@ -368,3 +357,83 @@ export function getInviteStatusConfig(status?: string) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Unified Status Colors - Use these for consistent styling across the app
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Unified color palette for order statuses.
+ * Use these for calendar cells, cards, icons, etc.
+ */
+export const STATUS_COLORS = {
+  // Active status - Green
+  active: {
+    bg: 'bg-emerald-500/10',
+    bgHover: 'hover:bg-emerald-500/20',
+    bgDark: 'dark:bg-emerald-950/40',
+    text: 'text-emerald-600',
+    textDark: 'dark:text-emerald-400',
+    border: 'border-emerald-200',
+    borderDark: 'dark:border-emerald-800',
+    icon: 'text-emerald-500',
+  },
+  // Paused status - Orange/Amber
+  paused: {
+    bg: 'bg-amber-500/10',
+    bgHover: 'hover:bg-amber-500/20',
+    bgDark: 'dark:bg-amber-950/40',
+    text: 'text-amber-600',
+    textDark: 'dark:text-amber-400',
+    border: 'border-amber-200',
+    borderDark: 'dark:border-amber-800',
+    icon: 'text-amber-500',
+  },
+  // Completed status - Gray
+  completed: {
+    bg: 'bg-gray-500/10',
+    bgHover: 'hover:bg-gray-500/20',
+    bgDark: 'dark:bg-gray-800/40',
+    text: 'text-gray-600',
+    textDark: 'dark:text-gray-400',
+    border: 'border-gray-200',
+    borderDark: 'dark:border-gray-700',
+    icon: 'text-gray-500',
+  },
+  // Cancelled status - Red
+  cancelled: {
+    bg: 'bg-red-500/10',
+    bgHover: 'hover:bg-red-500/20',
+    bgDark: 'dark:bg-red-950/40',
+    text: 'text-red-600',
+    textDark: 'dark:text-red-400',
+    border: 'border-red-200',
+    borderDark: 'dark:border-red-800',
+    icon: 'text-red-500',
+  },
+} as const
+
+/**
+ * Get status color key based on order status string.
+ */
+export function getStatusColorKey(status?: string): keyof typeof STATUS_COLORS {
+  if (isOrderCancelled(status)) return 'cancelled'
+  if (isOrderPaused(status)) return 'paused'
+  if (isOrderCompleted(status)) return 'completed'
+  return 'active'
+}
+
+/**
+ * Get full CSS classes for a status - for badges, cards, etc.
+ */
+export function getStatusClasses(status?: string) {
+  const key = getStatusColorKey(status)
+  const colors = STATUS_COLORS[key]
+  return {
+    badge: `${colors.bg} ${colors.text} ${colors.border}`,
+    card: `${colors.bg} ${colors.bgDark} ${colors.border} ${colors.borderDark}`,
+    text: `${colors.text} ${colors.textDark}`,
+    icon: colors.icon,
+    bg: `${colors.bg} ${colors.bgDark}`,
+    border: `${colors.border} ${colors.borderDark}`,
+  }
+}

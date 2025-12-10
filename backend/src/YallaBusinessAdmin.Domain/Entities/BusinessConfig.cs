@@ -13,3 +13,4 @@ public class BusinessConfig
     public Guid? UpdatedBy { get; set; }
 }
 
+

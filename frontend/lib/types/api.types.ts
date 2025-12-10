@@ -55,20 +55,20 @@ export type ShiftType = 'DAY' | 'NIGHT'
 
 /** 
  * Order status 
- * Synced with PostgreSQL enum order_status:
- * {Активен, Выполнен, Отменён, Заморожен, Приостановлен, Выходной, Доставлен}
+ * Synced with PostgreSQL: {Активен, Приостановлен, Выполнен, Отменён}
+ * REFACTORED: 2025-01-09 - Frozen, DayOff, Delivered removed
  */
 export type OrderStatus = 
   | 'Активен'       // Active order, ready for delivery
   | 'Приостановлен' // Paused (subscription paused)
-  | 'Заморожен'     // Frozen (day skipped)
-  | 'Выходной'      // Day off
-  | 'Доставлен'     // Delivered (new terminal status)
-  | 'Выполнен'      // Completed (legacy DB value)
+  | 'Выполнен'      // Completed (delivered)
   | 'Отменён'       // Cancelled
-  // DEPRECATED: Legacy UI values (for backward compatibility only)
-  | 'На паузе'      // DEPRECATED: Use 'Приостановлен' instead
-  | 'Завершен'      // DEPRECATED: Use 'Выполнен' instead
+  // DEPRECATED: Legacy values (for backward compatibility only - will be mapped to new statuses)
+  | 'На паузе'      // DEPRECATED: -> 'Приостановлен'
+  | 'Завершен'      // DEPRECATED: -> 'Выполнен'
+  | 'Заморожен'     // DEPRECATED: -> 'Отменён' (freeze removed)
+  | 'Выходной'      // DEPRECATED: -> 'Отменён' (day off removed)
+  | 'Доставлен'     // DEPRECATED: -> 'Выполнен'
 
 /** Employee invite status */
 export type InviteStatus = 'Принято' | 'Ожидает' | 'Отклонено'

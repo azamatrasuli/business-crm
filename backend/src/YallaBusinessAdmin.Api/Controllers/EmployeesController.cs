@@ -202,6 +202,30 @@ public class EmployeesController : BaseApiController
     }
 
     /// <summary>
+    /// Permanently deletes an employee and all related data from the database.
+    /// WARNING: This action is irreversible! Use only for test/fake data cleanup.
+    /// </summary>
+    /// <param name="id">Employee ID.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>No content on success.</returns>
+    /// <response code="204">Employee permanently deleted.</response>
+    /// <response code="401">Unauthorized.</response>
+    /// <response code="404">Employee not found.</response>
+    [HttpDelete("{id:guid}/permanent")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult> HardDelete(Guid id, CancellationToken cancellationToken)
+    {
+        var (companyId, errorResult) = RequireCompanyId();
+        if (errorResult != null) return errorResult;
+
+        var currentUserId = GetUserId();
+        await _employeesService.HardDeleteAsync(id, companyId!.Value, currentUserId, cancellationToken);
+        return NoContent();
+    }
+
+    /// <summary>
     /// Updates employee budget.
     /// </summary>
     /// <param name="id">Employee ID.</param>

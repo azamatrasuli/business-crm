@@ -12,10 +12,10 @@ import {
 import type { ActiveFilter } from '@/components/ui/filter-builder'
 import { getErrorMessage } from './utils'
 
-// Order status filter type - includes both new and legacy values
-// Synced with PostgreSQL enum: {Активен, Выполнен, Отменён, Заморожен, Приостановлен, Выходной, Доставлен}
-// NOTE: 'На паузе' is DEPRECATED, use 'Приостановлен'
-type StatusFilter = 'all' | 'Активен' | 'Приостановлен' | 'Заморожен' | 'Выходной' | 'Доставлен' | 'Выполнен' | 'На паузе' | 'Завершен' | 'Отменён'
+// Order status filter type
+// Synced with PostgreSQL enum: {Активен, Выполнен, Отменён, Приостановлен}
+// NOTE: Frozen, DayOff, Delivered have been removed from the system
+type StatusFilter = 'all' | 'Активен' | 'Приостановлен' | 'Выполнен' | 'Завершен' | 'Отменён'
 type TypeFilter = 'all' | 'Сотрудник' | 'Гость'
 
 interface OrdersFilter {

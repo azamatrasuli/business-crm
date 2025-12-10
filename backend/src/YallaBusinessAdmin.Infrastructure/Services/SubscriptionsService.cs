@@ -172,29 +172,30 @@ public class SubscriptionsService : ISubscriptionsService
         }
 
         // ═══════════════════════════════════════════════════════════════
-        // CUTOFF VALIDATION: Cannot create subscription starting today after cutoff
-        // Business rule: If StartDate is today and cutoff has passed,
-        // the subscription should start tomorrow or user should be warned
+        // CUTOFF HANDLING: If cutoff passed and start date is today,
+        // automatically shift start date to tomorrow (instead of throwing error)
+        // Business rule: Subscription starts from tomorrow if cutoff already passed
         // ═══════════════════════════════════════════════════════════════
         var effectiveStartDate = request.StartDate ?? today;
+        var cutoffShifted = false;
         if (effectiveStartDate == today && employee.Project != null)
         {
             if (TimezoneHelper.IsCutoffPassed(employee.Project.CutoffTime, employee.Project.Timezone))
             {
-                throw new BusinessRuleException(
-                    ErrorCodes.ORDER_CUTOFF_PASSED,
-                    $"Время для заказов на сегодня истекло в {employee.Project.CutoffTime}. " +
-                    $"Подписка будет начата с завтрашнего дня. Пожалуйста, выберите дату начала с завтрашнего дня.");
+                // Auto-shift to tomorrow instead of blocking
+                effectiveStartDate = today.AddDays(1);
+                cutoffShifted = true;
             }
         }
 
         // ═══════════════════════════════════════════════════════════════
         // VALIDATION: Minimum subscription days (from business config)
+        // NOTE: Use effectiveStartDate (already adjusted for cutoff)
         // ═══════════════════════════════════════════════════════════════
-        var validationStartDate = request.StartDate ?? today;
+        var validationStartDate = effectiveStartDate;
         var validationEndDate = request.EndDate ?? validationStartDate.AddMonths(1);
         var validationTotalDays = WorkingDaysHelper.CountWorkingDays(employee.WorkingDays, validationStartDate, validationEndDate);
-        
+
         var minDays = await _configService.GetIntAsync(ConfigKeys.SubscriptionMinDays, 5, cancellationToken);
         if (validationTotalDays < minDays)
         {
@@ -215,7 +216,7 @@ public class SubscriptionsService : ISubscriptionsService
         };
         var requiredBudget = validationPrice * validationTotalDays;
         var availableBudget = employee.Project.Budget + employee.Project.OverdraftLimit;
-        
+
         if (requiredBudget > availableBudget)
         {
             throw new InvalidOperationException(
@@ -230,11 +231,11 @@ public class SubscriptionsService : ISubscriptionsService
         // - Create orders
         // ═══════════════════════════════════════════════════════════════
         var strategy = _context.Database.CreateExecutionStrategy();
-        
+
         return await strategy.ExecuteAsync(async () =>
         {
             await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-            
+
             try
             {
                 // Check if subscription already exists (including soft-deleted)
@@ -248,10 +249,10 @@ public class SubscriptionsService : ISubscriptionsService
                     {
                         throw new InvalidOperationException("Сотрудник уже имеет активную подписку на обеды");
                     }
-                    
+
                     // Calculate total WORKING days and price for reactivation
-                    // NOTE: 'today' is already calculated using project timezone above
-                    var reactivateStartDate = request.StartDate ?? today;
+                    // NOTE: Use effectiveStartDate (already adjusted for cutoff) instead of request.StartDate
+                    var reactivateStartDate = effectiveStartDate;
                     var reactivateEndDate = request.EndDate ?? reactivateStartDate.AddMonths(1);
                     var reactivateTotalDays = WorkingDaysHelper.CountWorkingDays(employee.WorkingDays, reactivateStartDate, reactivateEndDate);
                     var reactivatePrice = request.ComboType switch
@@ -260,7 +261,7 @@ public class SubscriptionsService : ISubscriptionsService
                         "Комбо 35" => 35m,
                         _ => 25m
                     };
-                    
+
                     // Reactivate existing subscription instead of creating new
                     existingSubscription.IsActive = true;
                     existingSubscription.ComboType = request.ComboType;
@@ -278,7 +279,7 @@ public class SubscriptionsService : ISubscriptionsService
 
                     await _context.SaveChangesAsync(cancellationToken);
                     await transaction.CommitAsync(cancellationToken);
-                    
+
                     existingSubscription.Employee = employee;
                     var reactivatedTotalDays = await CalculateDynamicTotalDaysAsync(existingSubscription.EmployeeId, existingSubscription.StartDate, existingSubscription.EndDate, cancellationToken);
                     var reactivatedTotalPrice = await CalculateDynamicTotalPriceAsync(existingSubscription.EmployeeId, cancellationToken);
@@ -286,8 +287,8 @@ public class SubscriptionsService : ISubscriptionsService
                 }
 
                 // Calculate total WORKING days and price
-                // NOTE: 'today' is already calculated using project timezone above
-                var startDate = request.StartDate ?? today;
+                // NOTE: Use effectiveStartDate (already adjusted for cutoff) instead of request.StartDate
+                var startDate = effectiveStartDate;
                 var endDate = request.EndDate ?? startDate.AddMonths(1);
                 var totalDays = WorkingDaysHelper.CountWorkingDays(employee.WorkingDays, startDate, endDate);
                 var price = request.ComboType switch
@@ -364,7 +365,7 @@ public class SubscriptionsService : ISubscriptionsService
         {
             var oldComboType = subscription.ComboType;
             subscription.ComboType = request.ComboType;
-            
+
             // CRITICAL FIX: Also update active orders to use new combo type
             // Otherwise existing orders would have wrong combo after update
             if (oldComboType != request.ComboType)
@@ -375,19 +376,25 @@ public class SubscriptionsService : ISubscriptionsService
                     "Комбо 35" => 35m,
                     _ => 25m
                 };
-                
-                // Get future orders to update (Active or Frozen, today and forward)
+
+                // Get future orders to update (Active or Paused)
                 // IMPORTANT: Use project's timezone for "today" comparison!
                 var updateTimezone = subscription.Employee?.Project?.Timezone;
                 var updateLocalToday = TimezoneHelper.GetLocalToday(updateTimezone);
+
+                // S1.2.4: If cutoff has passed, don't modify today's order - start from tomorrow
+                var cutoffTime = subscription.Employee?.Project?.CutoffTime ?? new TimeOnly(10, 0);
+                var cutoffPassed = TimezoneHelper.IsCutoffPassed(cutoffTime, updateTimezone);
+                var updateFromDate = cutoffPassed ? updateLocalToday.AddDays(1) : updateLocalToday;
+
                 var futureOrders = await _context.Orders
-                    .Where(o => o.EmployeeId == subscription.EmployeeId && 
-                               (o.Status == OrderStatus.Active || o.Status == OrderStatus.Frozen) &&
-                               o.OrderDate >= updateLocalToday)
+                    .Where(o => o.EmployeeId == subscription.EmployeeId &&
+                               (o.Status == OrderStatus.Active || o.Status == OrderStatus.Paused) &&
+                               o.OrderDate >= updateFromDate)
                     .ToListAsync(cancellationToken);
-                
+
                 // NOTE: TotalPrice is calculated dynamically - no manual update needed
-                
+
                 // Update future orders with new combo and price
                 foreach (var order in futureOrders)
                 {
@@ -435,30 +442,32 @@ public class SubscriptionsService : ISubscriptionsService
         // - Reset employee service type
         // ═══════════════════════════════════════════════════════════════
         var strategy = _context.Database.CreateExecutionStrategy();
-        
+
         await strategy.ExecuteAsync(async () =>
         {
             await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-            
+
             try
             {
                 // SOFT DELETE: Deactivate instead of hard delete
                 subscription.Deactivate(); // Uses domain method which sets IsActive=false and Status=Completed
 
-                // CANCEL FUTURE ORDERS: Cancel orders from today onwards (Active or Frozen)
-                // Orders already Delivered/Completed are not affected (history preserved)
+                // DELETE FUTURE ORDERS: Remove orders from today onwards (Active or Paused)
+                // Past orders are preserved as history
                 // IMPORTANT: Use project's timezone for "today" comparison!
                 var deleteTimezone = subscription.Employee?.Project?.Timezone;
                 var deleteLocalToday = TimezoneHelper.GetLocalToday(deleteTimezone);
                 var futureOrders = await _context.Orders
                     .Where(o => o.EmployeeId == subscription.EmployeeId
-                             && (o.Status == OrderStatus.Active || o.Status == OrderStatus.Frozen)
+                             && (o.Status == OrderStatus.Active || o.Status == OrderStatus.Paused)
                              && o.OrderDate >= deleteLocalToday)
                     .ToListAsync(cancellationToken);
 
                 // Calculate refund amount for cancelled orders
                 var refundAmount = futureOrders.Sum(o => o.Price);
 
+                // S1.5.2: Cancel orders (set status to Cancelled) instead of deleting
+                // This preserves order history for audit/analytics
                 foreach (var order in futureOrders)
                 {
                     order.Status = OrderStatus.Cancelled;
@@ -592,7 +601,7 @@ public class SubscriptionsService : ISubscriptionsService
             var earlyEndDate = !string.IsNullOrEmpty(request.EndDate)
                 ? DateOnly.ParseExact(request.EndDate, "yyyy-MM-dd", CultureInfo.InvariantCulture)
                 : earlyStartDate.AddMonths(1);
-            
+
             int estimatedDays;
             if (request.ScheduleType == "CUSTOM" && request.CustomDays != null && request.CustomDays.Count > 0)
             {
@@ -603,7 +612,7 @@ public class SubscriptionsService : ISubscriptionsService
                 // Count days based on schedule type: EVERY_DAY or EVERY_OTHER_DAY
                 estimatedDays = WorkingDaysHelper.CountOrderDays(request.ScheduleType, employee.WorkingDays, earlyStartDate, earlyEndDate);
             }
-            
+
             var comboPrice = request.ComboType switch
             {
                 "Комбо 25" => 25m,
@@ -612,7 +621,7 @@ public class SubscriptionsService : ISubscriptionsService
             };
             var requiredBudget = comboPrice * estimatedDays;
             var availableBudget = employee.Project.Budget + employee.Project.OverdraftLimit;
-            
+
             if (requiredBudget > availableBudget)
             {
                 errors.Add(new { employeeId = employee.Id.ToString(), message = $"{employee.FullName} (недостаточно бюджета: требуется {requiredBudget:N0}, доступно {availableBudget:N0} TJS)" });
@@ -638,14 +647,15 @@ public class SubscriptionsService : ISubscriptionsService
             }
 
             // ═══════════════════════════════════════════════════════════════
-            // CUTOFF VALIDATION: Cannot create subscription starting today after cutoff
+            // CUTOFF HANDLING: If cutoff passed and start date is today,
+            // automatically shift start date to tomorrow (instead of blocking)
             // ═══════════════════════════════════════════════════════════════
             if (startDate == bulkLocalToday && employee.Project != null)
             {
                 if (TimezoneHelper.IsCutoffPassed(employee.Project.CutoffTime, employee.Project.Timezone))
                 {
-                    errors.Add(new { employeeId = employee.Id.ToString(), message = $"{employee.FullName} (время заказа на сегодня истекло в {employee.Project.CutoffTime})" });
-                    continue;
+                    // Auto-shift to tomorrow instead of blocking
+                    startDate = bulkLocalToday.AddDays(1);
                 }
             }
 
@@ -677,7 +687,7 @@ public class SubscriptionsService : ISubscriptionsService
                 errors.Add(new { employeeId = employee.Id.ToString(), message = $"{employee.FullName} (минимальный период подписки — {minDays} рабочих дней, выбрано: {totalDays})" });
                 continue;
             }
-            
+
             var price = request.ComboType switch
             {
                 "Комбо 25" => 25m,
@@ -752,7 +762,8 @@ public class SubscriptionsService : ISubscriptionsService
             if (ordersCreated == 0)
             {
                 _context.LunchSubscriptions.Remove(subscription);
-                errors.Add(new { employeeId = employee.Id.ToString(), message = $"{employee.FullName} (не удалось создать заказы - проверьте рабочие дни)" });
+                var errorMsg = $"{employee.FullName} (не удалось создать заказы - проверьте рабочие дни)";
+                errors.Add(new { employeeId = employee.Id.ToString(), message = errorMsg });
                 continue;
             }
 
@@ -813,25 +824,25 @@ public class SubscriptionsService : ISubscriptionsService
             {
                 var oldComboType = subscription.ComboType;
                 subscription.ComboType = request.ComboType;
-                
-                // FIX: Также обновляем активные заказы (как в UpdateAsync)
-                if (oldComboType != request.ComboType)
-                {
-                    var newPrice = request.ComboType switch
+
+                    // FIX: Также обновляем активные заказы (как в UpdateAsync)
+                    if (oldComboType != request.ComboType)
                     {
-                        "Комбо 25" => 25m,
-                        "Комбо 35" => 35m,
-                        _ => 25m
-                    };
-                    
-                    // IMPORTANT: Use project's timezone for "today" comparison!
-                    var bulkUpdateTimezone = subscription.Employee?.Project?.Timezone;
-                    var bulkUpdateLocalToday = TimezoneHelper.GetLocalToday(bulkUpdateTimezone);
-                    var activeOrders = await _context.Orders
-                        .Where(o => o.EmployeeId == subscription.EmployeeId && 
-                                   (o.Status == OrderStatus.Active || o.Status == OrderStatus.Frozen) &&
-                                   o.OrderDate >= bulkUpdateLocalToday)
-                        .ToListAsync(cancellationToken);
+                        var newPrice = request.ComboType switch
+                        {
+                            "Комбо 25" => 25m,
+                            "Комбо 35" => 35m,
+                            _ => 25m
+                        };
+
+                        // IMPORTANT: Use project's timezone for "today" comparison!
+                        var bulkUpdateTimezone = subscription.Employee?.Project?.Timezone;
+                        var bulkUpdateLocalToday = TimezoneHelper.GetLocalToday(bulkUpdateTimezone);
+                        var activeOrders = await _context.Orders
+                            .Where(o => o.EmployeeId == subscription.EmployeeId &&
+                                       (o.Status == OrderStatus.Active || o.Status == OrderStatus.Paused) &&
+                                       o.OrderDate >= bulkUpdateLocalToday)
+                            .ToListAsync(cancellationToken);
 
                     foreach (var order in activeOrders)
                     {
@@ -873,7 +884,14 @@ public class SubscriptionsService : ISubscriptionsService
             throw new KeyNotFoundException("Подписка не найдена");
         }
 
-        if (!subscription.IsActive)
+        // S1.3.3: Cannot pause completed subscription (terminal state)
+        if (subscription.Status == SubscriptionStatus.Completed)
+        {
+            throw new InvalidOperationException("Невозможно приостановить завершённую подписку");
+        }
+
+        // S1.3.4: Cannot pause already paused subscription
+        if (!subscription.IsActive || subscription.Status == SubscriptionStatus.Paused)
         {
             throw new InvalidOperationException("Подписка уже приостановлена");
         }
@@ -882,11 +900,11 @@ public class SubscriptionsService : ISubscriptionsService
         // TRANSACTION: Pause subscription and all future orders atomically
         // ═══════════════════════════════════════════════════════════════
         var strategy = _context.Database.CreateExecutionStrategy();
-        
+
         return await strategy.ExecuteAsync(async () =>
         {
             await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-            
+
             try
             {
                 subscription.IsActive = false;
@@ -897,10 +915,10 @@ public class SubscriptionsService : ISubscriptionsService
                 // Use project's timezone for "today" comparison
                 var timezone = subscription.Employee?.Project?.Timezone;
                 var localToday = TimezoneHelper.GetLocalToday(timezone);
-                
+
                 // Pause all future active orders (today and forward in local timezone)
                 var futureOrders = await _context.Orders
-                    .Where(o => o.EmployeeId == subscription.EmployeeId && 
+                    .Where(o => o.EmployeeId == subscription.EmployeeId &&
                                o.Status == OrderStatus.Active &&
                                o.OrderDate >= localToday)
                     .ToListAsync(cancellationToken);
@@ -938,6 +956,13 @@ public class SubscriptionsService : ISubscriptionsService
             throw new KeyNotFoundException("Подписка не найдена");
         }
 
+        // S1.4.6: Cannot resume completed subscription (terminal state)
+        if (subscription.Status == SubscriptionStatus.Completed)
+        {
+            throw new InvalidOperationException("Невозможно возобновить завершённую подписку");
+        }
+
+        // S1.4.5: Cannot resume already active subscription
         if (subscription.IsActive)
         {
             throw new InvalidOperationException("Подписка уже активна");
@@ -950,20 +975,20 @@ public class SubscriptionsService : ISubscriptionsService
         // - Create orders for extended period
         // ═══════════════════════════════════════════════════════════════
         var strategy = _context.Database.CreateExecutionStrategy();
-        
+
         return await strategy.ExecuteAsync(async () =>
         {
             await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-            
+
             try
             {
                 var employee = subscription.Employee;
                 var project = employee?.Project;
-                
+
                 // Use project's timezone for date calculations
                 var timezone = project?.Timezone;
                 var localToday = TimezoneHelper.GetLocalToday(timezone);
-                
+
                 // Remember old EndDate before extending
                 var oldEndDate = subscription.EndDate;
 
@@ -983,7 +1008,7 @@ public class SubscriptionsService : ISubscriptionsService
 
                 // Resume all paused orders (using local timezone)
                 var pausedOrders = await _context.Orders
-                    .Where(o => o.EmployeeId == subscription.EmployeeId && 
+                    .Where(o => o.EmployeeId == subscription.EmployeeId &&
                                o.Status == OrderStatus.Paused &&
                                o.OrderDate >= localToday)
                     .ToListAsync(cancellationToken);
@@ -1002,10 +1027,10 @@ public class SubscriptionsService : ISubscriptionsService
                     // Create orders from day after old EndDate to new EndDate
                     var extensionStartDate = oldEndDate.Value.AddDays(1);
                     var extensionEndDate = subscription.EndDate!.Value;
-                    
+
                     newOrdersCreated = await CreateOrdersForExtendedPeriodAsync(
-                        subscription, employee, project, 
-                        extensionStartDate, extensionEndDate, 
+                        subscription, employee, project,
+                        extensionStartDate, extensionEndDate,
                         cancellationToken);
                 }
 
@@ -1048,9 +1073,9 @@ public class SubscriptionsService : ISubscriptionsService
             // ═══════════════════════════════════════════════════════════════
             var timezone = subscription.Employee?.Project?.Timezone;
             var localToday = TimezoneHelper.GetLocalToday(timezone);
-            
+
             var futureOrders = await _context.Orders
-                .Where(o => o.EmployeeId == subscription.EmployeeId && 
+                .Where(o => o.EmployeeId == subscription.EmployeeId &&
                            o.Status == OrderStatus.Active &&
                            o.OrderDate >= localToday)
                 .ToListAsync(cancellationToken);
@@ -1089,16 +1114,16 @@ public class SubscriptionsService : ISubscriptionsService
         {
             var employee = subscription.Employee;
             var project = employee?.Project;
-            
+
             // ═══════════════════════════════════════════════════════════════
             // FIX: Use project's timezone for "today" comparison
             // ═══════════════════════════════════════════════════════════════
             var timezone = project?.Timezone;
             var localToday = TimezoneHelper.GetLocalToday(timezone);
-            
+
             // Remember old EndDate before extending
             var oldEndDate = subscription.EndDate;
-            
+
             // Calculate paused days and extend subscription
             int pausedDays = 0;
             if (subscription.PausedAt.HasValue && subscription.EndDate.HasValue)
@@ -1118,7 +1143,7 @@ public class SubscriptionsService : ISubscriptionsService
             // FIX: Resume all paused orders (using local timezone)
             // ═══════════════════════════════════════════════════════════════
             var pausedOrders = await _context.Orders
-                .Where(o => o.EmployeeId == subscription.EmployeeId && 
+                .Where(o => o.EmployeeId == subscription.EmployeeId &&
                            o.Status == OrderStatus.Paused &&
                            o.OrderDate >= localToday)
                 .ToListAsync(cancellationToken);
@@ -1129,7 +1154,7 @@ public class SubscriptionsService : ISubscriptionsService
                 order.UpdatedAt = DateTime.UtcNow;
                 ordersResumed++;
             }
-            
+
             // ═══════════════════════════════════════════════════════════════
             // CRITICAL FIX: Create orders for the extended period!
             // ═══════════════════════════════════════════════════════════════
@@ -1137,10 +1162,10 @@ public class SubscriptionsService : ISubscriptionsService
             {
                 var extensionStartDate = oldEndDate.Value.AddDays(1);
                 var extensionEndDate = subscription.EndDate!.Value;
-                
+
                 var created = await CreateOrdersForExtendedPeriodAsync(
-                    subscription, employee, project, 
-                    extensionStartDate, extensionEndDate, 
+                    subscription, employee, project,
+                    extensionStartDate, extensionEndDate,
                     cancellationToken);
                 newOrdersCreated += created;
             }
@@ -1225,16 +1250,16 @@ public class SubscriptionsService : ISubscriptionsService
             EmployeeName = subscription.Employee?.FullName ?? "",
             EmployeePhone = subscription.Employee?.Phone ?? "",
             ComboType = subscription.ComboType,
-            
+
             // Address derived from Project (delivery_address_id is deprecated)
             ProjectId = project?.Id,
             ProjectName = project?.Name,
-            DeliveryAddress = !string.IsNullOrEmpty(project?.AddressFullAddress) 
-                ? project.AddressFullAddress 
+            DeliveryAddress = !string.IsNullOrEmpty(project?.AddressFullAddress)
+                ? project.AddressFullAddress
                 : project?.AddressName,
-            
+
             IsActive = subscription.IsActive,
-            
+
             // Subscription period & pricing
             StartDate = subscription.StartDate?.ToString("yyyy-MM-dd"),
             EndDate = subscription.EndDate?.ToString("yyyy-MM-dd"),
@@ -1249,18 +1274,18 @@ public class SubscriptionsService : ISubscriptionsService
             Status = subscription.Status.ToRussian(),
             // Normalize legacy WEEKDAYS → EVERY_DAY
             ScheduleType = ScheduleTypeHelper.Normalize(subscription.ScheduleType),
-            
-            // Freeze info
-            FrozenDaysCount = subscription.FrozenDaysCount,
-            OriginalEndDate = subscription.OriginalEndDate?.ToString("yyyy-MM-dd"),
-            
+
+            // Freeze info (deprecated - kept for backward compatibility)
+            FrozenDaysCount = 0,
+            OriginalEndDate = null,
+
             CreatedAt = subscription.CreatedAt,
             UpdatedAt = subscription.UpdatedAt
         };
     }
 
     /// <summary>
-    /// Calculates actual TotalPrice as sum of future order prices (Active/Frozen status, today and forward).
+    /// Calculates actual TotalPrice as sum of future order prices (Active/Paused status, today and forward).
     /// This is always accurate regardless of order modifications.
     /// NOTE: Uses UTC for simplicity in aggregate calculations - acceptable for totals.
     /// </summary>
@@ -1271,14 +1296,14 @@ public class SubscriptionsService : ISubscriptionsService
         var today = DateTime.UtcNow.Date;
         return await _context.Orders
             .Where(o => o.EmployeeId == employeeId &&
-                       (o.Status == Domain.Enums.OrderStatus.Active || o.Status == Domain.Enums.OrderStatus.Frozen) &&
+                       (o.Status == Domain.Enums.OrderStatus.Active || o.Status == Domain.Enums.OrderStatus.Paused) &&
                        o.OrderDate.Date >= today)
             .SumAsync(o => o.Price, cancellationToken);
     }
 
     /// <summary>
     /// Calculates actual TotalDays as count of all orders in subscription period.
-    /// Includes: Active, Frozen (future) + Delivered, Completed (past).
+    /// Includes: Active, Paused (future) + Completed (past).
     /// This is always accurate regardless of when subscription was created.
     /// </summary>
     private async Task<int> CalculateDynamicTotalDaysAsync(Guid employeeId, DateOnly? startDate, DateOnly? endDate, CancellationToken cancellationToken)
@@ -1286,11 +1311,11 @@ public class SubscriptionsService : ISubscriptionsService
         if (!startDate.HasValue || !endDate.HasValue)
             return 0;
 
-        var startDateTime = startDate.Value.ToDateTime(TimeOnly.MinValue);
-        var endDateTime = endDate.Value.ToDateTime(TimeOnly.MaxValue);
+        var startDateTime = DateTime.SpecifyKind(startDate.Value.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+        var endDateTime = DateTime.SpecifyKind(endDate.Value.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc);
 
         // Count ALL orders in subscription period (not cancelled)
-        // This includes: Active, Frozen, Paused, Delivered, Completed
+        // This includes: Active, Paused, Completed
         return await _context.Orders
             .Where(o => o.EmployeeId == employeeId &&
                        o.Status != Domain.Enums.OrderStatus.Cancelled &&
@@ -1309,8 +1334,14 @@ public class SubscriptionsService : ISubscriptionsService
         Project project,
         CancellationToken cancellationToken)
     {
+        // CRITICAL: Project must not be null - orders need project info for address/budget
+        if (project == null)
+        {
+            throw new InvalidOperationException($"Cannot create orders: project is null for employee {employee.FullName}");
+        }
+
         // IMPORTANT: Use project's timezone for "today" comparison!
-        var createOrdersTimezone = project?.Timezone;
+        var createOrdersTimezone = project.Timezone;
         var today = TimezoneHelper.GetLocalTodayDate(createOrdersTimezone);
         var startDate = subscription.StartDate ?? today;
         var endDate = subscription.EndDate ?? startDate.AddMonths(1);
@@ -1334,19 +1365,24 @@ public class SubscriptionsService : ISubscriptionsService
         // ═══════════════════════════════════════════════════════════════
         // CUTOFF CHECK: Determine if we should skip today due to cutoff
         // ═══════════════════════════════════════════════════════════════
-        var skipToday = project != null && TimezoneHelper.IsCutoffPassed(project.CutoffTime, project.Timezone);
+        var skipToday = TimezoneHelper.IsCutoffPassed(project.CutoffTime, project.Timezone);
 
         for (var date = startDate; date <= endDate; date = date.AddDays(1))
         {
             // Skip today if cutoff has passed
             if (skipToday && date == today)
+            {
                 continue;
+            }
 
             // Check if order should be created based on schedule type and working days
             // EVERY_DAY: all working days (Mon-Fri or employee's schedule)
             // EVERY_OTHER_DAY: Mon, Wed, Fri only (if they're working days)
-            if (!WorkingDaysHelper.ShouldCreateOrderForDate(subscription.ScheduleType, employee.WorkingDays, date))
+            var shouldCreate = WorkingDaysHelper.ShouldCreateOrderForDate(subscription.ScheduleType, employee.WorkingDays, date);
+            if (!shouldCreate)
+            {
                 continue;
+            }
 
             // Check if ACTIVE order already exists (exclude cancelled orders)
             var dayStartUtc = DateTime.SpecifyKind(date.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
@@ -1360,7 +1396,9 @@ public class SubscriptionsService : ISubscriptionsService
                     cancellationToken);
 
             if (orderExists)
+            {
                 continue;
+            }
 
             var order = new Order
             {
@@ -1397,6 +1435,12 @@ public class SubscriptionsService : ISubscriptionsService
         DateOnly endDate,
         CancellationToken cancellationToken)
     {
+        // CRITICAL: Project must not be null
+        if (project == null)
+        {
+            throw new InvalidOperationException($"Cannot create orders: project is null for employee {employee.FullName}");
+        }
+
         if (endDate < startDate)
             return 0;
 
@@ -1412,9 +1456,9 @@ public class SubscriptionsService : ISubscriptionsService
         // ═══════════════════════════════════════════════════════════════
         // CUTOFF CHECK: Determine if we should skip today due to cutoff
         // ═══════════════════════════════════════════════════════════════
-        var extendTimezone = project?.Timezone;
+        var extendTimezone = project.Timezone;
         var extendToday = TimezoneHelper.GetLocalTodayDate(extendTimezone);
-        var skipToday = project != null && TimezoneHelper.IsCutoffPassed(project.CutoffTime, project.Timezone);
+        var skipToday = TimezoneHelper.IsCutoffPassed(project.CutoffTime, project.Timezone);
 
         for (var date = startDate; date <= endDate; date = date.AddDays(1))
         {
@@ -1474,6 +1518,12 @@ public class SubscriptionsService : ISubscriptionsService
         List<string> customDays,
         CancellationToken cancellationToken)
     {
+        // CRITICAL: Project must not be null
+        if (project == null)
+        {
+            throw new InvalidOperationException($"Cannot create orders: project is null for employee {employee.FullName}");
+        }
+
         var price = subscription.ComboType switch
         {
             "Комбо 25" => 25m,
@@ -1484,13 +1534,13 @@ public class SubscriptionsService : ISubscriptionsService
         var ordersCreated = 0;
 
         // IMPORTANT: Use project's timezone for "today" comparison!
-        var customDaysTimezone = project?.Timezone;
+        var customDaysTimezone = project.Timezone;
         var customDaysToday = TimezoneHelper.GetLocalTodayDate(customDaysTimezone);
 
         // ═══════════════════════════════════════════════════════════════
         // CUTOFF CHECK: Determine if we should skip today due to cutoff
         // ═══════════════════════════════════════════════════════════════
-        var skipToday = project != null && TimezoneHelper.IsCutoffPassed(project.CutoffTime, project.Timezone);
+        var skipToday = TimezoneHelper.IsCutoffPassed(project.CutoffTime, project.Timezone);
 
         foreach (var dayString in customDays)
         {

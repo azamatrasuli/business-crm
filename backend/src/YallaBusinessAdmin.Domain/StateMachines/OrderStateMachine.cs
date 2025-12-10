@@ -5,25 +5,25 @@ namespace YallaBusinessAdmin.Domain.StateMachines;
 /// <summary>
 /// State machine for order status transitions
 /// Ensures valid state transitions for daily meal orders
+/// 
+/// Simplified statuses:
+/// - Active: Order is scheduled for delivery
+/// - Paused: Order is paused (only via subscription pause)
+/// - Completed: Order was delivered/completed
+/// - Cancelled: Order was cancelled (terminal, cannot restore)
 /// </summary>
 public static class OrderStateMachine
 {
     private static readonly Dictionary<OrderStatus, HashSet<OrderStatus>> AllowedTransitions = new()
     {
-        // Active -> Paused, Completed, Cancelled, Frozen, Delivered
-        [OrderStatus.Active] = new() { OrderStatus.Paused, OrderStatus.Completed, OrderStatus.Cancelled, OrderStatus.Frozen, OrderStatus.Delivered },
+        // Active -> Paused, Completed, Cancelled
+        [OrderStatus.Active] = new() { OrderStatus.Paused, OrderStatus.Completed, OrderStatus.Cancelled },
         
         // Paused -> Active, Cancelled (can resume or cancel)
         [OrderStatus.Paused] = new() { OrderStatus.Active, OrderStatus.Cancelled },
         
-        // Frozen -> Active, Cancelled (can unfreeze or cancel)
-        [OrderStatus.Frozen] = new() { OrderStatus.Active, OrderStatus.Cancelled },
-        
         // Completed -> None (terminal state - order was completed)
         [OrderStatus.Completed] = new(),
-        
-        // Delivered -> None (terminal state - order was delivered)
-        [OrderStatus.Delivered] = new(),
         
         // Cancelled -> None (terminal state - order was cancelled)
         [OrderStatus.Cancelled] = new()
@@ -68,7 +68,7 @@ public static class OrderStateMachine
     /// </summary>
     public static bool IsTerminal(OrderStatus status)
     {
-        return status == OrderStatus.Cancelled || status == OrderStatus.Completed || status == OrderStatus.Delivered;
+        return status == OrderStatus.Cancelled || status == OrderStatus.Completed;
     }
 
     /// <summary>
@@ -91,4 +91,3 @@ public static class OrderStateMachine
         return $"Доступные переходы: {string.Join(", ", allowedNames)}";
     }
 }
-

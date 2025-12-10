@@ -13,7 +13,7 @@ import {
   UtensilsCrossed,
   PauseCircle,
   PlayCircle,
-  Snowflake,
+  // Snowflake, // FREEZE DISABLED (2025-01-09)
   Trash2,
   Loader2,
   Check,
@@ -41,11 +41,12 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 // ScrollArea removed - not currently used
 import { Separator } from '@/components/ui/separator'
-import { Progress } from '@/components/ui/progress'
+// import { Progress } from '@/components/ui/progress' // FREEZE DISABLED
 import { toast } from 'sonner'
 import type { Order, ComboType, BulkActionRequest } from '@/lib/api/home'
 import { COMBO_METADATA, COMBO_TYPES } from '@/lib/combos'
-import { freezeOrder } from '@/lib/api/orders'
+// FREEZE DISABLED (2025-01-09): import removed
+// import { freezeOrder } from '@/lib/api/orders'
 
 type BulkAction = 
   | 'editCombo'      // Изменить комбо
@@ -97,16 +98,17 @@ const ACTION_OPTIONS: ActionOption[] = [
     available: (orders) => orders.some(o => (o.status === ORDER_STATUS.PAUSED || o.status === 'Приостановлен' || o.status === 'На паузе') && (o.serviceType === 'LUNCH' || !o.serviceType)),
     getApplicableCount: (orders) => orders.filter(o => (o.status === ORDER_STATUS.PAUSED || o.status === 'Приостановлен' || o.status === 'На паузе') && (o.serviceType === 'LUNCH' || !o.serviceType)).length,
   },
-  {
-    id: 'freeze',
-    label: 'Заморозить на сегодня',
-    description: 'День перенесётся в конец',
-    icon: <Snowflake className="h-5 w-5" />,
-    color: 'text-cyan-600',
-    bgColor: 'bg-cyan-50 dark:bg-cyan-950/30',
-    available: (orders, isToday) => isToday && orders.some(o => o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен'),
-    getApplicableCount: (orders) => orders.filter(o => o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен').length,
-  },
+  // FREEZE DISABLED (2025-01-09): action hidden from UI
+  // {
+  //   id: 'freeze',
+  //   label: 'Заморозить на сегодня',
+  //   description: 'День перенесётся в конец',
+  //   icon: <Snowflake className="h-5 w-5" />,
+  //   color: 'text-cyan-600',
+  //   bgColor: 'bg-cyan-50 dark:bg-cyan-950/30',
+  //   available: () => false, // Always disabled
+  //   getApplicableCount: () => 0,
+  // },
   {
     id: 'cancel',
     label: 'Отменить заказы',
@@ -138,7 +140,7 @@ export function BulkEditDialog({
   const [selectedAction, setSelectedAction] = useState<BulkAction | null>(null)
   const [comboType, setComboType] = useState<ComboType>('Комбо 25')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [freezeProgress, setFreezeProgress] = useState(0)
+  // const [freezeProgress, setFreezeProgress] = useState(0) // FREEZE DISABLED
   const [showEmployeeList, setShowEmployeeList] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
 
@@ -226,7 +228,7 @@ export function BulkEditDialog({
     if (open) {
       setSelectedAction(null)
       setComboType('Комбо 25')
-      setFreezeProgress(0)
+      // setFreezeProgress(0) // FREEZE DISABLED
       setShowEmployeeList(false)
       setConfirmCancel(false)
     }
@@ -314,40 +316,11 @@ export function BulkEditDialog({
         }
 
         case 'freeze': {
-          // Freeze orders using new Orders API
-          const activeOrders = selectedOrders.filter(o => (o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен') && o.employeeId)
-          if (activeOrders.length === 0) {
-            toast.info('Нет активных заказов для заморозки')
-            return
-          }
-          
-          let successCount = 0
-          let errorCount = 0
-          
-          for (let i = 0; i < activeOrders.length; i++) {
-            const order = activeOrders[i]
-            setFreezeProgress(Math.round(((i + 1) / activeOrders.length) * 100))
-            
-            try {
-              // Use new orders API - freeze by order ID directly
-              await freezeOrder(order.id, 'Массовая заморозка')
-              successCount++
-            } catch {
-              errorCount++
-            }
-          }
-          
-          if (successCount > 0) {
-            toast.success(`Заморожено: ${successCount} заказов`, {
-              description: 'Подписки продлены, дни перенесены в конец периода',
-            })
-          }
-          if (errorCount > 0) {
-            toast.error(`Не удалось заморозить: ${errorCount}`, {
-              description: 'Возможно превышен лимит заморозок (2 в неделю)',
-            })
-          }
-          break
+          // FREEZE DISABLED (2025-01-09)
+          toast.info('Функционал заморозки временно отключён', {
+            description: 'Используйте паузу для приостановки заказов',
+          })
+          return
         }
 
         case 'cancel': {
@@ -382,7 +355,7 @@ export function BulkEditDialog({
       }
     } finally {
       setIsSubmitting(false)
-      setFreezeProgress(0)
+      // setFreezeProgress(0) // FREEZE DISABLED
       setConfirmCancel(false)
     }
   }
@@ -397,9 +370,7 @@ export function BulkEditDialog({
   // Текст кнопки
   const submitButtonText = useMemo(() => {
     if (isSubmitting) {
-      if (selectedAction === 'freeze' && freezeProgress > 0) {
-        return `Заморозка... ${freezeProgress}%`
-      }
+      // FREEZE DISABLED: removed freeze progress text
       return 'Выполнение...'
     }
     if (selectedAction === 'cancel') {
@@ -407,7 +378,7 @@ export function BulkEditDialog({
     }
     if (!selectedAction) return 'Выберите действие'
     return `Применить к ${applicableCount}`
-  }, [isSubmitting, selectedAction, confirmCancel, applicableCount, freezeProgress])
+  }, [isSubmitting, selectedAction, confirmCancel, applicableCount])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -644,29 +615,18 @@ export function BulkEditDialog({
             </div>
           )}
 
+          {/* FREEZE DISABLED (2025-01-09): UI section removed
           {selectedAction === 'freeze' && (
             <div className="space-y-3">
               <Alert className="mt-2 border-cyan-500/30 bg-cyan-50/50 dark:bg-cyan-950/20">
                 <Snowflake className="h-4 w-4 text-cyan-600" />
                 <AlertDescription className="text-cyan-800 dark:text-cyan-200">
-                  <ul className="list-disc list-inside space-y-1">
-                    <li>Заморозка переносит день на конец периода подписки</li>
-                    <li>Лимит: <span className="font-medium">2 заморозки в неделю</span> на сотрудника</li>
-                    <li>Заморозка возможна только для <span className="font-medium">сегодняшних</span> заказов</li>
-                  </ul>
+                  Функционал заморозки временно отключён
                 </AlertDescription>
               </Alert>
-              
-              {isSubmitting && freezeProgress > 0 && (
-                <div className="space-y-2">
-                  <Progress value={freezeProgress} className="h-2" />
-                  <p className="text-xs text-muted-foreground text-center">
-                    Обработка: {freezeProgress}%
-                  </p>
-                </div>
-              )}
             </div>
           )}
+          */}
 
           {/* Таблица выбранных заказов (идентична главной) */}
           <div className="space-y-2 pt-2">

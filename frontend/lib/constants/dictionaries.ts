@@ -16,9 +16,6 @@ import { config } from '../config'
 export const ORDER_STATUSES = {
   ACTIVE: 'Активен',
   PAUSED: 'Приостановлен',
-  FROZEN: 'Заморожен',
-  DAY_OFF: 'Выходной',
-  DELIVERED: 'Доставлен',
   COMPLETED: 'Выполнен',
   CANCELLED: 'Отменён',
 } as const
@@ -29,10 +26,8 @@ export type OrderStatusValue = typeof ORDER_STATUSES[OrderStatusKey]
 /** Опции для фильтра статуса заказа */
 export const ORDER_STATUS_OPTIONS = [
   { value: ORDER_STATUSES.ACTIVE, label: 'Активен', description: 'Готов к доставке' },
-  { value: ORDER_STATUSES.PAUSED, label: 'На паузе', description: 'Временно остановлен' },
-  { value: ORDER_STATUSES.FROZEN, label: 'Заморожен', description: 'День перенесён' },
-  { value: ORDER_STATUSES.DAY_OFF, label: 'Выходной', description: 'Нерабочий день' },
-  { value: ORDER_STATUSES.DELIVERED, label: 'Доставлен', description: 'Выполнен' },
+  { value: ORDER_STATUSES.PAUSED, label: 'Приостановлен', description: 'Временно остановлен' },
+  { value: ORDER_STATUSES.COMPLETED, label: 'Выполнен', description: 'Заказ выполнен' },
   { value: ORDER_STATUSES.CANCELLED, label: 'Отменён', description: 'Заказ отменён' },
 ] as const
 
@@ -156,7 +151,6 @@ export const SUBSCRIPTION_STATUS_OPTIONS = [
 export const EMPLOYEE_STATUSES = {
   ACTIVE: 'Активный',
   DEACTIVATED: 'Деактивирован',
-  VACATION: 'Отпуск',
 } as const
 
 export type EmployeeStatusKey = keyof typeof EMPLOYEE_STATUSES
@@ -166,7 +160,6 @@ export type EmployeeStatusValue = typeof EMPLOYEE_STATUSES[EmployeeStatusKey]
 export const EMPLOYEE_STATUS_OPTIONS = [
   { value: EMPLOYEE_STATUSES.ACTIVE, label: 'Активный', description: 'Работает' },
   { value: EMPLOYEE_STATUSES.DEACTIVATED, label: 'Деактивирован', description: 'Уволен/отключён' },
-  { value: EMPLOYEE_STATUSES.VACATION, label: 'Отпуск', description: 'Временно отсутствует' },
 ] as const
 
 // ═══════════════════════════════════════════════════════════════════════════════

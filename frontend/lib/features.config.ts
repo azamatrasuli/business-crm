@@ -47,7 +47,7 @@ const PRODUCTION_FEATURES: Record<FeatureFlag, boolean> = {
 }
 
 /**
- * Development/Staging features — всё включено
+ * Development/Staging features — всё включено (кроме compensation - не готово)
  */
 const DEVELOPMENT_FEATURES: Record<FeatureFlag, boolean> = {
   auth: true,
@@ -57,7 +57,7 @@ const DEVELOPMENT_FEATURES: Record<FeatureFlag, boolean> = {
   lunch: true,
   dashboard: true,
   guestOrders: true,
-  compensation: true,
+  compensation: false, // DISABLED: Компенсации не готовы
   passwordReset: true,
   payments: true,
   analytics: true,

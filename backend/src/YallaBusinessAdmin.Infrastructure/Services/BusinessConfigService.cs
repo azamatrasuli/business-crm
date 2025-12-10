@@ -86,7 +86,7 @@ public class BusinessConfigService : IBusinessConfigService
             return cached;
 
         var configs = await _context.Database
-            .SqlQuery<ConfigRow>($"SELECT key, value FROM business_config")
+            .SqlQuery<ConfigRow>($"SELECT key, value FROM public.business_config")
             .ToListAsync(cancellationToken);
 
         var result = new Dictionary<string, object>();
@@ -112,7 +112,7 @@ public class BusinessConfigService : IBusinessConfigService
         var jsonValue = JsonSerializer.Serialize(value);
         
         await _context.Database.ExecuteSqlRawAsync(
-            @"INSERT INTO business_config (key, value, updated_at, updated_by) 
+            @"INSERT INTO public.business_config (key, value, updated_at, updated_by) 
               VALUES ({0}, {1}::jsonb, NOW(), {2})
               ON CONFLICT (key) DO UPDATE SET 
                 value = EXCLUDED.value, 
@@ -139,7 +139,7 @@ public class BusinessConfigService : IBusinessConfigService
             return cached;
 
         var result = await _context.Database
-            .SqlQuery<ConfigRow>($"SELECT key, value FROM business_config WHERE key = {key}")
+            .SqlQuery<ConfigRow>($"SELECT key, value FROM public.business_config WHERE key = {key}")
             .FirstOrDefaultAsync(cancellationToken);
 
         if (result == null) return null;

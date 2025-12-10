@@ -68,6 +68,8 @@ export interface UseEmployeeDetailReturn {
   // Actions
   refresh: () => Promise<void>
   loadOrders: () => Promise<void>
+  hardDelete: () => Promise<void>
+  isDeleting: boolean
 }
 
 // Day names in Russian
@@ -94,6 +96,7 @@ export function useEmployeeDetail(employeeId: string): UseEmployeeDetailReturn {
   const [ordersPage, setOrdersPage] = useState(1)
   const [ordersTotalPages, setOrdersTotalPages] = useState(0)
   const [ordersTotal, setOrdersTotal] = useState(0)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Data Fetching
@@ -133,6 +136,17 @@ export function useEmployeeDetail(employeeId: string): UseEmployeeDetailReturn {
       await loadOrders()
     }
   }, [employeeId, fetchEmployee, loadOrders])
+
+  const hardDelete = useCallback(async () => {
+    if (!employeeId) return
+    setIsDeleting(true)
+    try {
+      await employeesApi.hardDeleteEmployee(employeeId)
+      // Note: Navigation to employees list should be handled by the component
+    } finally {
+      setIsDeleting(false)
+    }
+  }, [employeeId])
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Subscription Data
@@ -334,6 +348,8 @@ export function useEmployeeDetail(employeeId: string): UseEmployeeDetailReturn {
     // Actions
     refresh,
     loadOrders,
+    hardDelete,
+    isDeleting,
   }
 }
 

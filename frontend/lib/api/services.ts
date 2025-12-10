@@ -144,7 +144,7 @@ export const servicesApi = {
   },
 
   async pauseLunchSubscription(id: string): Promise<LunchSubscription> {
-    // NOTE: Backend does not accept dates parameter - use freeze for date-specific pauses
+    // NOTE: Backend does not accept dates parameter - subscription-level pause only
     const response = await apiClient.post<LunchSubscription>(`/subscriptions/${id}/pause`)
     return response.data
   },

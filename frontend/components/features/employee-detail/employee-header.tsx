@@ -6,11 +6,23 @@
 
 'use client'
 
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ArrowLeft, Pencil, Phone, Mail, FolderKanban, CheckCircle2, Clock, XCircle, Ban } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
+import { ArrowLeft, Pencil, Phone, Mail, FolderKanban, CheckCircle2, Clock, XCircle, Ban, Trash2, AlertTriangle } from 'lucide-react'
 import type { EmployeeDetail } from '@/lib/api/employees'
-import { INVITE_STATUS } from '@/lib/constants/entity-statuses'
+import { INVITE_STATUS, getInviteStatusConfig as getCentralizedInviteStatusConfig } from '@/lib/constants/entity-statuses'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Types
@@ -20,42 +32,28 @@ interface EmployeeHeaderProps {
   employee: EmployeeDetail
   onBack: () => void
   onEdit: () => void
+  onHardDelete?: () => Promise<void>
   canEdit: boolean
+  isDeleting?: boolean
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Helper Functions
+// Helper Functions - Use centralized status config
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function getInviteStatusConfig(status: string | undefined) {
-  switch (status) {
-    case INVITE_STATUS.ACCEPTED:
-    case 'Принято':  // Legacy
-      return {
-        variant: 'default' as const,
-        className: 'bg-emerald-500/10 text-emerald-600 border-emerald-200',
-        icon: CheckCircle2,
-      }
-    case INVITE_STATUS.PENDING:
-    case 'Ожидает':  // Legacy
-      return {
-        variant: 'secondary' as const,
-        className: 'bg-amber-500/10 text-amber-600 border-amber-200',
-        icon: Clock,
-      }
-    case INVITE_STATUS.REJECTED:
-    case 'Отклонено':  // Legacy
-      return {
-        variant: 'destructive' as const,
-        className: 'bg-red-500/10 text-red-600 border-red-200',
-        icon: XCircle,
-      }
-    default:
-      return {
-        variant: 'outline' as const,
-        className: '',
-        icon: Clock,
-      }
+  const config = getCentralizedInviteStatusConfig(status)
+  // Add icon based on status
+  let icon = Clock
+  if (status === INVITE_STATUS.ACCEPTED || status === 'Принято') {
+    icon = CheckCircle2
+  } else if (status === INVITE_STATUS.REJECTED || status === 'Отклонено') {
+    icon = XCircle
+  }
+  return {
+    variant: config.variant,
+    className: config.className,
+    icon,
   }
 }
 
@@ -63,9 +61,24 @@ function getInviteStatusConfig(status: string | undefined) {
 // Component
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function EmployeeHeader({ employee, onBack, onEdit, canEdit }: EmployeeHeaderProps) {
+export function EmployeeHeader({ 
+  employee, 
+  onBack, 
+  onEdit, 
+  onHardDelete,
+  canEdit,
+  isDeleting = false
+}: EmployeeHeaderProps) {
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const inviteConfig = getInviteStatusConfig(employee.inviteStatus)
   const InviteIcon = inviteConfig.icon
+
+  const handleHardDelete = async () => {
+    if (onHardDelete) {
+      await onHardDelete()
+      setIsDeleteDialogOpen(false)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -122,12 +135,67 @@ export function EmployeeHeader({ employee, onBack, onEdit, canEdit }: EmployeeHe
         </div>
       </div>
 
-      {/* Edit Button */}
-      <Button onClick={onEdit} disabled={!canEdit} className="self-start sm:self-center">
-        <Pencil className="h-4 w-4 mr-2" />
-        Редактировать
-      </Button>
+      {/* Action Buttons */}
+      <div className="flex items-center gap-2 self-start sm:self-center">
+        {/* Hard Delete Button with Confirmation Dialog */}
+        {onHardDelete && (
+          <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+            <AlertDialogTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm"
+                className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                disabled={isDeleting}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Удалить навсегда
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+                  <AlertTriangle className="h-5 w-5" />
+                  Удаление сотрудника
+                </AlertDialogTitle>
+                <AlertDialogDescription className="space-y-3">
+                  <p>
+                    Вы уверены, что хотите <strong>навсегда удалить</strong> сотрудника{' '}
+                    <strong>{employee.fullName}</strong>?
+                  </p>
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-800 text-sm">
+                    <p className="font-medium mb-2">Будут удалены:</p>
+                    <ul className="list-disc list-inside space-y-1">
+                      <li>Все данные сотрудника</li>
+                      <li>Все заказы сотрудника</li>
+                      <li>Подписка на обеды (если есть)</li>
+                      <li>Бюджет сотрудника</li>
+                    </ul>
+                  </div>
+                  <p className="font-medium text-red-600">
+                    Это действие необратимо!
+                  </p>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={isDeleting}>Отмена</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleHardDelete}
+                  disabled={isDeleting}
+                  className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+                >
+                  {isDeleting ? 'Удаление...' : 'Удалить навсегда'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
+
+        {/* Edit Button */}
+        <Button onClick={onEdit} disabled={!canEdit}>
+          <Pencil className="h-4 w-4 mr-2" />
+          Редактировать
+        </Button>
+      </div>
     </div>
   )
 }
-

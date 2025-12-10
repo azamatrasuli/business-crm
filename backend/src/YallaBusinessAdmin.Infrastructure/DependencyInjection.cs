@@ -125,7 +125,7 @@ public static class DependencyInjection
         services.AddScoped<ICompaniesService, CompaniesService>();
         services.AddScoped<IProjectsService, ProjectsService>();
         services.AddScoped<ISubscriptionsService, SubscriptionsService>();
-        services.AddScoped<IOrderFreezeService, OrderFreezeService>();
+        // FREEZE DISABLED: services.AddScoped<IOrderFreezeService, OrderFreezeService>();
         services.AddScoped<IInvoicesService, InvoicesService>();
         services.AddScoped<ITransactionsService, TransactionsService>();
         services.AddScoped<INewsService, NewsService>();
