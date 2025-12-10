@@ -99,6 +99,34 @@ export const ROUTE_LABELS: Record<string, string> = {
 // =============================================================================
 
 /**
+ * Sort days so Sunday (0) comes after Saturday (6)
+ */
+export function sortWorkingDays(days: DayOfWeek[]): DayOfWeek[] {
+  return [...days].sort((a, b) => {
+    const aVal = a === 0 ? 7 : a
+    const bVal = b === 0 ? 7 : b
+    return aVal - bVal
+  })
+}
+
+/**
+ * Toggle a day in/out of the working days array
+ */
+export function toggleWorkingDay(
+  currentDays: DayOfWeek[],
+  day: DayOfWeek,
+  minDays = 0
+): DayOfWeek[] {
+  if (currentDays.includes(day)) {
+    if (currentDays.length > minDays) {
+      return currentDays.filter(d => d !== day)
+    }
+    return currentDays
+  }
+  return sortWorkingDays([...currentDays, day])
+}
+
+/**
  * Format working days as human-readable description.
  * Examples:
  * - [1,2,3,4,5] → "Понедельник — Пятница"
@@ -138,33 +166,5 @@ export function formatWorkingDaysDescription(days: DayOfWeek[]): string {
     .map(d => DAYS_OF_WEEK.find(day => day.value === d)?.label || '')
     .filter(Boolean)
     .join(', ')
-}
-
-/**
- * Sort days so Sunday (0) comes after Saturday (6)
- */
-export function sortWorkingDays(days: DayOfWeek[]): DayOfWeek[] {
-  return [...days].sort((a, b) => {
-    const aVal = a === 0 ? 7 : a
-    const bVal = b === 0 ? 7 : b
-    return aVal - bVal
-  })
-}
-
-/**
- * Toggle a day in/out of the working days array
- */
-export function toggleWorkingDay(
-  currentDays: DayOfWeek[],
-  day: DayOfWeek,
-  minDays = 0
-): DayOfWeek[] {
-  if (currentDays.includes(day)) {
-    if (currentDays.length > minDays) {
-      return currentDays.filter(d => d !== day)
-    }
-    return currentDays
-  }
-  return sortWorkingDays([...currentDays, day])
 }
 
