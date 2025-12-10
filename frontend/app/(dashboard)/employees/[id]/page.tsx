@@ -373,7 +373,7 @@ export default function EmployeeDetailPage() {
       await loadOrders()
     } catch (err) {
       const error = parseError(err)
-      logger.error('Error pausing subscription', { error, subscriptionId: lunchSub.id })
+      logger.error('Error pausing subscription', err instanceof Error ? err : undefined, { subscriptionId: lunchSub.id })
       toast.error('Ошибка приостановки', {
         description: error.message || 'Не удалось приостановить подписку',
       })
@@ -400,7 +400,7 @@ export default function EmployeeDetailPage() {
       await loadOrders()
     } catch (err) {
       const error = parseError(err)
-      logger.error('Error resuming subscription', { error, subscriptionId: lunchSub.id })
+      logger.error('Error resuming subscription', err instanceof Error ? err : undefined, { subscriptionId: lunchSub.id })
       toast.error('Ошибка возобновления', {
         description: error.message || 'Не удалось возобновить подписку',
       })

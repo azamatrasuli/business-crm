@@ -355,9 +355,7 @@ export default function EmployeesPage() {
         const statusConfig = getEmployeeStatusConfig(employee.status)
         const statusColor = employee.status === EMPLOYEE_STATUS.ACTIVE 
           ? 'bg-emerald-500' 
-          : employee.status === EMPLOYEE_STATUS.VACATION 
-            ? 'bg-amber-500' 
-            : 'bg-gray-400'
+          : 'bg-gray-400'
         return (
           <div className="flex items-center gap-2">
             <span
