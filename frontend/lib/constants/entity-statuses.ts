@@ -2,7 +2,7 @@
  * @fileoverview Entity Status Constants and Helpers
  * Centralized status definitions for all entities.
  * Single source of truth for status values and their UI representations.
- * 
+ *
  * REFACTORED: 2025-01-09
  * Simplified status system:
  * - Employee: Active, Deactivated
@@ -10,6 +10,61 @@
  * - Subscription: Active, Paused, Completed
  * - Company/Project: Active, Inactive
  */
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Unified Status Colors - MUST BE DEFINED FIRST for Turbopack compatibility
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Unified color palette for order statuses.
+ * Use these for calendar cells, cards, icons, etc.
+ */
+export const STATUS_COLORS = {
+  // Active status - Green
+  active: {
+    bg: 'bg-emerald-500/10',
+    bgHover: 'hover:bg-emerald-500/20',
+    bgDark: 'dark:bg-emerald-950/40',
+    text: 'text-emerald-600',
+    textDark: 'dark:text-emerald-400',
+    border: 'border-emerald-200',
+    borderDark: 'dark:border-emerald-800',
+    icon: 'text-emerald-500',
+  },
+  // Paused status - Orange/Amber
+  paused: {
+    bg: 'bg-amber-500/10',
+    bgHover: 'hover:bg-amber-500/20',
+    bgDark: 'dark:bg-amber-950/40',
+    text: 'text-amber-600',
+    textDark: 'dark:text-amber-400',
+    border: 'border-amber-200',
+    borderDark: 'dark:border-amber-800',
+    icon: 'text-amber-500',
+  },
+  // Completed status - Gray
+  completed: {
+    bg: 'bg-gray-500/10',
+    bgHover: 'hover:bg-gray-500/20',
+    bgDark: 'dark:bg-gray-800/40',
+    text: 'text-gray-600',
+    textDark: 'dark:text-gray-400',
+    border: 'border-gray-200',
+    borderDark: 'dark:border-gray-700',
+    icon: 'text-gray-500',
+  },
+  // Cancelled status - Red
+  cancelled: {
+    bg: 'bg-red-500/10',
+    bgHover: 'hover:bg-red-500/20',
+    bgDark: 'dark:bg-red-950/40',
+    text: 'text-red-600',
+    textDark: 'dark:text-red-400',
+    border: 'border-red-200',
+    borderDark: 'dark:border-red-800',
+    icon: 'text-red-500',
+  },
+} as const
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Company / Project Statuses
@@ -102,7 +157,7 @@ export function isEmployeeActive(status?: string): boolean {
 }
 
 export function isEmployeeDeactivated(status?: string): boolean {
-  return status === EMPLOYEE_STATUS.DEACTIVATED || 
+  return status === EMPLOYEE_STATUS.DEACTIVATED ||
          status === 'DEACTIVATED' ||
          status === 'Отпуск' // Legacy
 }
@@ -282,7 +337,7 @@ export function getSubscriptionStatusConfig(status?: string) {
 }
 
 export function isSubscriptionActive(status?: string): boolean {
-  return status === SUBSCRIPTION_STATUS.ACTIVE || 
+  return status === SUBSCRIPTION_STATUS.ACTIVE ||
          status === 'Активный' ||
          status === 'Активна'
 }
@@ -291,13 +346,13 @@ export function isSubscriptionActive(status?: string): boolean {
  * Check if subscription is paused.
  */
 export function isSubscriptionPaused(status?: string): boolean {
-  return status === SUBSCRIPTION_STATUS.PAUSED || 
+  return status === SUBSCRIPTION_STATUS.PAUSED ||
          status === 'Приостановлена' ||
          status === 'На паузе'  // DEPRECATED: Legacy alias
 }
 
 export function isSubscriptionCompleted(status?: string): boolean {
-  return status === SUBSCRIPTION_STATUS.COMPLETED || 
+  return status === SUBSCRIPTION_STATUS.COMPLETED ||
          status === 'Завершена' ||
          status === 'Завершен'
 }
@@ -358,59 +413,8 @@ export function getInviteStatusConfig(status?: string) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Unified Status Colors - Use these for consistent styling across the app
+// Status Color Helpers
 // ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Unified color palette for order statuses.
- * Use these for calendar cells, cards, icons, etc.
- */
-export const STATUS_COLORS = {
-  // Active status - Green
-  active: {
-    bg: 'bg-emerald-500/10',
-    bgHover: 'hover:bg-emerald-500/20',
-    bgDark: 'dark:bg-emerald-950/40',
-    text: 'text-emerald-600',
-    textDark: 'dark:text-emerald-400',
-    border: 'border-emerald-200',
-    borderDark: 'dark:border-emerald-800',
-    icon: 'text-emerald-500',
-  },
-  // Paused status - Orange/Amber
-  paused: {
-    bg: 'bg-amber-500/10',
-    bgHover: 'hover:bg-amber-500/20',
-    bgDark: 'dark:bg-amber-950/40',
-    text: 'text-amber-600',
-    textDark: 'dark:text-amber-400',
-    border: 'border-amber-200',
-    borderDark: 'dark:border-amber-800',
-    icon: 'text-amber-500',
-  },
-  // Completed status - Gray
-  completed: {
-    bg: 'bg-gray-500/10',
-    bgHover: 'hover:bg-gray-500/20',
-    bgDark: 'dark:bg-gray-800/40',
-    text: 'text-gray-600',
-    textDark: 'dark:text-gray-400',
-    border: 'border-gray-200',
-    borderDark: 'dark:border-gray-700',
-    icon: 'text-gray-500',
-  },
-  // Cancelled status - Red
-  cancelled: {
-    bg: 'bg-red-500/10',
-    bgHover: 'hover:bg-red-500/20',
-    bgDark: 'dark:bg-red-950/40',
-    text: 'text-red-600',
-    textDark: 'dark:text-red-400',
-    border: 'border-red-200',
-    borderDark: 'dark:border-red-800',
-    icon: 'text-red-500',
-  },
-} as const
 
 /**
  * Get status color key based on order status string.
