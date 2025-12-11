@@ -39,7 +39,7 @@ interface AuthState {
   // Loading states
   isLoading: boolean
   isInitializing: boolean
-  
+
   // Hydration state - important for Safari!
   _hasHydrated: boolean
 
@@ -370,7 +370,7 @@ export const useAuthStore = create<AuthStore>()(
       onRehydrateStorage: () => (state, error) => {
         isHydrated = true
         if (error) {
-          logger.error('Zustand hydration error', error)
+          logger.error('Zustand hydration error', error instanceof Error ? error : new Error(String(error)))
           return
         }
         // Update store with hydration complete flag

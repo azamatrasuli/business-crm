@@ -19,7 +19,7 @@ function AuthProviderContent({ children }: AuthProviderProps) {
     if (!_hasHydrated) {
       return
     }
-    
+
     const handleInit = async () => {
       // Check for logout parameter
       if (searchParams.get('logout') === 'true') {
@@ -27,11 +27,11 @@ function AuthProviderContent({ children }: AuthProviderProps) {
         router.replace('/login')
         return
       }
-      
+
       // Initialize auth state after hydration is complete
       await initialize()
     }
-    
+
     handleInit()
   }, [initialize, logout, searchParams, router, _hasHydrated])
 
