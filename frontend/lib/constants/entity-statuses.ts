@@ -264,11 +264,11 @@ export function isOrderCancelled(status?: string): boolean {
 }
 
 /**
- * Check if order can be modified (only active orders).
- * Paused orders cannot be manually modified - they are controlled by subscription.
+ * Check if order can be modified (Active or Paused orders).
+ * Cancelled and Completed orders cannot be modified.
  */
 export function canModifyOrder(status?: string): boolean {
-  return isOrderActive(status)
+  return isOrderActive(status) || isOrderPaused(status)
 }
 
 /**

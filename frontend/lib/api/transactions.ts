@@ -64,8 +64,16 @@ export interface FinancialOperationsResponse {
 
 // Filter options
 export type StatusFilter = 'all' | 'completed' | 'pending_deduction' | 'pending_income'
-export type TypeFilter = 'all' | 'deposits' | 'deductions' | 'refunds'
+export type TypeFilter = 'all' | 'deposits' | 'deductions' | 'refunds' | 'LUNCH_DEDUCTION' | 'GUEST_ORDER' | 'CLIENT_APP_ORDER' | 'DEPOSIT' | 'REFUND'
 export type SortField = 'date' | 'amount' | 'type' | 'status'
+
+// Status counts for tabs
+export interface StatusCounts {
+  all: number
+  completed: number
+  pending_deduction: number
+  pending_income: number
+}
 
 // Legacy types (for backward compatibility)
 export type TransactionType = OperationType

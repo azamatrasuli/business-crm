@@ -12,9 +12,11 @@ interface UsersState {
   currentPage: number
   totalPages: number
   pageSize: number
+  showAll: boolean
 
   // Actions
   fetchUsers: (page?: number) => Promise<void>
+  setShowAll: (value: boolean) => void
   fetchUser: (id: string) => Promise<User>
   createUser: (data: CreateUserRequest) => Promise<User>
   updateUser: (id: string, data: UpdateUserRequest) => Promise<User>
@@ -33,13 +35,17 @@ export const useUsersStore = create<UsersState>((set, get) => ({
   currentPage: 1,
   totalPages: 1,
   pageSize: 20,
+  showAll: false,
 
   fetchUsers: async (page = 1) => {
     set({ isLoading: true, error: null })
     
     try {
-      const { pageSize } = get()
-      const response = await usersApi.getUsers(page, pageSize)
+      const { pageSize, showAll } = get()
+      // If showAll is true, fetch all records
+      const effectivePageSize = showAll ? 10000 : pageSize
+      const effectivePage = showAll ? 1 : page
+      const response = await usersApi.getUsers(effectivePage, effectivePageSize)
       set({
         users: response.items,
         total: response.total,
@@ -108,6 +114,10 @@ export const useUsersStore = create<UsersState>((set, get) => ({
 
   selectUser: (user) => {
     set({ selectedUser: user })
+  },
+
+  setShowAll: (value: boolean) => {
+    set({ showAll: value })
   },
 
   fetchAvailableRoutes: async () => {

@@ -37,6 +37,7 @@ interface HomeState {
   currentPage: number
   totalPages: number
   pageSize: number
+  showAll: boolean
   search: string
   statusFilter: StatusFilter
   dateFilter: string | null
@@ -44,6 +45,7 @@ interface HomeState {
   activeFilters: ActiveFilter[]
   fetchDashboard: (date?: string) => Promise<void>
   fetchOrders: (page?: number, overrideDate?: string) => Promise<void>
+  setShowAll: (value: boolean) => void
   fetchCutoffTime: () => Promise<void>
   setSearch: (value: string) => void
   setStatusFilter: (value: StatusFilter) => void
@@ -117,6 +119,7 @@ export const useHomeStore = create<HomeState>((set, get) => ({
   currentPage: 1,
   totalPages: 1,
   pageSize: 20,
+  showAll: false,
   search: '',
   statusFilter: 'all',
   dateFilter: null,
@@ -138,15 +141,18 @@ export const useHomeStore = create<HomeState>((set, get) => ({
   fetchOrders: async (page = 1, overrideDate?: string) => {
     set({ isLoading: true, error: null })
     try {
-      const { pageSize, search, activeFilters } = get()
+      const { pageSize, showAll, search, activeFilters } = get()
       const parsedFilters = parseActiveFilters(activeFilters)
+      // If showAll is true, fetch all records (large pageSize)
+      const effectivePageSize = showAll ? 10000 : pageSize
+      const effectivePage = showAll ? 1 : page
 
       // Use overrideDate if provided, otherwise use date from activeFilters
       const dateToUse = overrideDate !== undefined ? overrideDate : parsedFilters.date
 
       const response = await homeApi.getOrders(
-        page,
-        pageSize,
+        effectivePage,
+        effectivePageSize,
         search || undefined,
         parsedFilters.status || undefined,
         dateToUse || undefined,
@@ -186,7 +192,7 @@ export const useHomeStore = create<HomeState>((set, get) => ({
   },
 
   setSearch: (value: string) => {
-    set({ search: value })
+    set({ search: value, showAll: false })
   },
 
   setStatusFilter: (value: StatusFilter) => {
@@ -202,7 +208,11 @@ export const useHomeStore = create<HomeState>((set, get) => ({
   },
 
   setActiveFilters: (filters: ActiveFilter[]) => {
-    set({ activeFilters: filters })
+    set({ activeFilters: filters, showAll: false })
+  },
+
+  setShowAll: (value: boolean) => {
+    set({ showAll: value })
   },
 
   resetFilters: () => {
@@ -212,6 +222,7 @@ export const useHomeStore = create<HomeState>((set, get) => ({
       dateFilter: null,
       projectFilter: 'all',
       activeFilters: [],
+      showAll: false,
     })
   },
 

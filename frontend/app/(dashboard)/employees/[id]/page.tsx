@@ -95,6 +95,7 @@ export default function EmployeeDetailPage() {
   const [ordersPage, setOrdersPage] = useState(1)
   const [ordersTotalPages, setOrdersTotalPages] = useState(0)
   const [ordersTotal, setOrdersTotal] = useState(0)
+  const [showAllOrders, setShowAllOrders] = useState(false)
   const { sortConfig, toggleSort } = useSort<string>()
 
   // Calendar state
@@ -124,7 +125,9 @@ export default function EmployeeDetailPage() {
     if (!id) return
     setOrdersLoading(true)
     try {
-      const response = await employeesApi.getEmployeeOrders(id, ordersPage, 20)
+      const effectivePage = showAllOrders ? 1 : ordersPage
+      const effectivePageSize = showAllOrders ? 10000 : 20
+      const response = await employeesApi.getEmployeeOrders(id, effectivePage, effectivePageSize)
       setOrders(response.items)
       setOrdersTotalPages(response.totalPages)
       setOrdersTotal(response.total)
@@ -133,7 +136,7 @@ export default function EmployeeDetailPage() {
     } finally {
       setOrdersLoading(false)
     }
-  }, [id, ordersPage])
+  }, [id, ordersPage, showAllOrders])
 
   useEffect(() => {
     if (id && fetchedIdRef.current !== id) {
@@ -1592,28 +1595,56 @@ export default function EmployeeDetailPage() {
               />
 
               {/* Pagination - improved like main page */}
-              {ordersTotalPages > 1 && (
+              {(ordersTotalPages > 1 || showAllOrders) && (
                 <div className="flex items-center justify-between rounded-lg border bg-card px-6 py-4">
                   <div className="text-sm text-muted-foreground">
-                    Показано {((ordersPage - 1) * 20) + 1} - {Math.min(ordersPage * 20, ordersTotal)} из {ordersTotal}
+                    {showAllOrders 
+                      ? `Показано все: ${ordersTotal}`
+                      : `Показано ${((ordersPage - 1) * 20) + 1} - ${Math.min(ordersPage * 20, ordersTotal)} из ${ordersTotal}`
+                    }
                   </div>
                   <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setOrdersPage(ordersPage - 1)}
-                      disabled={ordersPage === 1 || ordersLoading}
-                    >
-                      Назад
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setOrdersPage(ordersPage + 1)}
-                      disabled={ordersPage === ordersTotalPages || ordersLoading}
-                    >
-                      Вперед
-                    </Button>
+                    {showAllOrders ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setShowAllOrders(false)
+                          setOrdersPage(1)
+                        }}
+                        disabled={ordersLoading}
+                      >
+                        По страницам
+                      </Button>
+                    ) : (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setOrdersPage(ordersPage - 1)}
+                          disabled={ordersPage === 1 || ordersLoading}
+                        >
+                          Назад
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setOrdersPage(ordersPage + 1)}
+                          disabled={ordersPage === ordersTotalPages || ordersLoading}
+                        >
+                          Вперед
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setShowAllOrders(true)}
+                          disabled={ordersLoading}
+                          className="text-muted-foreground hover:text-foreground"
+                        >
+                          Показать все
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
               )}

@@ -122,6 +122,14 @@ public sealed class OrderManagementService : IOrderManagementService
         var orderDate = ParseOrderDate(request.Date);
 
         // ═══════════════════════════════════════════════════════════════
+        // DATE VALIDATION: Cannot create orders for past dates
+        // ═══════════════════════════════════════════════════════════════
+        if (TimezoneHelper.IsPastDate(orderDate, project.Timezone))
+        {
+            throw new InvalidOperationException("Нельзя создать заказ на прошедшую дату");
+        }
+
+        // ═══════════════════════════════════════════════════════════════
         // CUTOFF VALIDATION: Only check cutoff if order is for today
         // Business rule: Cannot create orders for today after cutoff time
         // Future dates are always allowed

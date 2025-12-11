@@ -7,7 +7,7 @@ import { useHomeStore } from '@/stores/home-store'
 import { parseError, ErrorCodes } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import { formatISODate } from '@/lib/utils/date'
-import { ORDER_STATUS } from '@/lib/constants/entity-statuses'
+import { ORDER_STATUS, getOrderStatusConfig, isOrderCancelled, isOrderCompleted } from '@/lib/constants/entity-statuses'
 import {
   Users,
   UtensilsCrossed,
@@ -66,6 +66,10 @@ interface ActionOption {
   getApplicableCount: (orders: Order[]) => number
 }
 
+// Helper: check if order can be modified (Active or Paused only)
+// Cancelled and Completed orders cannot be modified
+const isModifiableOrder = (o: Order) => !isOrderCancelled(o.status) && !isOrderCompleted(o.status)
+
 const ACTION_OPTIONS: ActionOption[] = [
   {
     id: 'editCombo',
@@ -74,41 +78,18 @@ const ACTION_OPTIONS: ActionOption[] = [
     icon: <UtensilsCrossed className="h-5 w-5" />,
     color: 'text-amber-600',
     bgColor: 'bg-amber-50 dark:bg-amber-950/30',
-    available: (orders) => orders.some(o => o.serviceType === 'LUNCH' || !o.serviceType),
-    getApplicableCount: (orders) => orders.filter(o => o.serviceType === 'LUNCH' || !o.serviceType).length,
+    // Only for non-cancelled lunch orders
+    available: (orders) => orders.some(o => 
+      isModifiableOrder(o) && (o.serviceType === 'LUNCH' || !o.serviceType)
+    ),
+    getApplicableCount: (orders) => orders.filter(o => 
+      isModifiableOrder(o) && (o.serviceType === 'LUNCH' || !o.serviceType)
+    ).length,
   },
-  {
-    id: 'pause',
-    label: 'Приостановить подписки',
-    description: 'Временная остановка доставки',
-    icon: <PauseCircle className="h-5 w-5" />,
-    color: 'text-orange-600',
-    bgColor: 'bg-orange-50 dark:bg-orange-950/30',
-    available: (orders) => orders.some(o => (o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен') && (o.serviceType === 'LUNCH' || !o.serviceType)),
-    getApplicableCount: (orders) => orders.filter(o => (o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен') && (o.serviceType === 'LUNCH' || !o.serviceType)).length,
-  },
-  {
-    id: 'resume',
-    label: 'Возобновить подписки',
-    description: 'Возобновить приостановленные подписки',
-    icon: <PlayCircle className="h-5 w-5" />,
-    color: 'text-green-600',
-    bgColor: 'bg-green-50 dark:bg-green-950/30',
-    // 'На паузе' is DEPRECATED, use 'Приостановлен'
-    available: (orders) => orders.some(o => (o.status === ORDER_STATUS.PAUSED || o.status === 'Приостановлен' || o.status === 'На паузе') && (o.serviceType === 'LUNCH' || !o.serviceType)),
-    getApplicableCount: (orders) => orders.filter(o => (o.status === ORDER_STATUS.PAUSED || o.status === 'Приостановлен' || o.status === 'На паузе') && (o.serviceType === 'LUNCH' || !o.serviceType)).length,
-  },
+  // PAUSE/RESUME DISABLED (2025-01-11): Use subscription-level pause instead
+  // For employees: pause via "Manage lunch" → subscription
+  // For guests: use individual order buttons
   // FREEZE DISABLED (2025-01-09): action hidden from UI
-  // {
-  //   id: 'freeze',
-  //   label: 'Заморозить на сегодня',
-  //   description: 'День перенесётся в конец',
-  //   icon: <Snowflake className="h-5 w-5" />,
-  //   color: 'text-cyan-600',
-  //   bgColor: 'bg-cyan-50 dark:bg-cyan-950/30',
-  //   available: () => false, // Always disabled
-  //   getApplicableCount: () => 0,
-  // },
   {
     id: 'cancel',
     label: 'Отменить заказы',
@@ -116,8 +97,9 @@ const ACTION_OPTIONS: ActionOption[] = [
     icon: <Trash2 className="h-5 w-5" />,
     color: 'text-destructive',
     bgColor: 'bg-destructive/10',
-    available: () => true,
-    getApplicableCount: (orders) => orders.length,
+    // Only for non-cancelled orders (can't cancel already cancelled!)
+    available: (orders) => orders.some(o => isModifiableOrder(o)),
+    getApplicableCount: (orders) => orders.filter(o => isModifiableOrder(o)).length,
   },
 ]
 
@@ -170,6 +152,8 @@ export function BulkEditDialog({
     const active = selectedOrders.filter(o => o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен').length
     // 'На паузе' is DEPRECATED, use 'Приостановлен'
     const paused = selectedOrders.filter(o => o.status === ORDER_STATUS.PAUSED || o.status === 'Приостановлен' || o.status === 'На паузе').length
+    const completed = selectedOrders.filter(o => isOrderCompleted(o.status)).length
+    const cancelled = selectedOrders.filter(o => isOrderCancelled(o.status)).length
 
     // Группировка по комбо
     const byCombo = selectedOrders.reduce((acc, o) => {
@@ -185,7 +169,7 @@ export function BulkEditDialog({
       return acc
     }, {} as Record<string, number>)
 
-    return { lunch, compensation, active, paused, total: selectedOrders.length, byCombo, byProject }
+    return { lunch, compensation, active, paused, completed, cancelled, total: selectedOrders.length, byCombo, byProject }
   }, [selectedOrders])
 
   // Получаем информацию о текущем действии
@@ -203,22 +187,24 @@ export function BulkEditDialog({
   const warnings = useMemo(() => {
     const result: string[] = []
 
+    // Общее предупреждение: неизменяемые заказы пропускаются
+    const skippedCount = stats.cancelled + stats.completed
+    if (skippedCount > 0 && selectedAction) {
+      const parts: string[] = []
+      if (stats.cancelled > 0) parts.push(`отменённых: ${stats.cancelled}`)
+      if (stats.completed > 0) parts.push(`выполненных: ${stats.completed}`)
+      result.push(`Будут пропущены (${parts.join(', ')})`)
+    }
+
     if (selectedAction === 'editCombo') {
       if (stats.compensation > 0) {
         result.push(`${stats.compensation} сотр. с компенсацией не будут затронуты`)
       }
-      const sameCombo = selectedOrders.filter(o => o.comboType === comboType).length
+      const modifiableOrders = selectedOrders.filter(o => isModifiableOrder(o))
+      const sameCombo = modifiableOrders.filter(o => o.comboType === comboType).length
       if (sameCombo > 0) {
         result.push(`${sameCombo} уже имеют выбранный тип комбо`)
       }
-    }
-
-    if (selectedAction === 'pause' && stats.paused > 0) {
-      result.push(`${stats.paused} уже на паузе — пропущены`)
-    }
-
-    if (selectedAction === 'resume' && stats.active > 0) {
-      result.push(`${stats.active} уже активны — пропущены`)
     }
 
     return result
@@ -250,11 +236,13 @@ export function BulkEditDialog({
 
       switch (selectedAction) {
         case 'editCombo': {
-          // Фильтруем только ланч-заказы
-          const lunchOrders = selectedOrders.filter(o => o.serviceType === 'LUNCH' || !o.serviceType)
+          // Фильтруем только изменяемые ланч-заказы (Active/Paused, не Cancelled/Completed)
+          const lunchOrders = selectedOrders.filter(o => 
+            isModifiableOrder(o) && (o.serviceType === 'LUNCH' || !o.serviceType)
+          )
 
           if (lunchOrders.length === 0) {
-            toast.error('Нет ланч-заказов для изменения')
+            toast.error('Нет доступных ланч-заказов для изменения')
             return
           }
 
@@ -269,64 +257,31 @@ export function BulkEditDialog({
           break
         }
 
-        case 'pause': {
-          // Pause subscriptions via bulk action
-          const lunchOrders = selectedOrders.filter(o =>
-            (o.status === ORDER_STATUS.ACTIVE || o.status === 'Активен') &&
-            (o.serviceType === 'LUNCH' || !o.serviceType) &&
-            o.employeeId
-          )
-          if (lunchOrders.length === 0) {
-            toast.info('Нет активных ланч-заказов для приостановки')
-            return
-          }
-
-          // Use bulk action API
-          const request: BulkActionRequest = {
-            orderIds: lunchOrders.map(o => o.id),
-            action: 'pause'
-          }
-          await bulkAction(request)
-          toast.success(`Приостановлено: ${lunchOrders.length} заказов`, {
-            description: 'Заказы временно приостановлены',
-          })
-          break
-        }
-
-        case 'resume': {
-          // Resume subscriptions
-          // 'На паузе' is DEPRECATED, use 'Приостановлен'
-          const pausedOrders = selectedOrders.filter(o =>
-            (o.status === ORDER_STATUS.PAUSED || o.status === 'Приостановлен' || o.status === 'На паузе') &&
-            (o.serviceType === 'LUNCH' || !o.serviceType)
-          )
-          if (pausedOrders.length === 0) {
-            toast.info('Нет приостановленных заказов для возобновления')
-            return
-          }
-
-          // Fallback: use bulk action for backward compatibility
-          const request: BulkActionRequest = {
-            orderIds: pausedOrders.map(o => o.id),
-            action: 'resume'
-          }
-          await bulkAction(request)
-          toast.success(`Возобновлено: ${pausedOrders.length} заказов`)
-          break
-        }
+        // PAUSE/RESUME DISABLED (2025-01-11): Use subscription-level pause instead
+        // case 'pause': { ... }
+        // case 'resume': { ... }
 
         case 'freeze': {
           // FREEZE DISABLED (2025-01-09)
-          toast.info('Функционал заморозки временно отключён', {
-            description: 'Используйте паузу для приостановки заказов',
-          })
+          toast.info('Функционал заморозки временно отключён')
           return
         }
 
         case 'cancel': {
-          const request: BulkActionRequest = { orderIds, action: 'cancel' }
+          // Фильтруем только изменяемые заказы (Active/Paused, не Cancelled/Completed)
+          const cancellableOrders = selectedOrders.filter(o => isModifiableOrder(o))
+          
+          if (cancellableOrders.length === 0) {
+            toast.error('Нет заказов для отмены')
+            return
+          }
+
+          const request: BulkActionRequest = { 
+            orderIds: cancellableOrders.map(o => o.id), 
+            action: 'cancel' 
+          }
           await bulkAction(request)
-          toast.success(`Отменено: ${orderIds.length} заказов`, {
+          toast.success(`Отменено: ${cancellableOrders.length} заказов`, {
             description: 'Стоимость возвращена на баланс',
           })
           break
@@ -417,8 +372,18 @@ export function BulkEditDialog({
               </Badge>
             )}
             {stats.paused > 0 && (
-              <Badge variant="outline" className="gap-1 bg-orange-500/10 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400">
+              <Badge variant="outline" className="gap-1 bg-amber-500/10 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400">
                 ⏸ Приостановлено: {stats.paused}
+              </Badge>
+            )}
+            {stats.completed > 0 && (
+              <Badge variant="outline" className="gap-1 bg-gray-500/10 text-gray-700 dark:bg-gray-500/20 dark:text-gray-400">
+                ✓ Выполнено: {stats.completed}
+              </Badge>
+            )}
+            {stats.cancelled > 0 && (
+              <Badge variant="outline" className="gap-1 bg-red-500/10 text-red-700 dark:bg-red-500/20 dark:text-red-400">
+                ✕ Отменено: {stats.cancelled}
               </Badge>
             )}
           </div>
@@ -540,18 +505,10 @@ export function BulkEditDialog({
                         <p className="font-medium flex items-center gap-2">
                           <span>{data.icon}</span>
                           {data.title}
-                          {currentCount > 0 && (
-                            <Badge variant="secondary" className="text-[10px]">
-                              Уже у {currentCount}
-                            </Badge>
-                          )}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {data.features.join(' • ')}
                         </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-semibold text-sm">{data.price} ₸</p>
                       </div>
                     </label>
                   )
@@ -568,30 +525,7 @@ export function BulkEditDialog({
             </div>
           )}
 
-          {selectedAction === 'pause' && (
-            <Alert className="mt-2 border-orange-500/30 bg-orange-50/50 dark:bg-orange-950/20">
-              <PauseCircle className="h-4 w-4 text-orange-600" />
-              <AlertDescription className="text-orange-800 dark:text-orange-200">
-                <ul className="list-disc list-inside space-y-1">
-                  <li>Заказы будут временно приостановлены</li>
-                  <li><span className="font-medium">Внимание:</span> приостановленные дни НЕ переносятся</li>
-                  <li>Для переноса дней используйте «Заморозить»</li>
-                </ul>
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {selectedAction === 'resume' && (
-            <Alert className="mt-2 border-green-500/30 bg-green-50/50 dark:bg-green-950/20">
-              <PlayCircle className="h-4 w-4 text-green-600" />
-              <AlertDescription className="text-green-800 dark:text-green-200">
-                <ul className="list-disc list-inside space-y-1">
-                  <li>Приостановленные заказы будут возобновлены</li>
-                  <li>Доставка продолжится по расписанию</li>
-                </ul>
-              </AlertDescription>
-            </Alert>
-          )}
+          {/* PAUSE/RESUME DISABLED (2025-01-11): Use subscription-level pause instead */}
 
           {selectedAction === 'cancel' && (
             <div className="space-y-3">
@@ -599,7 +533,7 @@ export function BulkEditDialog({
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>Внимание! Это действие необратимо</AlertTitle>
                 <AlertDescription>
-                  Будет отменено <span className="font-bold">{selectedOrders.length}</span> заказов.
+                  Будет отменено <span className="font-bold">{applicableCount}</span> заказов.
                   Стоимость будет возвращена на баланс компании.
                 </AlertDescription>
               </Alert>
@@ -707,12 +641,17 @@ export function BulkEditDialog({
                           </span>
                         </td>
                         <td className="px-3 py-2.5 whitespace-nowrap">
-                          <Badge
-                            variant={(order.status === ORDER_STATUS.ACTIVE || order.status === 'Активен') ? 'default' : 'secondary'}
-                            className="min-w-[76px] justify-center"
-                          >
-                            {order.status}
-                          </Badge>
+                          {(() => {
+                            const statusConfig = getOrderStatusConfig(order.status)
+                            return (
+                              <Badge
+                                variant={statusConfig.variant}
+                                className={cn("min-w-[76px] justify-center", statusConfig.className)}
+                              >
+                                {statusConfig.label}
+                              </Badge>
+                            )
+                          })()}
                         </td>
                       </tr>
                     ))}

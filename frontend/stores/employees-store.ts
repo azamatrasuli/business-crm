@@ -33,12 +33,14 @@ interface EmployeesState {
   currentPage: number
   totalPages: number
   pageSize: number
+  showAll: boolean
   searchQuery: string
   filter: EmployeesFilter
   activeFilters: ActiveFilter[]
 
   // Actions
   fetchEmployees: (page?: number) => Promise<void>
+  setShowAll: (value: boolean) => void
   fetchEmployee: (id: string) => Promise<EmployeeDetail>
   createEmployee: (data: CreateEmployeeRequest) => Promise<Employee>
   updateEmployee: (id: string, data: UpdateEmployeeRequest) => Promise<Employee>
@@ -136,6 +138,7 @@ export const useEmployeesStore = create<EmployeesState>((set, get) => ({
   currentPage: 1,
   totalPages: 1,
   pageSize: 20,
+  showAll: false,
   searchQuery: '',
   filter: { ...defaultFilter },
   activeFilters: [],
@@ -144,12 +147,15 @@ export const useEmployeesStore = create<EmployeesState>((set, get) => ({
     set({ isLoading: true, error: null })
 
     try {
-      const { pageSize, searchQuery, activeFilters } = get()
+      const { pageSize, showAll, searchQuery, activeFilters } = get()
       const parsedFilters = parseActiveFilters(activeFilters)
+      // If showAll is true, fetch all records
+      const effectivePageSize = showAll ? 10000 : pageSize
+      const effectivePage = showAll ? 1 : page
 
       const response = await employeesApi.getEmployees(
-        page,
-        pageSize,
+        effectivePage,
+        effectivePageSize,
         searchQuery || undefined,
         mapStatusFilter(parsedFilters.status || 'all'),
         mapInviteStatusFilter(parsedFilters.inviteStatus || 'all'),
@@ -262,11 +268,15 @@ export const useEmployeesStore = create<EmployeesState>((set, get) => ({
   },
 
   setActiveFilters: (filters) => {
-    set({ activeFilters: filters })
+    set({ activeFilters: filters, showAll: false })
   },
 
   setSearchQuery: (query: string) => {
-    set({ searchQuery: query })
+    set({ searchQuery: query, showAll: false })
+  },
+
+  setShowAll: (value: boolean) => {
+    set({ showAll: value })
   },
 
   selectEmployee: (employee) => {
@@ -278,6 +288,7 @@ export const useEmployeesStore = create<EmployeesState>((set, get) => ({
       filter: { ...defaultFilter },
       activeFilters: [],
       searchQuery: '',
+      showAll: false,
     })
   },
 }))

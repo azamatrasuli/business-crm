@@ -65,26 +65,28 @@ function PaymentsContent() {
     operationsLoading,
     operationsTotal,
     operationsTotalPages,
+    statusCounts,
     page,
     pageSize,
+    showAll,
     statusFilter,
     typeFilter,
+    searchQuery,
     sortField,
     sortDesc,
+    hasActiveFilters,
     setPage,
+    setShowAll,
     setStatusFilter,
     setTypeFilter,
+    setSearchQuery,
     toggleSort,
+    resetFilters,
     refresh,
   } = useFinancialData()
 
   const currency = summary?.currencyCode || 'TJS'
   const isLoading = summaryLoading || operationsLoading
-
-  // Calculate counts by status
-  const pendingDeductionCount = operations.filter(o => o.status === 'PENDING_DEDUCTION').length
-  const pendingIncomeCount = operations.filter(o => o.status === 'PENDING_INCOME').length
-  const completedCount = operations.filter(o => o.status === 'COMPLETED').length
 
   // Show projected balance only if there are pending operations
   const showProjectedBalance = (summary?.pendingDeduction ?? 0) > 0 || (summary?.pendingIncome ?? 0) > 0
@@ -200,75 +202,102 @@ function PaymentsContent() {
       {/* FILTERS & OPERATIONS TABLE */}
       {/* ═══════════════════════════════════════════════════════════════ */}
       <div className="space-y-4">
-        {/* Filter Controls */}
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Status Filter */}
-          <Select
-            value={statusFilter}
-            onValueChange={(val) => setStatusFilter(val as StatusFilter)}
+        {/* Status Quick-Tabs */}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant={statusFilter === 'all' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setStatusFilter('all')}
+            className="gap-2"
           >
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="Все статусы" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">
-                <div className="flex items-center gap-2">
-                  Все статусы
-                </div>
-              </SelectItem>
-              <SelectItem value="completed">
-                <div className="flex items-center gap-2">
-                  <Check className="h-3 w-3 text-muted-foreground" />
-                  Выполненные
-                  {completedCount > 0 && (
-                    <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">{completedCount}</Badge>
-                  )}
-                </div>
-              </SelectItem>
-              <SelectItem value="pending_deduction">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-3 w-3 text-amber-500" />
-                  К списанию
-                  {pendingDeductionCount > 0 && (
-                    <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">{pendingDeductionCount}</Badge>
-                  )}
-                </div>
-              </SelectItem>
-              <SelectItem value="pending_income">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-3 w-3 text-emerald-500" />
-                  К поступлению
-                  {pendingIncomeCount > 0 && (
-                    <Badge variant="secondary" className="ml-1 h-4 px-1 text-xs">{pendingIncomeCount}</Badge>
-                  )}
-                </div>
-              </SelectItem>
-            </SelectContent>
-          </Select>
+            Все
+            {statusCounts.all > 0 && (
+              <Badge variant={statusFilter === 'all' ? 'secondary' : 'outline'} className="h-5 px-1.5 text-xs">
+                {statusCounts.all}
+              </Badge>
+            )}
+          </Button>
+          <Button
+            variant={statusFilter === 'pending_deduction' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setStatusFilter('pending_deduction')}
+            className={cn("gap-2", statusFilter !== 'pending_deduction' && "border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10")}
+          >
+            <Clock className="h-3.5 w-3.5" />
+            К списанию
+            {statusCounts.pending_deduction > 0 && (
+              <Badge variant={statusFilter === 'pending_deduction' ? 'secondary' : 'outline'} className="h-5 px-1.5 text-xs">
+                {statusCounts.pending_deduction}
+              </Badge>
+            )}
+          </Button>
+          <Button
+            variant={statusFilter === 'pending_income' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setStatusFilter('pending_income')}
+            className={cn("gap-2", statusFilter !== 'pending_income' && "border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10")}
+          >
+            <Clock className="h-3.5 w-3.5" />
+            К поступлению
+            {statusCounts.pending_income > 0 && (
+              <Badge variant={statusFilter === 'pending_income' ? 'secondary' : 'outline'} className="h-5 px-1.5 text-xs">
+                {statusCounts.pending_income}
+              </Badge>
+            )}
+          </Button>
+          <Button
+            variant={statusFilter === 'completed' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setStatusFilter('completed')}
+            className="gap-2"
+          >
+            <Check className="h-3.5 w-3.5" />
+            Выполненные
+            {statusCounts.completed > 0 && (
+              <Badge variant={statusFilter === 'completed' ? 'secondary' : 'outline'} className="h-5 px-1.5 text-xs">
+                {statusCounts.completed}
+              </Badge>
+            )}
+          </Button>
+        </div>
 
-          {/* Type Filter */}
+        {/* Additional Filters Row */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Type Filter - expanded */}
           <Select
             value={typeFilter}
             onValueChange={(val) => setTypeFilter(val as TypeFilter)}
           >
-            <SelectTrigger className="w-[160px]">
+            <SelectTrigger className="w-[200px]">
               <SelectValue placeholder="Все типы" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Все типы</SelectItem>
-              <SelectItem value="deposits">
+              <SelectItem value="all">Все типы операций</SelectItem>
+              <SelectItem value="LUNCH_DEDUCTION">
+                <div className="flex items-center gap-2">
+                  <Users className="h-3 w-3 text-amber-500" />
+                  Обеды сотрудников
+                </div>
+              </SelectItem>
+              <SelectItem value="GUEST_ORDER">
+                <div className="flex items-center gap-2">
+                  <User className="h-3 w-3 text-purple-500" />
+                  Гостевые заказы
+                </div>
+              </SelectItem>
+              <SelectItem value="CLIENT_APP_ORDER">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-3 w-3 text-blue-500" />
+                  Заказы из приложения
+                </div>
+              </SelectItem>
+              <SelectItem value="DEPOSIT">
                 <div className="flex items-center gap-2">
                   <ArrowDownCircle className="h-3 w-3 text-emerald-500" />
                   Пополнения
                 </div>
               </SelectItem>
-              <SelectItem value="deductions">
-                <div className="flex items-center gap-2">
-                  <ArrowUpCircle className="h-3 w-3 text-amber-500" />
-                  Списания
-                </div>
-              </SelectItem>
-              <SelectItem value="refunds">
+              <SelectItem value="REFUND">
                 <div className="flex items-center gap-2">
                   <ArrowDownCircle className="h-3 w-3 text-blue-500" />
                   Возвраты
@@ -276,6 +305,19 @@ function PaymentsContent() {
               </SelectItem>
             </SelectContent>
           </Select>
+
+          {/* Reset Filters Button */}
+          {hasActiveFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={resetFilters}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+              Сбросить
+            </Button>
+          )}
 
           {/* Count indicator */}
           <div className="ml-auto text-sm text-muted-foreground">
@@ -292,11 +334,13 @@ function PaymentsContent() {
           currency={currency}
           page={page}
           pageSize={pageSize}
+          showAll={showAll}
           total={operationsTotal}
           totalPages={operationsTotalPages}
           sortField={sortField}
           sortDesc={sortDesc}
           onPageChange={setPage}
+          onShowAllChange={setShowAll}
           onToggleSort={toggleSort}
         />
       </div>
@@ -314,11 +358,13 @@ interface OperationsTableProps {
   currency: string
   page: number
   pageSize: number
+  showAll: boolean
   total: number
   totalPages: number
   sortField: SortField
   sortDesc: boolean
   onPageChange: (page: number) => void
+  onShowAllChange: (value: boolean) => void
   onToggleSort: (field: SortField) => void
 }
 
@@ -328,11 +374,13 @@ function OperationsTable({
   currency,
   page,
   pageSize,
+  showAll,
   total,
   totalPages,
   sortField,
   sortDesc,
   onPageChange,
+  onShowAllChange,
   onToggleSort,
 }: OperationsTableProps) {
 
@@ -496,31 +544,59 @@ function OperationsTable({
       </Card>
 
       {/* Pagination */}
-      {totalPages > 1 && (
+      {(totalPages > 1 || showAll) && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            {((page - 1) * pageSize) + 1}–{Math.min(page * pageSize, total)} из {total}
+            {showAll 
+              ? `Показано все: ${total}`
+              : `${((page - 1) * pageSize) + 1}–${Math.min(page * pageSize, total)} из ${total}`
+            }
           </p>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onPageChange(page - 1)}
-              disabled={page <= 1}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="text-sm font-medium px-2">
-              {page} / {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onPageChange(page + 1)}
-              disabled={page >= totalPages}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+            {showAll ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  onShowAllChange(false)
+                  onPageChange(1)
+                }}
+                disabled={loading}
+              >
+                По страницам
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onPageChange(page - 1)}
+                  disabled={page <= 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-sm font-medium px-2">
+                  {page} / {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onPageChange(page + 1)}
+                  disabled={page >= totalPages}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onShowAllChange(true)}
+                  disabled={loading}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  Показать все
+                </Button>
+              </>
+            )}
           </div>
         </div>
       )}

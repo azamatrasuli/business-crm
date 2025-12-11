@@ -22,7 +22,7 @@ import { DataTable } from '@/components/ui/data-table'
 import type { ColumnDef } from '@tanstack/react-table'
 
 export default function UsersPage() {
-  const { users, isLoading: loading, error, total, currentPage, totalPages, fetchUsers, fetchAvailableRoutes } = useUsersStore()
+  const { users, isLoading: loading, error, total, currentPage, totalPages, showAll, fetchUsers, fetchAvailableRoutes, setShowAll } = useUsersStore()
   const { user: currentUser } = useAuthStore()
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -257,28 +257,59 @@ export default function UsersPage() {
       />
 
       {/* Pagination */}
-      {totalPages > 1 && (
+      {(totalPages > 1 || showAll) && (
         <div className="flex items-center justify-between rounded-lg border bg-card px-6 py-4">
           <div className="text-sm text-muted-foreground">
-            Показано {((currentPage - 1) * 20) + 1} - {Math.min(currentPage * 20, total)} из {total}
+            {showAll 
+              ? `Показано все: ${total}`
+              : `Показано ${((currentPage - 1) * 20) + 1} - ${Math.min(currentPage * 20, total)} из ${total}`
+            }
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handlePageChange(currentPage - 1)}
-              disabled={currentPage === 1 || loading}
-            >
-              Назад
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handlePageChange(currentPage + 1)}
-              disabled={currentPage === totalPages || loading}
-            >
-              Вперед
-            </Button>
+            {showAll ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShowAll(false)
+                  fetchUsers(1)
+                }}
+                disabled={loading}
+              >
+                По страницам
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1 || loading}
+                >
+                  Назад
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages || loading}
+                >
+                  Вперед
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowAll(true)
+                    fetchUsers(1)
+                  }}
+                  disabled={loading}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  Показать все
+                </Button>
+              </>
+            )}
           </div>
         </div>
       )}

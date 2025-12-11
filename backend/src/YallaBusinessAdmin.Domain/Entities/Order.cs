@@ -45,9 +45,15 @@ public class Order
     // ═══════════════════════════════════════════════════════════════
     
     /// <summary>
-    /// Checks if the order is active (can be modified).
+    /// Checks if the order has Active status.
     /// </summary>
     public bool IsActive => Status == OrderStatus.Active;
+    
+    /// <summary>
+    /// Checks if the order is in a modifiable state (Active or Paused).
+    /// Cancelled and Completed orders cannot be modified.
+    /// </summary>
+    public bool IsModifiable => Status == OrderStatus.Active || Status == OrderStatus.Paused;
     
     /// <summary>
     /// Checks if the order is in the past (APPROXIMATE - uses UTC).
@@ -57,15 +63,17 @@ public class Order
     
     /// <summary>
     /// Checks if the order can be cancelled.
-    /// Business rule: Can cancel only active orders for today or future.
+    /// Business rule: Can cancel Active or Paused orders for today or future.
+    /// Cancelled/Completed orders cannot be cancelled.
     /// </summary>
-    public bool CanBeCancelled => IsActive && !IsPastOrderUtc;
+    public bool CanBeCancelled => IsModifiable && !IsPastOrderUtc;
     
     /// <summary>
-    /// Checks if the order can be modified.
-    /// Business rule: Can modify only active orders for today or future.
+    /// Checks if the order can be modified (e.g., change combo).
+    /// Business rule: Can modify Active or Paused orders for today or future.
+    /// Cancelled/Completed orders cannot be modified.
     /// </summary>
-    public bool CanBeModified => IsActive && !IsPastOrderUtc;
+    public bool CanBeModified => IsModifiable && !IsPastOrderUtc;
     
     /// <summary>
     /// Pauses the order (internal - called when subscription is paused).

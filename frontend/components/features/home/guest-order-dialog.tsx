@@ -154,7 +154,11 @@ export function GuestOrderDialog({ open, onOpenChange }: GuestOrderDialogProps) 
   const remainingBudget = (dashboard?.totalBudget ?? 0) - totalCost
   const budgetInsufficient = remainingBudget < 0
   const isTodaySelected = orderDateIso === todayIso
+  const isPastDate = orderDateIso < todayIso
   const isCutoffLocked = isTodaySelected && hasCutoffPassed(cutoffTime || null)
+  const pastDateDisabledReason = isPastDate
+    ? 'Нельзя создать заказ на прошедшую дату'
+    : null
   const cutoffDisabledReason = isCutoffLocked
     ? cutoffTime
       ? `Изменения на сегодня закрыты в ${cutoffTime}`
@@ -163,7 +167,7 @@ export function GuestOrderDialog({ open, onOpenChange }: GuestOrderDialogProps) 
   const budgetDisabledReason = budgetInsufficient
     ? 'Недостаточно средств на бюджете компании'
     : null
-  const submissionDisabledReason = budgetDisabledReason || cutoffDisabledReason
+  const submissionDisabledReason = pastDateDisabledReason || budgetDisabledReason || cutoffDisabledReason
   const canSubmit =
     !loading &&
     !!userProjectId &&
