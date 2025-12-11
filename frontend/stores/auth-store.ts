@@ -35,6 +35,9 @@ interface AuthState {
   // User data
   user: User | null
   isAuthenticated: boolean
+  
+  // JWT token - needed for Safari ITP workaround (cookies blocked on cross-site)
+  token: string | null
 
   // Loading states
   isLoading: boolean
@@ -82,6 +85,7 @@ type AuthStore = AuthState & AuthActions
 const initialState: AuthState = {
   user: null,
   isAuthenticated: false,
+  token: null,
   isLoading: false,
   isInitializing: true,
   _hasHydrated: false,
@@ -115,6 +119,7 @@ function clearAuthState(): Partial<AuthState> {
   return {
     user: null,
     isAuthenticated: false,
+    token: null, // Clear token on logout
     companyId: null,
     projectId: null,
     projectName: null,
@@ -192,6 +197,7 @@ export const useAuthStore = create<AuthStore>()(
           set({
             user: response.user,
             isAuthenticated: true,
+            token: response.token, // Save token for Safari ITP workaround
             isLoading: false,
             ...extractUserContext(response.user),
             isImpersonating: false,
@@ -240,6 +246,7 @@ export const useAuthStore = create<AuthStore>()(
           set({
             user: response.user,
             isAuthenticated: true,
+            token: response.token, // Update token on refresh
             ...extractUserContext(response.user),
           })
         } catch (error) {
@@ -357,6 +364,7 @@ export const useAuthStore = create<AuthStore>()(
         // Only persist essential data
         user: state.user,
         isAuthenticated: state.isAuthenticated,
+        token: state.token, // For Safari ITP workaround
         companyId: state.companyId,
         projectId: state.projectId,
         projectName: state.projectName,

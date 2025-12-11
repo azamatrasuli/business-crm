@@ -7,6 +7,23 @@ function generateCorrelationId(): string {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 }
 
+// Get token from auth store (for Safari ITP workaround)
+// Safari blocks cross-site cookies, so we need to send token in Authorization header
+function getAuthToken(): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const stored = localStorage.getItem('auth-storage')
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      // Zustand persist stores state in "state" key
+      return parsed?.state?.token || null
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return null
+}
+
 const apiClient: AxiosInstance = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000/api',
   timeout: 15000,
@@ -35,8 +52,8 @@ const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue = []
 }
 
-// Request interceptor - add correlation ID and CSRF token
-// Note: Auth token is now sent via HttpOnly cookie automatically
+// Request interceptor - add correlation ID, CSRF token, and Authorization header
+// Note: We send both cookies AND Authorization header for Safari ITP compatibility
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     // Add correlation ID for request tracing
@@ -54,6 +71,14 @@ apiClient.interceptors.request.use(
       if (csrfToken) {
         config.headers['X-XSRF-TOKEN'] = csrfToken
       }
+    }
+    
+    // Safari ITP workaround: Add Authorization header with Bearer token
+    // Safari blocks cross-site cookies, so backend needs token in header
+    // Backend checks Authorization header first, then falls back to cookie
+    const token = getAuthToken()
+    if (token && !config.headers['Authorization']) {
+      config.headers['Authorization'] = `Bearer ${token}`
     }
     
     // Log request in development
