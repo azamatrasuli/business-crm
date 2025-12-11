@@ -216,6 +216,7 @@ export function useEventBus<E extends AppEvent>(
     ? (data: EventPayloads[E]) => void
     : (data: unknown) => void
 ): void {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const stableCallback = useCallback(callback, [callback])
 
   useEffect(() => {
