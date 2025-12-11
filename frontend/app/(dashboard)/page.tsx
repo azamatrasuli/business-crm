@@ -836,12 +836,8 @@ function HomePageContent() {
 
         // COMPENSATION заказы - кнопки в ряд
         if (isCompensation) {
-          const compIsActive = order.status === ORDER_STATUS.ACTIVE || order.status === 'Активен'
-          const compIsPaused = order.status === ORDER_STATUS.PAUSED || order.status === 'Приостановлен'
-          const compIsCancelled = order.status === 'Отменён'
-          const compIsModifiable = compIsActive || compIsPaused
-          const canEdit = !isPastOrder && !isDeliveredStatus && compIsModifiable
-          const canCancel = !actionDisabled && (isTodayOrder || isFutureOrder) && compIsModifiable
+          const canEdit = !isPastOrder && !isDeliveredStatus
+          const canCancel = !actionDisabled && (isTodayOrder || isFutureOrder)
 
           return (
             <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
@@ -853,7 +849,7 @@ function HomePageContent() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className={!compIsModifiable ? "h-8 w-8 text-muted-foreground" : "h-8 w-8 text-emerald-600 hover:text-emerald-700"}
+                        className="h-8 w-8 text-emerald-600 hover:text-emerald-700"
                         disabled={!canEdit}
                         onClick={() => handleManageCompensationFromOrder(order)}
                       >
@@ -862,7 +858,7 @@ function HomePageContent() {
                     </span>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {compIsCancelled ? 'Компенсация отменена' : (canEdit ? 'Управлять компенсацией' : 'Компенсация завершена')}
+                    {canEdit ? 'Управлять компенсацией' : 'Компенсация завершена'}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -887,26 +883,16 @@ function HomePageContent() {
                   </Tooltip>
                 </TooltipProvider>
               )}
-              
-              {/* Если отменён - показываем индикатор */}
-              {compIsCancelled && (
-                <span className="text-xs text-muted-foreground px-2">Отменена</span>
-              )}
             </div>
           )
         }
 
         // Гостевые заказы - кнопки в ряд
         if (isGuest) {
-          const guestIsActive = order.status === ORDER_STATUS.ACTIVE || order.status === 'Активен'
-          const guestIsPaused = order.status === ORDER_STATUS.PAUSED || order.status === 'Приостановлен' || order.status === 'На паузе'
-          const guestIsCancelled = order.status === 'Отменён'
-          const guestIsModifiable = guestIsActive || guestIsPaused
-          
           return (
             <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
               {/* Пауза / Возобновить */}
-              {guestIsActive && (
+              {(order.status === ORDER_STATUS.ACTIVE || order.status === 'Активен') && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -929,7 +915,7 @@ function HomePageContent() {
                 </TooltipProvider>
               )}
               {/* 'На паузе' is DEPRECATED, use 'Приостановлен' */}
-              {guestIsPaused && (
+              {(order.status === ORDER_STATUS.PAUSED || order.status === 'Приостановлен' || order.status === 'На паузе') && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -952,59 +938,47 @@ function HomePageContent() {
                 </TooltipProvider>
               )}
 
-              {/* Отменить - только для Active и Paused */}
-              {guestIsModifiable && (
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive"
-                          disabled={actionDisabled}
-                          onClick={() => handleCancelOrder(order)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {actionDisabled ? cutoffDisabledReason : 'Отменить заказ'}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-              
-              {/* Если отменён - показываем индикатор */}
-              {guestIsCancelled && (
-                <span className="text-xs text-muted-foreground px-2">Отменён</span>
-              )}
+              {/* Отменить */}
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        disabled={actionDisabled}
+                        onClick={() => handleCancelOrder(order)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {actionDisabled ? cutoffDisabledReason : 'Отменить заказ'}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
           )
         }
 
         // LUNCH для сотрудников — кнопки в ряд как на странице сотрудников
         const isActiveOrder = order.status === ORDER_STATUS.ACTIVE || order.status === 'Активен'
-        const isPausedOrder = order.status === ORDER_STATUS.PAUSED || order.status === 'Приостановлен' || order.status === 'На паузе'
         const isCancelledOrder = order.status === 'Отменён'
-        const isCompletedOrder = order.status === ORDER_STATUS.COMPLETED || order.status === 'Выполнен'
-        const isModifiable = isActiveOrder || isPausedOrder // Active and Paused can be modified/cancelled
-        const canEdit = !actionDisabled && isEmployee && isModifiable
+        const canEdit = !actionDisabled && isEmployee && isActiveOrder
         // NOTE: Pause/Resume removed for individual orders - use subscription-level pause instead
-        const canCancel = !actionDisabled && isEmployee && isModifiable
+        const canCancel = !actionDisabled && isEmployee && isActiveOrder
 
         // Tooltip text based on status
         const getEditTooltip = () => {
           if (isCancelledOrder) return 'Заказ отменён'
-          if (isCompletedOrder) return 'Заказ выполнен'
           if (canEdit) return 'Управлять обедом'
           if (actionDisabled) return cutoffDisabledReason
           return 'Недоступно'
         }
         const getCancelTooltip = () => {
           if (isCancelledOrder) return 'Заказ отменён'
-          if (isCompletedOrder) return 'Заказ выполнен'
           if (canCancel) return 'Отменить заказ'
           if (actionDisabled) return cutoffDisabledReason
           return 'Недоступно'
@@ -1020,8 +994,8 @@ function HomePageContent() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className={!isModifiable ? "h-8 w-8 text-muted-foreground" : "h-8 w-8 text-amber-600 hover:text-amber-700"}
-                        disabled={!canEdit}
+                        className={isCancelledOrder ? "h-8 w-8 text-muted-foreground" : "h-8 w-8 text-amber-600 hover:text-amber-700"}
+                        disabled={!canEdit || isCancelledOrder}
                         onClick={() => handleQuickEditLunch(order)}
                       >
                         <UtensilsCrossed className="h-4 w-4" />
@@ -1040,8 +1014,8 @@ function HomePageContent() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className={!isModifiable ? "h-8 w-8 text-muted-foreground" : "h-8 w-8 text-destructive hover:text-destructive"}
-                      disabled={!canCancel}
+                      className={isCancelledOrder ? "h-8 w-8 text-muted-foreground" : "h-8 w-8 text-destructive hover:text-destructive"}
+                      disabled={!canCancel || isCancelledOrder}
                       onClick={() => handleCancelOrder(order)}
                     >
                       <Trash2 className="h-4 w-4" />

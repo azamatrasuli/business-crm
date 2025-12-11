@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import { authApi, type LoginResponse, type AdminListItem } from '@/lib/api/auth'
 import { logger } from '@/lib/logger'
 import {
@@ -7,6 +7,9 @@ import {
   clearAuthStatusCookie,
   hasAuthStatusCookie,
 } from './utils/cookie-manager'
+
+// Track hydration state for Safari compatibility
+let isHydrated = false
 
 // ============================================================================
 // Types
@@ -36,6 +39,9 @@ interface AuthState {
   // Loading states
   isLoading: boolean
   isInitializing: boolean
+  
+  // Hydration state - important for Safari!
+  _hasHydrated: boolean
 
   // Derived user context
   companyId: string | null
@@ -78,6 +84,7 @@ const initialState: AuthState = {
   isAuthenticated: false,
   isLoading: false,
   isInitializing: true,
+  _hasHydrated: false,
   companyId: null,
   projectId: null,
   projectName: null,
@@ -138,15 +145,22 @@ export const useAuthStore = create<AuthStore>()(
           const { user } = get()
           const hasValidCookie = hasAuthStatusCookie()
 
-          if (user && hasValidCookie) {
-            // Zustand restored user from persist, session is valid
+          if (user) {
+            // User data exists in localStorage (restored by Zustand persist)
+            // Trust localStorage over cookie - Safari ITP may block cookies
+            // but localStorage should work
+            if (!hasValidCookie) {
+              // Re-set the cookie in case Safari cleared it
+              setAuthStatusCookie()
+            }
             set({ isInitializing: false, isAuthenticated: true })
-          } else if (user && !hasValidCookie) {
-            // User in state but no valid cookie - session expired
+          } else if (hasValidCookie) {
+            // Cookie exists but no user data - try to refresh session
+            // This shouldn't happen normally, but handle it gracefully
             clearAuthStatusCookie()
             set({ ...clearAuthState(), isInitializing: false })
           } else {
-            // No user data
+            // No user data and no cookie - not authenticated
             set({ ...clearAuthState(), isInitializing: false })
           }
         } catch (error) {
@@ -338,6 +352,7 @@ export const useAuthStore = create<AuthStore>()(
     }),
     {
       name: 'auth-storage',
+      storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         // Only persist essential data
         user: state.user,
@@ -351,11 +366,26 @@ export const useAuthStore = create<AuthStore>()(
         impersonatedBy: state.impersonatedBy,
         originalUser: state.originalUser,
       }),
+      // Called when hydration is complete - IMPORTANT for Safari!
+      onRehydrateStorage: () => (state, error) => {
+        isHydrated = true
+        if (error) {
+          logger.error('Zustand hydration error', error)
+          return
+        }
+        // Update store with hydration complete flag
+        useAuthStore.setState({ _hasHydrated: true })
+        if (state?.user && state?.isAuthenticated) {
+          // Sync cookie with restored state after hydration
+          setAuthStatusCookie()
+        }
+      },
     }
   )
 )
 
-// Initialize auth on app load
-if (typeof window !== 'undefined') {
-  useAuthStore.getState().initialize()
-}
+// Export hydration check for components
+export const getIsHydrated = () => isHydrated
+
+// DO NOT call initialize() here - it causes race condition with persist!
+// Initialize is called from AuthProvider after hydration

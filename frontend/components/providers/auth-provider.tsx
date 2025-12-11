@@ -9,11 +9,17 @@ interface AuthProviderProps {
 }
 
 function AuthProviderContent({ children }: AuthProviderProps) {
-  const { initialize, isInitializing, logout } = useAuthStore()
+  const { initialize, isInitializing, logout, _hasHydrated } = useAuthStore()
   const searchParams = useSearchParams()
   const router = useRouter()
 
   useEffect(() => {
+    // Wait for Zustand to hydrate from localStorage before initializing
+    // This is critical for Safari which may not have cookies due to ITP
+    if (!_hasHydrated) {
+      return
+    }
+    
     const handleInit = async () => {
       // Check for logout parameter
       if (searchParams.get('logout') === 'true') {
@@ -22,16 +28,16 @@ function AuthProviderContent({ children }: AuthProviderProps) {
         return
       }
       
-      // Initialize auth state on mount
+      // Initialize auth state after hydration is complete
       await initialize()
     }
     
     handleInit()
-  }, [initialize, logout, searchParams, router])
+  }, [initialize, logout, searchParams, router, _hasHydrated])
 
-  // Show loading state ONLY while initializing auth (checking stored token)
-  // Don't show during login attempts - let the login page handle its own loading
-  if (isInitializing) {
+  // Show loading state while waiting for hydration or initialization
+  // This ensures we don't flash incorrect auth state on Safari
+  if (!_hasHydrated || isInitializing) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <div className="flex flex-col items-center gap-4">

@@ -77,3 +77,6 @@ public record FinancialOperationsPagedResponse
     public int PageSize { get; init; }
     public int TotalPages { get; init; }
 }
+
+
+

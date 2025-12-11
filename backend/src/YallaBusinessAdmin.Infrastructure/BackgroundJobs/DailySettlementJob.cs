@@ -182,3 +182,6 @@ public class DailySettlementJob : BackgroundService
             project.CurrencyCode);
     }
 }
+
+
+

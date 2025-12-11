@@ -88,3 +88,6 @@ public record FinancialSummaryResponse
     /// </summary>
     public string Date { get; init; } = string.Empty;
 }
+
+
+
